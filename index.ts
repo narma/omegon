@@ -460,7 +460,7 @@ export default function (pi: ExtensionAPI) {
         let result: { factsIngested: number };
         if (targetEntry.name === "__default__") {
           // Ingest into default memory via a temporary MemoryStorage
-          result = mindManager.ingestIntoDefault(mindName, ctx.cwd);
+          result = mindManager.ingestIntoDefault(mindName);
         } else {
           result = mindManager.ingest(mindName, targetEntry.name);
         }
