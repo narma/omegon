@@ -13,7 +13,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import type { MemoryConfig } from "./types.js";
-import type { Fact } from "./factstore.js";
+import type { Fact, Edge } from "./factstore.js";
 
 /**
  * Build the extraction prompt for JSONL output.
@@ -167,6 +167,184 @@ export async function runExtractionV2(
         resolve("");
       } else {
         reject(new Error(`Extraction failed (exit ${code}): ${stderr.slice(0, 500)}`));
+      }
+    });
+
+    proc.on("error", (err) => {
+      clearTimeout(timeout);
+      activeExtractionProc = null;
+      reject(err);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Global mind extraction — Phase 2
+// ---------------------------------------------------------------------------
+
+function buildGlobalExtractionPrompt(): string {
+  return `You are a cross-project knowledge synthesizer. You receive:
+1. New facts just extracted from a project-scoped coding session
+2. Existing facts in the global knowledge base (with IDs)
+3. Existing connections (edges) between global facts
+
+Your job: identify generalizable knowledge and meaningful connections between facts.
+
+ACTION TYPES:
+
+{"type":"observe","section":"Architecture","content":"Embedded DBs preferred over client-server for CLI tooling"}
+  → A new fact that generalizes beyond its source project. Rewrite to be project-agnostic.
+
+{"type":"reinforce","id":"abc123"}
+  → An existing global fact is confirmed by this project's evidence.
+
+{"type":"connect","source":"<fact_id>","target":"<fact_id>","relation":"runs_on","description":"k8s deployment depends on host OS kernel features"}
+  → Two facts are meaningfully related. The relation is a short verb phrase describing
+    the directional relationship from source to target.
+    Common patterns: runs_on, depends_on, motivated_by, contradicts, enables,
+    generalizes, instance_of, requires, conflicts_with, replaces, preceded_by
+    But use whatever verb phrase best captures the relationship.
+
+{"type":"supersede","id":"abc123","section":"Decisions","content":"Updated understanding..."}
+  → An existing global fact is outdated. Provide the replacement.
+
+{"type":"archive","id":"abc123"}
+  → An existing global fact is clearly wrong or obsolete.
+
+RULES:
+- Output ONLY valid JSONL. One JSON object per line.
+- Only promote facts that would be useful across MULTIPLE projects.
+- Rewrite promoted facts to remove project-specific names, paths, and details.
+- Connections should represent genuine analytical insight, not surface keyword overlap.
+- Prefer fewer, high-quality connections over many weak ones.
+- A connection between facts in different sections is more valuable than within the same section.
+- If the new project facts don't contain anything generalizable, output nothing.`;
+}
+
+/**
+ * Format new project facts + existing global facts + edges for global extraction.
+ */
+export function formatGlobalExtractionInput(
+  newProjectFacts: Fact[],
+  globalFacts: Fact[],
+  globalEdges: Edge[],
+): string {
+  const lines: string[] = [];
+
+  lines.push("=== NEW PROJECT FACTS (candidates for promotion/connection) ===");
+  if (newProjectFacts.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const f of newProjectFacts) {
+      lines.push(`[${f.id}] (${f.section}) ${f.content}`);
+    }
+  }
+
+  lines.push("\n=== EXISTING GLOBAL FACTS ===");
+  if (globalFacts.length === 0) {
+    lines.push("(empty — this is the first global extraction)");
+  } else {
+    let currentSection = "";
+    for (const f of globalFacts) {
+      if (f.section !== currentSection) {
+        currentSection = f.section;
+        lines.push(`\n## ${currentSection}`);
+      }
+      const rc = f.reinforcement_count;
+      lines.push(`[${f.id}] ${f.content} (reinforced ${rc}x)`);
+    }
+  }
+
+  if (globalEdges.length > 0) {
+    lines.push("\n=== EXISTING CONNECTIONS ===");
+    for (const e of globalEdges) {
+      lines.push(`[${e.source_fact_id}] --${e.relation}--> [${e.target_fact_id}]: ${e.description}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Run global extraction — Phase 2 of the extraction chain.
+ * Only called when Phase 1 produced new facts.
+ */
+export async function runGlobalExtraction(
+  cwd: string,
+  newProjectFacts: Fact[],
+  globalFacts: Fact[],
+  globalEdges: Edge[],
+  config: MemoryConfig,
+): Promise<string> {
+  const prompt = buildGlobalExtractionPrompt();
+  const input = formatGlobalExtractionInput(newProjectFacts, globalFacts, globalEdges);
+
+  const userMessage = [
+    input,
+    "\n\nOutput JSONL actions: promote generalizable facts and identify connections.",
+  ].join("");
+
+  return new Promise<string>((resolve, reject) => {
+    if (activeExtractionProc) {
+      reject(new Error("Extraction already in progress"));
+      return;
+    }
+
+    const args = [
+      "--model",
+      config.extractionModel,
+      "--no-session",
+      "--no-tools",
+      "--no-extensions",
+      "--no-skills",
+      "--no-themes",
+      "--thinking",
+      "off",
+      "--system-prompt",
+      prompt,
+      "-p",
+      userMessage,
+    ];
+
+    const proc = spawn("pi", args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    activeExtractionProc = proc;
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (d: Buffer) => {
+      stdout += d.toString();
+    });
+    proc.stderr.on("data", (d: Buffer) => {
+      stderr += d.toString();
+    });
+
+    let escalationTimer: ReturnType<typeof setTimeout> | null = null;
+    const timeout = setTimeout(() => {
+      proc.kill("SIGTERM");
+      escalationTimer = setTimeout(() => {
+        if (!proc.killed) proc.kill("SIGKILL");
+      }, 5000);
+      reject(new Error("Global extraction timed out"));
+    }, config.extractionTimeout);
+
+    proc.on("close", (code) => {
+      clearTimeout(timeout);
+      if (escalationTimer) clearTimeout(escalationTimer);
+      activeExtractionProc = null;
+      const output = stdout.trim();
+      if (code === 0 && output) {
+        const cleaned = output
+          .replace(/^```(?:jsonl?|json)?\n?/, "")
+          .replace(/\n?```\s*$/, "");
+        resolve(cleaned);
+      } else if (code === 0 && !output) {
+        resolve("");
+      } else {
+        reject(new Error(`Global extraction failed (exit ${code}): ${stderr.slice(0, 500)}`));
       }
     });
 

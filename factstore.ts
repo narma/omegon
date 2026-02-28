@@ -141,6 +141,29 @@ export interface StoreFactOptions {
 export interface ReinforcementResult {
   reinforced: number;
   added: number;
+  newFactIds: string[];
+}
+
+export interface Edge {
+  id: string;
+  source_fact_id: string;
+  target_fact_id: string;
+  relation: string;
+  description: string;
+  confidence: number;
+  last_reinforced: string;
+  reinforcement_count: number;
+  decay_rate: number;
+  status: "active" | "archived";
+  created_at: string;
+  created_session: string | null;
+  source_mind: string | null;
+  target_mind: string | null;
+}
+
+export interface EdgeResult {
+  added: number;
+  reinforced: number;
 }
 
 // --- Decay math ---
@@ -237,6 +260,32 @@ export class FactStore {
         ON facts(mind, confidence) WHERE status = 'active';
       CREATE INDEX IF NOT EXISTS idx_facts_session
         ON facts(created_session);
+
+      CREATE TABLE IF NOT EXISTS edges (
+        id                  TEXT PRIMARY KEY,
+        source_fact_id      TEXT NOT NULL,
+        target_fact_id      TEXT NOT NULL,
+        relation            TEXT NOT NULL,
+        description         TEXT NOT NULL,
+        confidence          REAL NOT NULL DEFAULT 1.0,
+        last_reinforced     TEXT NOT NULL,
+        reinforcement_count INTEGER NOT NULL DEFAULT 1,
+        decay_rate          REAL NOT NULL DEFAULT ${DECAY.baseRate},
+        status              TEXT NOT NULL DEFAULT 'active',
+        created_at          TEXT NOT NULL,
+        created_session     TEXT,
+        source_mind         TEXT,
+        target_mind         TEXT,
+        FOREIGN KEY (source_fact_id) REFERENCES facts(id) ON DELETE CASCADE,
+        FOREIGN KEY (target_fact_id) REFERENCES facts(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_edges_source
+        ON edges(source_fact_id) WHERE status = 'active';
+      CREATE INDEX IF NOT EXISTS idx_edges_target
+        ON edges(target_fact_id) WHERE status = 'active';
+      CREATE INDEX IF NOT EXISTS idx_edges_relation
+        ON edges(relation) WHERE status = 'active';
     `);
 
     // FTS5 virtual table for full-text search
@@ -367,6 +416,7 @@ export class FactStore {
   ): ReinforcementResult {
     let reinforced = 0;
     let added = 0;
+    const newFactIds: string[] = [];
 
     const tx = this.db.transaction(() => {
       for (const action of actions) {
@@ -382,13 +432,14 @@ export class FactStore {
               this.reinforceFact(existing.id);
               reinforced++;
             } else {
-              this.storeFact({
+              const result = this.storeFact({
                 mind,
                 section: action.section,
                 content: action.content,
                 source: "extraction",
                 session,
               });
+              if (!result.duplicate) newFactIds.push(result.id);
               added++;
             }
             break;
@@ -404,7 +455,7 @@ export class FactStore {
           case "supersede": {
             // Explicit replacement
             if (action.id && action.content && action.section) {
-              this.storeFact({
+              const result = this.storeFact({
                 mind,
                 section: action.section,
                 content: action.content,
@@ -412,6 +463,7 @@ export class FactStore {
                 session,
                 supersedes: action.id,
               });
+              if (!result.duplicate) newFactIds.push(result.id);
               added++;
             }
             break;
@@ -428,7 +480,7 @@ export class FactStore {
     });
 
     tx();
-    return { reinforced, added };
+    return { reinforced, added, newFactIds };
   }
 
   /** Archive a fact */
@@ -447,6 +499,155 @@ export class FactStore {
        WHERE created_session = ? AND status = 'active'`
     ).run(now, session);
     return result.changes;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Edge CRUD
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Store an edge between two facts. Deduplicates by source+target+relation.
+   * If the same edge exists, reinforces it instead.
+   */
+  storeEdge(opts: {
+    sourceFact: string;
+    targetFact: string;
+    relation: string;
+    description: string;
+    session?: string;
+    sourceMind?: string;
+    targetMind?: string;
+  }): { id: string; duplicate: boolean } {
+    const now = new Date().toISOString();
+
+    // Dedup: same source, target, and relation
+    const existing = this.db.prepare(
+      `SELECT id FROM edges
+       WHERE source_fact_id = ? AND target_fact_id = ? AND relation = ? AND status = 'active'`
+    ).get(opts.sourceFact, opts.targetFact, opts.relation);
+
+    if (existing) {
+      this.reinforceEdge(existing.id);
+      return { id: existing.id, duplicate: true };
+    }
+
+    const id = nanoid();
+    this.db.prepare(`
+      INSERT INTO edges (id, source_fact_id, target_fact_id, relation, description,
+                         confidence, last_reinforced, reinforcement_count, decay_rate,
+                         status, created_at, created_session, source_mind, target_mind)
+      VALUES (?, ?, ?, ?, ?, 1.0, ?, 1, ?, 'active', ?, ?, ?, ?)
+    `).run(
+      id, opts.sourceFact, opts.targetFact, opts.relation, opts.description,
+      now, DECAY.baseRate, now, opts.session ?? null,
+      opts.sourceMind ?? null, opts.targetMind ?? null,
+    );
+
+    return { id, duplicate: false };
+  }
+
+  /** Reinforce an edge */
+  reinforceEdge(id: string): void {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      UPDATE edges
+      SET confidence = 1.0, last_reinforced = ?, reinforcement_count = reinforcement_count + 1
+      WHERE id = ?
+    `).run(now, id);
+  }
+
+  /** Archive an edge */
+  archiveEdge(id: string): void {
+    this.db.prepare(
+      `UPDATE edges SET status = 'archived' WHERE id = ?`
+    ).run(id);
+  }
+
+  /** Get active edges for a fact (both directions) */
+  getEdgesForFact(factId: string): Edge[] {
+    const edges = this.db.prepare(`
+      SELECT * FROM edges
+      WHERE (source_fact_id = ? OR target_fact_id = ?) AND status = 'active'
+    `).all(factId, factId) as Edge[];
+
+    return this.applyEdgeDecay(edges);
+  }
+
+  /** Get all active edges, optionally filtered by mind */
+  getActiveEdges(mind?: string): Edge[] {
+    let edges: Edge[];
+    if (mind) {
+      edges = this.db.prepare(`
+        SELECT * FROM edges
+        WHERE (source_mind = ? OR target_mind = ?) AND status = 'active'
+      `).all(mind, mind) as Edge[];
+    } else {
+      edges = this.db.prepare(
+        `SELECT * FROM edges WHERE status = 'active'`
+      ).all() as Edge[];
+    }
+    return this.applyEdgeDecay(edges);
+  }
+
+  /** Get a single edge by ID */
+  getEdge(id: string): Edge | null {
+    const edge = this.db.prepare(`SELECT * FROM edges WHERE id = ?`).get(id) as Edge | null;
+    if (edge) {
+      const [decayed] = this.applyEdgeDecay([edge]);
+      return decayed;
+    }
+    return null;
+  }
+
+  /** Apply confidence decay to edges (same math as facts) */
+  private applyEdgeDecay(edges: Edge[]): Edge[] {
+    const now = Date.now();
+    for (const edge of edges) {
+      const lastReinforced = new Date(edge.last_reinforced).getTime();
+      const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+      edge.confidence = computeConfidence(daysSince, edge.reinforcement_count);
+    }
+    return edges;
+  }
+
+  /**
+   * Process edge actions from global extraction.
+   * Handles connect and reinforce_edge action types.
+   */
+  processEdges(
+    actions: ExtractionAction[],
+    session?: string,
+  ): EdgeResult {
+    let added = 0;
+    let reinforced = 0;
+
+    const tx = this.db.transaction(() => {
+      for (const action of actions) {
+        if (action.type !== "connect") continue;
+        if (!action.source || !action.target || !action.relation) continue;
+
+        // Verify both facts exist
+        const sourceFact = this.getFact(action.source);
+        const targetFact = this.getFact(action.target);
+        if (!sourceFact || !targetFact) continue;
+
+        const result = this.storeEdge({
+          sourceFact: action.source,
+          targetFact: action.target,
+          relation: action.relation,
+          description: action.description ?? `${action.relation}: ${sourceFact.content.slice(0, 50)} → ${targetFact.content.slice(0, 50)}`,
+          session,
+          sourceMind: sourceFact.mind,
+          targetMind: targetFact.mind,
+        });
+
+        if (result.duplicate) reinforced++;
+        else added++;
+      }
+    });
+
+    tx();
+    return { added, reinforced };
   }
 
   // ---------------------------------------------------------------------------
@@ -604,6 +805,9 @@ export class FactStore {
       "Patterns & Conventions": "_Code style, project conventions, common approaches_",
     };
 
+    // Build a set of rendered fact IDs for edge lookup
+    const renderedFactIds = new Set<string>();
+
     for (const section of SECTIONS) {
       const sectionFacts = facts.filter(f => f.section === section);
       lines.push(`## ${section}`);
@@ -613,7 +817,34 @@ export class FactStore {
         for (const f of sectionFacts) {
           const date = f.created_at.split("T")[0];
           lines.push(`- ${f.content} [${date}]`);
+          renderedFactIds.add(f.id);
         }
+      }
+      lines.push("");
+    }
+
+    // Render edges between rendered facts
+    const allEdges = this.getActiveEdges();
+    const relevantEdges = allEdges.filter(
+      e => e.confidence >= minConfidence &&
+           (renderedFactIds.has(e.source_fact_id) || renderedFactIds.has(e.target_fact_id))
+    );
+
+    if (relevantEdges.length > 0) {
+      lines.push("## Connections");
+      lines.push("_Relationships between facts across domains_");
+      lines.push("");
+      for (const edge of relevantEdges) {
+        const sourceFact = this.getFact(edge.source_fact_id);
+        const targetFact = this.getFact(edge.target_fact_id);
+        if (!sourceFact || !targetFact) continue;
+        const srcLabel = sourceFact.content.length > 60
+          ? sourceFact.content.slice(0, 57) + "..."
+          : sourceFact.content;
+        const tgtLabel = targetFact.content.length > 60
+          ? targetFact.content.slice(0, 57) + "..."
+          : targetFact.content;
+        lines.push(`- ${srcLabel} **—${edge.relation}→** ${tgtLabel}`);
       }
       lines.push("");
     }
@@ -780,10 +1011,15 @@ export class FactStore {
 // --- Extraction action types ---
 
 export interface ExtractionAction {
-  type: "observe" | "reinforce" | "supersede" | "archive";
+  type: "observe" | "reinforce" | "supersede" | "archive" | "connect";
   id?: string;
   section?: SectionName;
   content?: string;
+  // connect-specific fields
+  source?: string;
+  target?: string;
+  relation?: string;
+  description?: string;
 }
 
 /**

@@ -23,6 +23,7 @@
  */
 
 import * as path from "node:path";
+import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext, ExtensionCommandContext, SessionMessageEntry } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -35,7 +36,7 @@ import {
   createTriggerState,
   shouldExtract,
 } from "./triggers.js";
-import { runExtractionV2, formatFactsForExtraction } from "./extraction-v2.js";
+import { runExtractionV2, runGlobalExtraction, formatFactsForExtraction, formatGlobalExtractionInput } from "./extraction-v2.js";
 import { migrateToFactStore, needsMigration, markMigrated } from "./migration.js";
 import { SECTIONS } from "./template.js";
 import { serializeConversation, convertToLlm } from "@mariozechner/pi-coding-agent";
@@ -50,6 +51,7 @@ function sanitizeMindName(input: string): string | null {
 
 export default function (pi: ExtensionAPI) {
   let store: FactStore | null = null;
+  let globalStore: FactStore | null = null;
   let triggerState: ExtractionTriggerState = createTriggerState();
   let postCompaction = false;
   let firstTurn = true;
@@ -58,6 +60,7 @@ export default function (pi: ExtensionAPI) {
   let sessionActive = false;
   let consecutiveExtractionFailures = 0;
   let memoryDir = "";
+  const globalMemoryDir = path.join(os.homedir(), ".pi", "memory");
 
   /** Get the active mind name (null = default) */
   function activeMind(): string {
@@ -85,6 +88,12 @@ export default function (pi: ExtensionAPI) {
       }
     } else {
       store = new FactStore(memoryDir);
+    }
+
+    // Initialize global store (user-level, shared across projects)
+    // Skip if project memory IS the global path (e.g., working from ~/)
+    if (path.resolve(memoryDir) !== path.resolve(globalMemoryDir)) {
+      globalStore = new FactStore(globalMemoryDir);
     }
 
     // Ensure .gitignore covers memory/
@@ -124,18 +133,18 @@ export default function (pi: ExtensionAPI) {
       });
       await Promise.race([activeExtractionPromise, timeout]);
       if (timeoutId) clearTimeout(timeoutId);
-      store?.close();
+      store?.close(); globalStore?.close();
       return;
     }
 
     if (!store) return;
     const usage = ctx.getContextUsage();
-    if (!usage) { store.close(); return; }
+    if (!usage) { store.close(); globalStore?.close(); return; }
 
     const hasActivity = triggerState.toolCallsSinceExtract >= 2 ||
       (usage.tokens - triggerState.lastExtractedTokens) >= config.minimumTokensBetweenUpdate;
 
-    if (!hasActivity) { store.close(); return; }
+    if (!hasActivity) { store.close(); globalStore?.close(); return; }
 
     if (ctx.hasUI) {
       ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", "saving memory…"));
@@ -150,7 +159,7 @@ export default function (pi: ExtensionAPI) {
       // Best-effort
     } finally {
       triggerState.isRunning = false;
-      store?.close();
+      store?.close(); globalStore?.close();
     }
   });
 
@@ -199,7 +208,44 @@ export default function (pi: ExtensionAPI) {
 
     const actions = parseExtractionOutput(rawOutput);
     if (actions.length > 0) {
-      store.processExtraction(mind, actions);
+      const result = store.processExtraction(mind, actions);
+
+      // Phase 2: Global extraction — if new facts were created and global store exists
+      if (result.newFactIds.length > 0 && globalStore) {
+        try {
+          const newFacts = result.newFactIds
+            .map(id => store!.getFact(id))
+            .filter((f): f is NonNullable<typeof f> => f !== null);
+
+          if (newFacts.length > 0) {
+            const globalMind = globalStore.getActiveMind() ?? "default";
+            const globalFacts = globalStore.getActiveFacts(globalMind);
+            const globalEdges = globalStore.getActiveEdges();
+
+            const globalRawOutput = await runGlobalExtraction(
+              ctx.cwd, newFacts, globalFacts, globalEdges, cfg,
+            );
+
+            if (globalRawOutput.trim()) {
+              const globalActions = parseExtractionOutput(globalRawOutput);
+              const factActions = globalActions.filter(a => a.type !== "connect");
+              const edgeActions = globalActions.filter(a => a.type === "connect");
+
+              if (factActions.length > 0) {
+                globalStore.processExtraction(globalMind, factActions);
+              }
+              if (edgeActions.length > 0) {
+                globalStore.processEdges(edgeActions);
+              }
+            }
+          }
+        } catch (err) {
+          // Global extraction is best-effort — don't fail the whole cycle
+          if (ctx.hasUI) {
+            ctx.ui.notify(`Global extraction failed: ${(err as Error).message}`, "warning");
+          }
+        }
+      }
     }
 
     updateStatus(ctx);
@@ -235,6 +281,17 @@ export default function (pi: ExtensionAPI) {
 
     const rendered = store.renderForInjection(mind);
 
+    // Include global knowledge if available
+    let globalSection = "";
+    if (globalStore) {
+      const globalMind = globalStore.getActiveMind() ?? "default";
+      const globalFactCount = globalStore.countActiveFacts(globalMind);
+      if (globalFactCount > 0) {
+        const globalRendered = globalStore.renderForInjection(globalMind, { maxFacts: 30 });
+        globalSection = `\n\n<!-- Global Knowledge — cross-project facts and connections -->\n${globalRendered}`;
+      }
+    }
+
     return {
       message: {
         customType: "project-memory",
@@ -244,6 +301,7 @@ export default function (pi: ExtensionAPI) {
           "Use **memory_store** to persist important discoveries (architecture decisions, constraints, patterns, known issues).",
           "Use **memory_search_archive** to search older archived facts.\n\n",
           rendered,
+          globalSection,
         ].join(" "),
         display: false,
       },
@@ -404,6 +462,64 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: formatted }],
         details: { totalMatches: results.length },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_connect",
+    label: "Connect Facts",
+    description: [
+      "Create a directional relationship (edge) between two facts in the global knowledge base.",
+      "Use when you identify meaningful connections between facts — dependencies, contradictions,",
+      "generalizations, or causal relationships. Search for facts first to get their IDs.",
+      "The relation is a short verb phrase describing the relationship from source to target.",
+      "Common patterns: runs_on, depends_on, motivated_by, contradicts, enables, generalizes,",
+      "instance_of, requires, conflicts_with, replaces, preceded_by.",
+    ].join(" "),
+    parameters: Type.Object({
+      source_fact_id: Type.String({ description: "ID of the source fact" }),
+      target_fact_id: Type.String({ description: "ID of the target fact" }),
+      relation: Type.String({ description: "Short verb phrase: runs_on, depends_on, contradicts, etc." }),
+      description: Type.String({ description: "Human-readable description of why these facts are connected" }),
+    }),
+    async execute(_toolCallId, params) {
+      // Use global store if available, fall back to project store
+      const edgeStore = globalStore ?? store;
+      if (!edgeStore) {
+        return { content: [{ type: "text", text: "Memory not initialized." }], isError: true };
+      }
+
+      // Verify both facts exist (check both stores)
+      const sourceFact = store?.getFact(params.source_fact_id) ?? globalStore?.getFact(params.source_fact_id);
+      const targetFact = store?.getFact(params.target_fact_id) ?? globalStore?.getFact(params.target_fact_id);
+
+      if (!sourceFact) {
+        return { content: [{ type: "text", text: `Source fact not found: ${params.source_fact_id}` }], isError: true };
+      }
+      if (!targetFact) {
+        return { content: [{ type: "text", text: `Target fact not found: ${params.target_fact_id}` }], isError: true };
+      }
+
+      const result = edgeStore.storeEdge({
+        sourceFact: params.source_fact_id,
+        targetFact: params.target_fact_id,
+        relation: params.relation,
+        description: params.description,
+        sourceMind: sourceFact.mind,
+        targetMind: targetFact.mind,
+      });
+
+      if (result.duplicate) {
+        return {
+          content: [{ type: "text", text: `Reinforced existing connection: ${sourceFact.content.slice(0, 50)} --${params.relation}--> ${targetFact.content.slice(0, 50)}` }],
+          details: { id: result.id, reinforced: true },
+        };
+      }
+
+      return {
+        content: [{ type: "text", text: `Connected: ${sourceFact.content.slice(0, 50)} --${params.relation}--> ${targetFact.content.slice(0, 50)}` }],
+        details: { id: result.id, source: params.source_fact_id, target: params.target_fact_id, relation: params.relation },
       };
     },
   });
