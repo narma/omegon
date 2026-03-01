@@ -119,7 +119,7 @@ Only providers with configured API keys are available.`,
         return {
           content: [{
             type: "text",
-            text: "No search providers configured. Set API keys in ~/.pi/agent/extensions/web-search/.env\nRequired: BRAVE_API_KEY, TAVILY_API_KEY, and/or SERPER_API_KEY",
+            text: "No search providers configured. Create a .env file in the web-search extension directory.\nRequired: BRAVE_API_KEY, TAVILY_API_KEY, and/or SERPER_API_KEY\nSee .env.example for reference.",
           }],
           details: { error: true },
         };

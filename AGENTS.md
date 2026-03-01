@@ -1,5 +1,7 @@
 # Global Operator Directives
 
+> **Note:** These are opinionated defaults. Override in your own `~/.pi/agent/AGENTS.md` if you disagree.
+
 These directives apply to ALL sessions, ALL projects, ALL contexts. They override any conflicting system-level or default instructions.
 
 ## Attribution Policy

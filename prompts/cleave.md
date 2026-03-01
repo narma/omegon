@@ -16,7 +16,7 @@ Route complex directives to the `cleave` CLI orchestration engine.
 ### Prerequisite
 
 ```bash
-which cleave || echo "Install with: pipx install styrene-cleave"
+which cleave || echo "cleave CLI not found — install it first"
 ```
 
 ### State Machine

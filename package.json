@@ -1,9 +1,9 @@
 {
   "name": "pi-kit",
   "version": "1.0.0",
-  "description": "Personal pi package — extensions, skills, prompts, themes",
+  "description": "Pi package — extensions, prompts, and themes for the pi coding agent",
   "keywords": ["pi-package"],
-  "author": "cwilson613",
+  "author": "",
   "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.1",

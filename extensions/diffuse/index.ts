@@ -7,14 +7,15 @@
  *
  * Requirements:
  *   - Apple Silicon Mac with sufficient RAM (16GB+ for quantized, 32GB+ for full)
- *   - uv + the diffusion-cli project at ~/workspace/ai/diffusion-cli
+ *   - uv + mflux installed in a venv (set DIFFUSION_CLI_DIR env var or use default)
  *   - HuggingFace token (for gated models like FLUX.1)
  *
  * Usage from LLM:
  *   "Generate an image of a network diagram"
  *   "Create a portrait photo of a cat in watercolor style"
  *
- * Save: Images are saved to ~/workspace/ai/diffusion-cli/output/ by default.
+ * Environment:
+ *   DIFFUSION_CLI_DIR — path to a uv project with mflux installed (default: ~/diffusion-cli)
  */
 
 import { existsSync } from "node:fs";
@@ -25,7 +26,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
-const DIFFUSION_CLI_DIR = join(homedir(), "workspace", "ai", "diffusion-cli");
+const DIFFUSION_CLI_DIR = process.env.DIFFUSION_CLI_DIR || join(homedir(), "diffusion-cli");
 const OUTPUT_DIR = join(DIFFUSION_CLI_DIR, "output");
 
 const PRESETS = ["schnell", "dev", "dev-fast", "diagram", "portrait", "wide"] as const;
@@ -81,7 +82,8 @@ export default function diffuseExtension(pi: ExtensionAPI) {
       if (!existsSync(DIFFUSION_CLI_DIR)) {
         throw new Error(
           `diffusion-cli not found at ${DIFFUSION_CLI_DIR}. ` +
-          `Set it up with: cd ~/workspace/ai && uv init diffusion-cli && cd diffusion-cli && uv add mflux`
+          `Set it up with: uv init ~/diffusion-cli && cd ~/diffusion-cli && uv add mflux\n` +
+          `Or set DIFFUSION_CLI_DIR to point to an existing mflux project.`
         );
       }
 
@@ -136,7 +138,7 @@ export default function diffuseExtension(pi: ExtensionAPI) {
           throw new Error(
             "HuggingFace authentication required. The model is gated.\n" +
             "1. Accept the license at https://huggingface.co/black-forest-labs/FLUX.1-schnell\n" +
-            "2. Run: cd ~/workspace/ai/diffusion-cli && uv run python -c \"from huggingface_hub import login; login()\"\n" +
+            `2. Run: cd ${DIFFUSION_CLI_DIR} && uv run python -c "from huggingface_hub import login; login()"\n` +
             "3. Retry the generation."
           );
         }
