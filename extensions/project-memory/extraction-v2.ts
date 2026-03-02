@@ -347,3 +347,59 @@ export async function runGlobalExtraction(
     label: "Global extraction",
   });
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: Episode generation
+// ---------------------------------------------------------------------------
+
+const EPISODE_PROMPT = `You are a session narrator. You receive the tail of a coding session conversation.
+Your job: produce a JSON object summarizing what happened.
+
+Output format (MUST be valid JSON, nothing else):
+{"title":"<Short title, 5-10 words>","narrative":"<2-4 sentence summary: what was the goal, what was accomplished, what decisions were made, what's still open>"}
+
+RULES:
+- Title should be specific and descriptive (e.g., "Migrated auth from JWT to OIDC" not "Working on auth")
+- Narrative should capture the ARC: goal → actions → outcome → open threads
+- Focus on decisions and outcomes, not mechanical steps
+- Keep narrative under 300 words
+- Output ONLY the JSON object. No markdown, no commentary.`;
+
+export interface EpisodeOutput {
+  title: string;
+  narrative: string;
+}
+
+/**
+ * Generate a session episode summary from recent conversation.
+ * Returns null if generation fails or produces invalid output.
+ */
+export async function generateEpisode(
+  cwd: string,
+  recentConversation: string,
+  config: MemoryConfig,
+): Promise<EpisodeOutput | null> {
+  try {
+    const raw = await spawnExtraction({
+      cwd,
+      model: config.extractionModel,
+      systemPrompt: EPISODE_PROMPT,
+      userMessage: `Session conversation:\n\n${recentConversation}\n\nOutput the episode JSON.`,
+      timeout: config.shutdownExtractionTimeout,
+      label: "Episode generation",
+    });
+
+    if (!raw.trim()) return null;
+
+    // Strip any markdown code fences
+    const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```\s*$/, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    if (parsed.title && parsed.narrative) {
+      return { title: parsed.title, narrative: parsed.narrative };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}

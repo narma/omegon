@@ -151,6 +151,16 @@ export interface ReinforcementResult {
   newFactIds: string[];
 }
 
+export interface Episode {
+  id: string;
+  mind: string;
+  title: string;
+  narrative: string;
+  date: string;
+  session_id: string | null;
+  created_at: string;
+}
+
 export interface Edge {
   id: string;
   source_fact_id: string;
@@ -352,6 +362,57 @@ export class FactStore {
         END;
       `);
     }
+
+    // Vector embeddings table for semantic retrieval
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS facts_vec (
+        fact_id    TEXT PRIMARY KEY,
+        embedding  BLOB NOT NULL,
+        model      TEXT NOT NULL,
+        dims       INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (fact_id) REFERENCES facts(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Episode table for session narratives
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS episodes (
+        id          TEXT PRIMARY KEY,
+        mind        TEXT NOT NULL DEFAULT 'default',
+        title       TEXT NOT NULL,
+        narrative   TEXT NOT NULL,
+        date        TEXT NOT NULL,
+        session_id  TEXT,
+        created_at  TEXT NOT NULL,
+        FOREIGN KEY (mind) REFERENCES minds(name) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS episode_facts (
+        episode_id TEXT NOT NULL,
+        fact_id    TEXT NOT NULL,
+        PRIMARY KEY (episode_id, fact_id),
+        FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+        FOREIGN KEY (fact_id) REFERENCES facts(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_episodes_mind
+        ON episodes(mind, date DESC);
+      CREATE INDEX IF NOT EXISTS idx_episodes_date
+        ON episodes(date DESC);
+    `);
+
+    // Vector table for episode embeddings
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS episodes_vec (
+        episode_id TEXT PRIMARY KEY,
+        embedding  BLOB NOT NULL,
+        model      TEXT NOT NULL,
+        dims       INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
+      );
+    `);
 
     // Ensure 'default' mind exists
     const defaultMind = this.db.prepare(`SELECT 1 FROM minds WHERE name = 'default'`).get();
@@ -906,6 +967,44 @@ export class FactStore {
     return lines.join("\n");
   }
 
+  /**
+   * Render an arbitrary list of facts as Markdown-KV.
+   * Unlike renderForInjection, this doesn't query the DB — it formats what you give it.
+   */
+  renderFactList(facts: Fact[], opts?: { showIds?: boolean; includeEdges?: boolean }): string {
+    const showIds = opts?.showIds ?? false;
+
+    const lines: string[] = [
+      "<!-- Project Memory — managed by project-memory extension -->",
+      "",
+    ];
+
+    const sectionDescriptions: Record<string, string> = {
+      Architecture: "_System structure, component relationships, key abstractions_",
+      Decisions: "_Choices made and their rationale_",
+      Constraints: "_Requirements, limitations, environment details_",
+      "Known Issues": "_Bugs, flaky tests, workarounds_",
+      "Patterns & Conventions": "_Code style, project conventions, common approaches_",
+      Specs: "_Active specifications, acceptance criteria, and design contracts driving current work_",
+    };
+
+    // Group by section, maintaining SECTIONS order
+    for (const section of SECTIONS) {
+      const sectionFacts = facts.filter(f => f.section === section);
+      if (sectionFacts.length === 0) continue;
+      lines.push(`## ${section}`);
+      lines.push(sectionDescriptions[section] ?? "");
+      lines.push("");
+      for (const f of sectionFacts) {
+        const date = f.created_at.split("T")[0];
+        lines.push(showIds ? `- [${f.id}] ${f.content} [${date}]` : `- ${f.content} [${date}]`);
+      }
+      lines.push("");
+    }
+
+    return lines.join("\n");
+  }
+
   // ---------------------------------------------------------------------------
   // Mind management
   // ---------------------------------------------------------------------------
@@ -1254,6 +1353,310 @@ export class FactStore {
     } catch {
       return null;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Vector Embeddings — Semantic Retrieval
+  // ---------------------------------------------------------------------------
+
+  /** Store an embedding for a fact */
+  storeFactVector(factId: string, embedding: Float32Array, model: string): void {
+    const blob = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT OR REPLACE INTO facts_vec (fact_id, embedding, model, dims, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(factId, blob, model, embedding.length, now);
+  }
+
+  /** Get embedding for a fact */
+  getFactVector(factId: string): Float32Array | null {
+    const row = this.db.prepare(
+      `SELECT embedding FROM facts_vec WHERE fact_id = ?`
+    ).get(factId);
+    if (!row?.embedding) return null;
+    const buf = row.embedding as Buffer;
+    const aligned = new ArrayBuffer(buf.length);
+    new Uint8Array(aligned).set(buf);
+    return new Float32Array(aligned);
+  }
+
+  /** Check if a fact has a stored vector */
+  hasFactVector(factId: string): boolean {
+    return !!this.db.prepare(
+      `SELECT 1 FROM facts_vec WHERE fact_id = ?`
+    ).get(factId);
+  }
+
+  /** Get all fact IDs that are missing vectors */
+  getFactsMissingVectors(mind: string): string[] {
+    const rows = this.db.prepare(`
+      SELECT f.id FROM facts f
+      LEFT JOIN facts_vec v ON f.id = v.fact_id
+      WHERE f.mind = ? AND f.status = 'active' AND v.fact_id IS NULL
+    `).all(mind) as { id: string }[];
+    return rows.map(r => r.id);
+  }
+
+  /** Count facts with vectors for a mind */
+  countFactVectors(mind: string): number {
+    const row = this.db.prepare(`
+      SELECT COUNT(*) as count FROM facts_vec v
+      JOIN facts f ON v.fact_id = f.id
+      WHERE f.mind = ? AND f.status = 'active'
+    `).get(mind);
+    return row?.count ?? 0;
+  }
+
+  /**
+   * Semantic search: find top-k active facts most similar to a query vector.
+   * Returns facts with similarity scores, filtered by mind and min confidence.
+   * Applies confidence decay and computes final score as similarity × confidence.
+   */
+  semanticSearch(
+    queryVec: Float32Array,
+    mind: string,
+    opts?: { k?: number; minSimilarity?: number; section?: string },
+  ): (Fact & { similarity: number; score: number })[] {
+    const k = opts?.k ?? 10;
+    const minSim = opts?.minSimilarity ?? 0.3;
+
+    // Get all active facts with vectors for this mind
+    let query = `
+      SELECT f.*, v.embedding FROM facts f
+      JOIN facts_vec v ON f.id = v.fact_id
+      WHERE f.mind = ? AND f.status = 'active'
+    `;
+    const params: any[] = [mind];
+
+    if (opts?.section) {
+      query += ` AND f.section = ?`;
+      params.push(opts.section);
+    }
+
+    const rows = this.db.prepare(query).all(...params) as (Fact & { embedding: Buffer })[];
+
+    // Compute similarities
+    const NO_DECAY_SECTIONS: readonly string[] = ["Specs"];
+    const now = Date.now();
+    const scored: (Fact & { similarity: number; score: number })[] = [];
+
+    for (const row of rows) {
+      // Deserialize vector
+      const buf = row.embedding as Buffer;
+      const aligned = new ArrayBuffer(buf.length);
+      new Uint8Array(aligned).set(buf);
+      const factVec = new Float32Array(aligned);
+
+      // Cosine similarity
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < queryVec.length; i++) {
+        dot += queryVec[i] * factVec[i];
+        normA += queryVec[i] * queryVec[i];
+        normB += factVec[i] * factVec[i];
+      }
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      const similarity = denom === 0 ? 0 : dot / denom;
+
+      if (similarity < minSim) continue;
+
+      // Apply confidence decay
+      let confidence: number;
+      if (NO_DECAY_SECTIONS.includes(row.section)) {
+        confidence = 1.0;
+      } else {
+        const lastReinforced = new Date(row.last_reinforced).getTime();
+        const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+        confidence = computeConfidence(daysSince, row.reinforcement_count, this.decayProfile);
+      }
+
+      // Remove embedding from returned object
+      const { embedding: _, ...fact } = row;
+      scored.push({
+        ...fact,
+        confidence,
+        similarity,
+        score: similarity * confidence,
+      });
+    }
+
+    // Sort by combined score descending, return top-k
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, k);
+  }
+
+  /**
+   * Find facts similar to a given fact (for conflict detection).
+   * Returns facts in the same section with high similarity but different content hash.
+   */
+  findSimilarFacts(
+    factContent: string,
+    queryVec: Float32Array,
+    mind: string,
+    section: string,
+    opts?: { threshold?: number; limit?: number },
+  ): (Fact & { similarity: number })[] {
+    const threshold = opts?.threshold ?? 0.8;
+    const limit = opts?.limit ?? 5;
+    const contentHashVal = contentHash(factContent);
+
+    const rows = this.db.prepare(`
+      SELECT f.*, v.embedding FROM facts f
+      JOIN facts_vec v ON f.id = v.fact_id
+      WHERE f.mind = ? AND f.section = ? AND f.status = 'active'
+        AND f.content_hash != ?
+    `).all(mind, section, contentHashVal) as (Fact & { embedding: Buffer })[];
+
+    const results: (Fact & { similarity: number })[] = [];
+
+    for (const row of rows) {
+      const buf = row.embedding as Buffer;
+      const aligned = new ArrayBuffer(buf.length);
+      new Uint8Array(aligned).set(buf);
+      const factVec = new Float32Array(aligned);
+
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < queryVec.length; i++) {
+        dot += queryVec[i] * factVec[i];
+        normA += queryVec[i] * queryVec[i];
+        normB += factVec[i] * factVec[i];
+      }
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      const similarity = denom === 0 ? 0 : dot / denom;
+
+      if (similarity >= threshold) {
+        const { embedding: _, ...fact } = row;
+        results.push({ ...fact, similarity });
+      }
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, limit);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Episodes — Session Narratives
+  // ---------------------------------------------------------------------------
+
+  /** Store an episode */
+  storeEpisode(opts: {
+    mind: string;
+    title: string;
+    narrative: string;
+    date: string;
+    sessionId?: string;
+    factIds?: string[];
+  }): string {
+    const id = nanoid();
+    const now = new Date().toISOString();
+
+    const tx = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT INTO episodes (id, mind, title, narrative, date, session_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, opts.mind, opts.title, opts.narrative, opts.date, opts.sessionId ?? null, now);
+
+      if (opts.factIds?.length) {
+        const stmt = this.db.prepare(
+          `INSERT OR IGNORE INTO episode_facts (episode_id, fact_id) VALUES (?, ?)`
+        );
+        for (const factId of opts.factIds) {
+          stmt.run(id, factId);
+        }
+      }
+    });
+    tx();
+    return id;
+  }
+
+  /** Get episodes for a mind, ordered by date descending */
+  getEpisodes(mind: string, limit?: number): Episode[] {
+    const sql = `SELECT * FROM episodes WHERE mind = ? ORDER BY date DESC` +
+      (limit ? ` LIMIT ${limit}` : "");
+    return this.db.prepare(sql).all(mind) as Episode[];
+  }
+
+  /** Get a single episode by ID */
+  getEpisode(id: string): Episode | null {
+    return this.db.prepare(`SELECT * FROM episodes WHERE id = ?`).get(id) as Episode | null;
+  }
+
+  /** Get fact IDs linked to an episode */
+  getEpisodeFactIds(episodeId: string): string[] {
+    const rows = this.db.prepare(
+      `SELECT fact_id FROM episode_facts WHERE episode_id = ?`
+    ).all(episodeId) as { fact_id: string }[];
+    return rows.map(r => r.fact_id);
+  }
+
+  /** Get episodes that reference a specific fact */
+  getEpisodesForFact(factId: string): Episode[] {
+    return this.db.prepare(`
+      SELECT e.* FROM episodes e
+      JOIN episode_facts ef ON e.id = ef.episode_id
+      WHERE ef.fact_id = ?
+      ORDER BY e.date DESC
+    `).all(factId) as Episode[];
+  }
+
+  /** Store an episode embedding */
+  storeEpisodeVector(episodeId: string, embedding: Float32Array, model: string): void {
+    const blob = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT OR REPLACE INTO episodes_vec (episode_id, embedding, model, dims, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(episodeId, blob, model, embedding.length, now);
+  }
+
+  /** Semantic search over episodes */
+  semanticSearchEpisodes(
+    queryVec: Float32Array,
+    mind: string,
+    opts?: { k?: number; minSimilarity?: number },
+  ): (Episode & { similarity: number })[] {
+    const k = opts?.k ?? 5;
+    const minSim = opts?.minSimilarity ?? 0.3;
+
+    const rows = this.db.prepare(`
+      SELECT e.*, v.embedding FROM episodes e
+      JOIN episodes_vec v ON e.id = v.episode_id
+      WHERE e.mind = ?
+    `).all(mind) as (Episode & { embedding: Buffer })[];
+
+    const results: (Episode & { similarity: number })[] = [];
+
+    for (const row of rows) {
+      const buf = row.embedding as Buffer;
+      const aligned = new ArrayBuffer(buf.length);
+      new Uint8Array(aligned).set(buf);
+      const vec = new Float32Array(aligned);
+
+      let dot = 0, normA = 0, normB = 0;
+      for (let i = 0; i < queryVec.length; i++) {
+        dot += queryVec[i] * vec[i];
+        normA += queryVec[i] * queryVec[i];
+        normB += vec[i] * vec[i];
+      }
+      const denom = Math.sqrt(normA) * Math.sqrt(normB);
+      const similarity = denom === 0 ? 0 : dot / denom;
+
+      if (similarity >= minSim) {
+        const { embedding: _, ...episode } = row;
+        results.push({ ...episode, similarity });
+      }
+    }
+
+    results.sort((a, b) => b.similarity - a.similarity);
+    return results.slice(0, k);
+  }
+
+  /** Count episodes for a mind */
+  countEpisodes(mind: string): number {
+    const row = this.db.prepare(
+      `SELECT COUNT(*) as count FROM episodes WHERE mind = ?`
+    ).get(mind);
+    return row?.count ?? 0;
   }
 
   // ---------------------------------------------------------------------------

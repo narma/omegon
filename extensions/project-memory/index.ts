@@ -1,25 +1,41 @@
 /**
- * Project Memory Extension — v2 (SQLite-backed)
+ * Project Memory Extension — v3 (Hippocampus)
  *
  * Persistent, cross-session project knowledge stored in SQLite with
- * confidence-decay reinforcement. Facts that aren't encountered in
- * sessions gradually fade; facts that keep appearing grow more durable.
+ * confidence-decay reinforcement, semantic retrieval via local embeddings,
+ * episodic session narratives, and working memory.
  *
  * Storage: .pi/memory/facts.db (SQLite with WAL mode)
+ * Vectors: facts_vec / episodes_vec tables (Float32 BLOBs via Ollama embeddings)
  * Rendering: Active facts → Markdown-KV for LLM context injection
  *
  * Tools:
- *   memory_query          — Read active memory (rendered Markdown-KV)
- *   memory_store          — Explicitly add a fact
+ *   memory_query          — Read all active memory (full dump, rendered Markdown-KV)
+ *   memory_recall         — Semantic search over active facts (targeted retrieval)
+ *   memory_store          — Add a fact (with conflict detection)
+ *   memory_supersede      — Replace a fact atomically
  *   memory_archive        — Archive stale/redundant facts by ID
- *   memory_search_archive — Search all facts (including archived/superseded)
+ *   memory_search_archive — FTS keyword search over archived facts
+ *   memory_connect        — Create relationships between facts
  *   memory_compact        — Trigger context compaction + memory reload
+ *   memory_episodes       — Search session narratives (episodic memory)
+ *   memory_focus          — Pin facts to working memory
+ *   memory_release        — Clear working memory
+ *
+ * Cognitive features:
+ *   - Semantic retrieval via local embeddings (Ollama qwen3-embedding)
+ *   - Contextual auto-injection (relevant facts only, not full dump)
+ *   - Working memory buffer (pinned facts survive compaction)
+ *   - Conflict detection at store time (flags similar but not identical facts)
+ *   - Episodic memory (session narratives generated at shutdown)
+ *   - Background vector indexing (embeds facts async on session start)
  *
  * Commands:
  *   /memory               — Interactive mind manager
  *   /memory edit           — Edit current mind in editor
  *   /memory refresh        — Re-evaluate and prune memory
  *   /memory clear          — Reset current mind
+ *   /memory stats          — Show memory statistics
  *
  * Background extraction via subagent outputs JSONL actions.
  */
@@ -31,14 +47,15 @@ import { DynamicBorder } from "@mariozechner/pi-coding-agent";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
-import { FactStore, parseExtractionOutput, GLOBAL_DECAY, type MindRecord } from "./factstore.js";
+import { FactStore, parseExtractionOutput, GLOBAL_DECAY, type MindRecord, type Fact } from "./factstore.js";
+import { embed, isEmbeddingAvailable } from "./embeddings.js";
 import { DEFAULT_CONFIG, type MemoryConfig } from "./types.js";
 import {
   type ExtractionTriggerState,
   createTriggerState,
   shouldExtract,
 } from "./triggers.js";
-import { runExtractionV2, runGlobalExtraction, killActiveExtraction } from "./extraction-v2.js";
+import { runExtractionV2, runGlobalExtraction, killActiveExtraction, generateEpisode } from "./extraction-v2.js";
 import { migrateToFactStore, needsMigration, markMigrated } from "./migration.js";
 import { SECTIONS } from "./template.js";
 import { serializeConversation, convertToLlm } from "@mariozechner/pi-coding-agent";
@@ -64,6 +81,15 @@ export default function (pi: ExtensionAPI) {
   let memoryDir = "";
   const globalMemoryDir = path.join(os.homedir(), ".pi", "memory");
 
+  // --- Embedding / Semantic Retrieval State ---
+  let embeddingAvailable = false;
+  let embeddingModel: string | undefined;
+
+  // --- Working Memory Buffer (session-scoped) ---
+  /** Fact IDs the agent has explicitly recalled or stored this session */
+  const workingMemory = new Set<string>();
+  const WORKING_MEMORY_CAP = 25;
+
   /** Get the active mind name (null = default) */
   function activeMind(): string {
     return store?.getActiveMind() ?? "default";
@@ -72,6 +98,83 @@ export default function (pi: ExtensionAPI) {
   function activeLabel(): string {
     const mind = store?.getActiveMind();
     return mind ?? "default";
+  }
+
+  // --- Embedding Helpers ---
+
+  /** Embed a single text, returning the vector or null if unavailable */
+  async function embedText(text: string): Promise<Float32Array | null> {
+    if (!embeddingAvailable) return null;
+    const result = await embed(text, { model: embeddingModel });
+    return result?.embedding ?? null;
+  }
+
+  /**
+   * Embed a fact and store its vector. Returns true if successful.
+   * No-op if embeddings are unavailable or fact already has a vector.
+   */
+  async function embedFact(factId: string): Promise<boolean> {
+    if (!embeddingAvailable || !store) return false;
+    if (store.hasFactVector(factId)) return true;
+    const fact = store.getFact(factId);
+    if (!fact || fact.status !== "active") return false;
+    const result = await embed(
+      `[${fact.section}] ${fact.content}`,
+      { model: embeddingModel },
+    );
+    if (!result) return false;
+    store.storeFactVector(factId, result.embedding, result.model);
+    return true;
+  }
+
+  /**
+   * Background index: embed all active facts missing vectors.
+   * Runs async, doesn't block session. Reports progress via status bar.
+   */
+  async function backgroundIndexFacts(ctx: ExtensionContext): Promise<void> {
+    if (!embeddingAvailable || !store) return;
+    const mind = activeMind();
+    const missing = store.getFactsMissingVectors(mind);
+    if (missing.length === 0) return;
+
+    let indexed = 0;
+    for (const factId of missing) {
+      if (!sessionActive) break; // Stop if session is shutting down
+      const ok = await embedFact(factId);
+      if (ok) indexed++;
+    }
+
+    // Also index global store facts
+    if (globalStore) {
+      const globalMind = globalStore.getActiveMind() ?? "default";
+      const globalMissing = globalStore.getFactsMissingVectors(globalMind);
+      for (const factId of globalMissing) {
+        if (!sessionActive) break;
+        const fact = globalStore.getFact(factId);
+        if (!fact || fact.status !== "active") continue;
+        const result = await embed(
+          `[${fact.section}] ${fact.content}`,
+          { model: embeddingModel },
+        );
+        if (result) {
+          globalStore.storeFactVector(factId, result.embedding, result.model);
+        }
+      }
+    }
+  }
+
+  /** Add fact IDs to working memory, evicting oldest if over cap */
+  function addToWorkingMemory(...ids: string[]): void {
+    for (const id of ids) {
+      // If already present, remove and re-add to refresh position
+      workingMemory.delete(id);
+      workingMemory.add(id);
+    }
+    // Evict oldest if over cap
+    while (workingMemory.size > WORKING_MEMORY_CAP) {
+      const oldest = workingMemory.values().next().value;
+      if (oldest) workingMemory.delete(oldest);
+    }
   }
 
   // --- Lifecycle ---
@@ -172,6 +275,21 @@ export default function (pi: ExtensionAPI) {
     activeExtractionPromise = null;
     sessionActive = true;
     consecutiveExtractionFailures = 0;
+    workingMemory.clear();
+
+    // Detect embedding availability and start background indexing
+    try {
+      const embedStatus = await isEmbeddingAvailable();
+      embeddingAvailable = embedStatus.available;
+      embeddingModel = embedStatus.model;
+      if (embeddingAvailable) {
+        // Fire-and-forget background indexing — don't block session start
+        backgroundIndexFacts(ctx).catch(() => {});
+      }
+    } catch {
+      embeddingAvailable = false;
+    }
+
     updateStatus(ctx);
   });
 
@@ -191,6 +309,52 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", "saving memory…"));
       }
       try { await activeExtractionPromise; } catch { /* expected after kill */ }
+    }
+
+    // Generate session episode before export
+    if (store) {
+      try {
+        const mind = activeMind();
+        const branch = ctx.sessionManager.getBranch();
+        const messages = branch
+          .filter((e): e is SessionMessageEntry => e.type === "message")
+          .map((e) => e.message);
+
+        // Only generate an episode if we had meaningful conversation (>5 messages)
+        if (messages.length > 5) {
+          const recentMessages = messages.slice(-20);
+          const serialized = serializeConversation(convertToLlm(recentMessages));
+
+          // Get fact IDs created/modified this session (from working memory as proxy)
+          const sessionFactIds = [...workingMemory];
+
+          try {
+            const episodeOutput = await generateEpisode(ctx.cwd, serialized, config);
+            if (episodeOutput) {
+              const today = new Date().toISOString().split("T")[0];
+              const episodeId = store.storeEpisode({
+                mind,
+                title: episodeOutput.title,
+                narrative: episodeOutput.narrative,
+                date: today,
+                factIds: sessionFactIds.filter(id => store!.getFact(id)?.status === "active"),
+              });
+
+              // Embed the episode for semantic retrieval
+              if (embeddingAvailable) {
+                const vec = await embedText(`${episodeOutput.title} ${episodeOutput.narrative}`);
+                if (vec) {
+                  store.storeEpisodeVector(episodeId, vec, embeddingModel!);
+                }
+              }
+            }
+          } catch {
+            // Best effort — don't block shutdown
+          }
+        }
+      } catch {
+        // Best effort
+      }
     }
 
     // Auto-export: write facts.jsonl for cross-machine sync via git
@@ -254,6 +418,13 @@ export default function (pi: ExtensionAPI) {
     const actions = parseExtractionOutput(rawOutput);
     if (actions.length > 0) {
       const result = store.processExtraction(mind, actions);
+
+      // Embed newly created facts (fire-and-forget)
+      if (result.newFactIds.length > 0 && embeddingAvailable) {
+        for (const id of result.newFactIds) {
+          embedFact(id).catch(() => {});
+        }
+      }
 
       // Phase 2: Global extraction — if new facts were created and global store exists
       if (result.newFactIds.length > 0 && globalStore) {
@@ -368,7 +539,64 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    const rendered = store.renderForInjection(mind);
+    // --- Contextual Auto-Injection ---
+    // If embeddings are available and we have a user message, inject only
+    // relevant facts + core sections. Otherwise fall back to full dump.
+    let rendered: string;
+    let injectionMode = "full";
+
+    const userText = (event as any).prompt ?? "";
+
+    const vectorCount = store.countFactVectors(mind);
+    const canDoSemantic = embeddingAvailable && vectorCount >= factCount * 0.5 && userText.length > 10;
+
+    if (canDoSemantic && factCount > 20) {
+      // Semantic injection: core sections always + top-k relevant by query
+      const queryVec = await embedText(userText);
+      if (queryVec) {
+        injectionMode = "semantic";
+        const CORE_SECTIONS = ["Constraints", "Specs"];
+        const allFacts = store.getActiveFacts(mind);
+        const coreFacts = allFacts.filter(f => CORE_SECTIONS.includes(f.section));
+        const coreIds = new Set(coreFacts.map(f => f.id));
+
+        // Semantic search for most relevant non-core facts
+        const semanticHits = store.semanticSearch(queryVec, mind, { k: 20, minSimilarity: 0.3 });
+        const relevantFacts = semanticHits.filter(f => !coreIds.has(f.id));
+
+        // Working memory facts get priority
+        const wmFacts = [...workingMemory]
+          .map(id => store!.getFact(id))
+          .filter((f): f is Fact => f !== null && f.status === "active" && !coreIds.has(f.id));
+
+        // Merge: core + working memory + semantic hits (deduped, capped)
+        const injectedIds = new Set<string>();
+        const injectedFacts: Fact[] = [];
+
+        for (const f of coreFacts) {
+          injectedFacts.push(f);
+          injectedIds.add(f.id);
+        }
+        for (const f of wmFacts) {
+          if (!injectedIds.has(f.id)) {
+            injectedFacts.push(f);
+            injectedIds.add(f.id);
+          }
+        }
+        for (const f of relevantFacts) {
+          if (!injectedIds.has(f.id) && injectedFacts.length < 30) {
+            injectedFacts.push(f);
+            injectedIds.add(f.id);
+          }
+        }
+
+        rendered = store.renderFactList(injectedFacts, { showIds: false });
+      } else {
+        rendered = store.renderForInjection(mind);
+      }
+    } else {
+      rendered = store.renderForInjection(mind);
+    }
 
     // Include global knowledge if available
     let globalSection = "";
@@ -381,15 +609,39 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    // Include recent episodes if available
+    let episodeSection = "";
+    const episodeCount = store.countEpisodes(mind);
+    if (episodeCount > 0) {
+      const recentEpisodes = store.getEpisodes(mind, 3);
+      if (recentEpisodes.length > 0) {
+        const episodeLines = recentEpisodes.map(e =>
+          `### ${e.date}: ${e.title}\n${e.narrative}`
+        );
+        episodeSection = `\n\n## Recent Sessions\n_Episodic memory — what happened and why_\n\n${episodeLines.join("\n\n")}`;
+      }
+    }
+
+    const memoryTools = embeddingAvailable
+      ? "Use **memory_recall(query)** to semantically search for specific knowledge. " +
+        "Use **memory_store** to persist important discoveries. " +
+        "Use **memory_episodes(query)** to search session narratives."
+      : "Use **memory_query** to read accumulated knowledge about this project. " +
+        "Use **memory_store** to persist important discoveries (architecture decisions, constraints, patterns, known issues). " +
+        "Use **memory_search_archive** to search older archived facts.";
+
+    const injectionNote = injectionMode === "semantic"
+      ? ` Showing ${injectionMode} subset — use memory_recall for more.`
+      : "";
+
     return {
       message: {
         customType: "project-memory",
         content: [
-          `Project memory available${mindLabel} (${factCount} facts from this and previous sessions).`,
-          "Use **memory_query** to read accumulated knowledge about this project.",
-          "Use **memory_store** to persist important discoveries (architecture decisions, constraints, patterns, known issues).",
-          "Use **memory_search_archive** to search older archived facts.\n\n",
+          `Project memory available${mindLabel} (${factCount} facts from this and previous sessions).${injectionNote}`,
+          memoryTools + "\n\n",
           rendered,
+          episodeSection,
           globalSection,
         ].join(" "),
         display: false,
@@ -446,9 +698,10 @@ export default function (pi: ExtensionAPI) {
     ].join(" "),
     promptSnippet: "Read accumulated project knowledge (architecture, decisions, constraints, patterns)",
     promptGuidelines: [
-      "Use memory_query at session start or when context about prior decisions is needed",
+      "Use memory_recall(query) for targeted semantic retrieval instead of loading all facts",
+      "Use memory_query only when you need the complete picture — memory_recall is more efficient",
       "Use memory_store to persist important discoveries — facts survive across sessions",
-      "Use memory_archive to remove stale facts and memory_compact to free context window space",
+      "Use memory_episodes(query) to retrieve session narratives for context about past work",
     ],
     parameters: Type.Object({}),
     async execute() {
@@ -461,6 +714,206 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: rendered }],
         details: { facts: factCount, mind: activeLabel() },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_recall",
+    label: "Recall Memory",
+    description: [
+      "Semantically search project memory for facts relevant to a query.",
+      "Returns ranked results by relevance × confidence — much more targeted than memory_query.",
+      "Facts returned enter working memory and get priority in context injection.",
+      "Falls back to keyword search (FTS5) if embedding models are unavailable.",
+    ].join(" "),
+    promptSnippet: "Semantic search over project memory — retrieve facts relevant to a query",
+    promptGuidelines: [
+      "Prefer memory_recall over memory_query for targeted retrieval — saves context tokens",
+      "Recalled facts enter working memory and persist across compaction cycles",
+    ],
+    parameters: Type.Object({
+      query: Type.String({ description: "Natural language query describing what you're looking for" }),
+      k: Type.Optional(Type.Number({ description: "Number of results to return (default: 10, max: 30)" })),
+      section: Type.Optional(StringEnum(
+        ["Architecture", "Decisions", "Constraints", "Known Issues", "Patterns & Conventions", "Specs"] as const,
+        { description: "Optionally restrict search to a specific section" },
+      )),
+    }),
+    async execute(_toolCallId, params) {
+      if (!store) {
+        return { content: [{ type: "text", text: "Project memory not initialized." }], isError: true };
+      }
+
+      const mind = activeMind();
+      const k = Math.min(params.k ?? 10, 30);
+
+      // Try semantic search first
+      if (embeddingAvailable) {
+        const queryVec = await embedText(params.query);
+        if (queryVec) {
+          const results = store.semanticSearch(queryVec, mind, {
+            k,
+            minSimilarity: 0.25,
+            section: params.section,
+          });
+
+          if (results.length > 0) {
+            // Add to working memory
+            addToWorkingMemory(...results.map(r => r.id));
+
+            const lines = results.map((r, i) => {
+              const sim = (r.similarity * 100).toFixed(0);
+              const conf = (r.confidence * 100).toFixed(0);
+              return `${i + 1}. [${r.id}] (${r.section}, ${sim}% match, ${conf}% conf) ${r.content}`;
+            });
+
+            // Also search episodes
+            let episodeLines = "";
+            const episodeVec = queryVec; // reuse
+            const episodeHits = store.semanticSearchEpisodes(episodeVec, mind, { k: 3, minSimilarity: 0.35 });
+            if (episodeHits.length > 0) {
+              episodeLines = "\n\nRelated sessions:\n" + episodeHits.map(e =>
+                `- ${e.date}: ${e.title} (${(e.similarity * 100).toFixed(0)}% match)\n  ${e.narrative.slice(0, 200)}${e.narrative.length > 200 ? "…" : ""}`
+              ).join("\n");
+            }
+
+            return {
+              content: [{ type: "text", text: lines.join("\n") + episodeLines }],
+              details: {
+                method: "semantic",
+                results: results.length,
+                workingMemorySize: workingMemory.size,
+                episodes: episodeHits.length,
+              },
+            };
+          }
+        }
+      }
+
+      // Fallback: FTS5 keyword search on active facts
+      const ftsResults = store.searchFacts(params.query, mind);
+      const active = ftsResults.filter(f => f.status === "active");
+      const limited = active.slice(0, k);
+
+      if (limited.length === 0) {
+        return { content: [{ type: "text", text: `No matching facts for: "${params.query}"` }] };
+      }
+
+      addToWorkingMemory(...limited.map(r => r.id));
+
+      const lines = limited.map((r, i) =>
+        `${i + 1}. [${r.id}] (${r.section}) ${r.content}`
+      );
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: { method: "fts5", results: limited.length, workingMemorySize: workingMemory.size },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_episodes",
+    label: "Session Episodes",
+    description: [
+      "Search session episode narratives — summaries of what happened in past work sessions.",
+      "Episodes capture goals, decisions, sequences, and outcomes that individual facts don't preserve.",
+      "Returns ranked results by semantic similarity to query.",
+    ].join(" "),
+    promptSnippet: "Search past session narratives for episodic context (goals, decisions, outcomes)",
+    parameters: Type.Object({
+      query: Type.String({ description: "What you're looking for in past sessions" }),
+      k: Type.Optional(Type.Number({ description: "Number of results (default: 5)" })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!store) {
+        return { content: [{ type: "text", text: "Project memory not initialized." }], isError: true };
+      }
+
+      const mind = activeMind();
+      const k = Math.min(params.k ?? 5, 15);
+
+      // Try semantic search
+      if (embeddingAvailable) {
+        const queryVec = await embedText(params.query);
+        if (queryVec) {
+          const results = store.semanticSearchEpisodes(queryVec, mind, { k, minSimilarity: 0.25 });
+          if (results.length > 0) {
+            const lines = results.map((e, i) => {
+              const sim = (e.similarity * 100).toFixed(0);
+              const factIds = store!.getEpisodeFactIds(e.id);
+              return [
+                `${i + 1}. **${e.date}: ${e.title}** (${sim}% match)`,
+                `   ${e.narrative}`,
+                factIds.length > 0 ? `   Related facts: ${factIds.join(", ")}` : "",
+              ].filter(Boolean).join("\n");
+            });
+            return {
+              content: [{ type: "text", text: lines.join("\n\n") }],
+              details: { method: "semantic", results: results.length },
+            };
+          }
+        }
+      }
+
+      // Fallback: return most recent episodes
+      const recent = store.getEpisodes(mind, k);
+      if (recent.length === 0) {
+        return { content: [{ type: "text", text: "No session episodes recorded yet." }] };
+      }
+
+      const lines = recent.map((e, i) =>
+        `${i + 1}. **${e.date}: ${e.title}**\n   ${e.narrative}`
+      );
+      return {
+        content: [{ type: "text", text: lines.join("\n\n") }],
+        details: { method: "recent", results: recent.length },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_focus",
+    label: "Focus Working Memory",
+    description: [
+      "Pin specific facts into working memory so they persist across compaction.",
+      "Working memory facts get priority injection in context. Use to keep important facts available",
+      "throughout a long session without re-retrieving them. Call memory_release to clear.",
+    ].join(" "),
+    promptSnippet: "Pin facts to working memory (survives compaction, priority injection)",
+    parameters: Type.Object({
+      fact_ids: Type.Array(Type.String(), {
+        description: "Fact IDs to pin (from memory_query or memory_recall output)",
+        minItems: 1,
+      }),
+    }),
+    async execute(_toolCallId, params) {
+      addToWorkingMemory(...params.fact_ids);
+      return {
+        content: [{
+          type: "text",
+          text: `Pinned ${params.fact_ids.length} facts to working memory (${workingMemory.size}/${WORKING_MEMORY_CAP} slots used).`,
+        }],
+        details: { workingMemorySize: workingMemory.size },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_release",
+    label: "Release Working Memory",
+    description: "Clear working memory buffer, releasing all pinned facts.",
+    promptSnippet: "Clear working memory — release all pinned facts",
+    parameters: Type.Object({}),
+    async execute() {
+      const released = workingMemory.size;
+      workingMemory.clear();
+      return {
+        content: [{
+          type: "text",
+          text: `Released ${released} facts from working memory.`,
+        }],
       };
     },
   });
@@ -502,15 +955,38 @@ export default function (pi: ExtensionAPI) {
       });
 
       if (result.duplicate) {
+        addToWorkingMemory(result.id);
         return {
           content: [{ type: "text", text: `Reinforced existing fact in ${params.section}: ${content}` }],
           details: { section: params.section, reinforced: true, id: result.id },
         };
       }
 
+      // Auto-embed the new fact for semantic retrieval
+      embedFact(result.id).catch(() => {}); // fire-and-forget
+
+      // Conflict detection: check for semantically similar but not identical facts
+      let conflictWarning = "";
+      if (embeddingAvailable) {
+        const factVec = await embedText(`[${params.section}] ${content}`);
+        if (factVec) {
+          const similar = store.findSimilarFacts(content, factVec, mind, params.section, {
+            threshold: 0.85,
+            limit: 3,
+          });
+          if (similar.length > 0) {
+            const warnings = similar.map(s =>
+              `  ⚠ [${s.id}] (${(s.similarity * 100).toFixed(0)}% similar): ${s.content.slice(0, 100)}`
+            );
+            conflictWarning = "\n\nPotential conflicts detected — consider using memory_supersede if this replaces an existing fact:\n" + warnings.join("\n");
+          }
+        }
+      }
+
+      addToWorkingMemory(result.id);
       return {
-        content: [{ type: "text", text: `Stored in ${params.section}: ${content}` }],
-        details: { section: params.section, id: result.id, facts: store.countActiveFacts(mind) },
+        content: [{ type: "text", text: `Stored in ${params.section}: ${content}${conflictWarning}` }],
+        details: { section: params.section, id: result.id, facts: store.countActiveFacts(mind), conflicts: conflictWarning ? true : false },
       };
     },
   });
@@ -981,10 +1457,12 @@ export default function (pi: ExtensionAPI) {
 
     const mind = activeMind();
     const count = store.countActiveFacts(mind);
+    const vecIcon = embeddingAvailable ? "⚡" : "";
+    const wmCount = workingMemory.size > 0 ? ` wm:${workingMemory.size}` : "";
     if (mind !== "default") {
-      ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", `🧠 ${mind} (${count})`));
+      ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", `🧠${vecIcon} ${mind} (${count}${wmCount})`));
     } else {
-      ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", `🧠 ${count}`));
+      ctx.ui.setStatus("memory", ctx.ui.theme.fg("dim", `🧠${vecIcon} ${count}${wmCount}`));
     }
   }
 
@@ -1078,9 +1556,16 @@ export default function (pi: ExtensionAPI) {
           }
           avgConfidence = total > 0 ? avgConfidence / total : 0;
 
+          const vectorCount = store.countFactVectors(mind);
+          const episodeCount = store.countEpisodes(mind);
+
           const lines = [
             `Mind: ${activeLabel()}`,
             `Active facts: ${total}`,
+            `Embedded facts: ${vectorCount}/${total} (${total > 0 ? ((vectorCount / total) * 100).toFixed(0) : 0}%)`,
+            `Episodes: ${episodeCount}`,
+            `Working memory: ${workingMemory.size}/${WORKING_MEMORY_CAP}`,
+            `Embedding model: ${embeddingAvailable ? embeddingModel : "unavailable"}`,
             `Avg confidence: ${(avgConfidence * 100).toFixed(1)}%`,
             `Avg reinforcements: ${(totalReinforcements / Math.max(total, 1)).toFixed(1)}`,
             "",
