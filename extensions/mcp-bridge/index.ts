@@ -17,16 +17,9 @@ import {
   isAuthError,
   isTransportError,
   extractText,
+  validateConfig,
   AUTH_REMEDIATION,
 } from "./lib.js";
-
-// ---------------------------------------------------------------------------
-// Config types
-// ---------------------------------------------------------------------------
-
-interface McpConfig {
-  servers: Record<string, ServerConfig>;
-}
 
 // ---------------------------------------------------------------------------
 // Runtime types
@@ -294,35 +287,51 @@ export default async function (pi: ExtensionAPI) {
   }
 
   // ── Connect and register tools during factory (before tool snapshot) ───
+  //
+  // Pi snapshots the tool registry after all extension factories complete
+  // but before session_start fires. Tools MUST be registered here — anything
+  // registered in session_start will exist in the Map but be invisible to
+  // the agent because the snapshot has already been taken.
 
   if (fs.existsSync(configPath)) {
-    const config: McpConfig = JSON.parse(
-      fs.readFileSync(configPath, "utf-8")
-    );
+    let raw: any;
+    try {
+      raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    } catch (err: any) {
+      connectionErrors.push({ name: "(config)", message: `invalid mcp.json: ${err.message}` });
+    }
 
-    const entries = Object.entries(config.servers);
-    const results = await Promise.allSettled(
-      entries.map(([name, serverConfig]) => connectServer(name, serverConfig))
-    );
+    if (raw) {
+      const { servers: validServers, errors: configErrors } = validateConfig(raw);
 
-    for (let i = 0; i < entries.length; i++) {
-      const [name] = entries[i];
-      const result = results[i];
-
-      if (result.status === "rejected") {
-        const reason = result.reason;
-        connectionErrors.push({
-          name,
-          message: isAuthError(reason)
-            ? `authentication failed.\n${AUTH_REMEDIATION}`
-            : reason?.message ?? String(reason),
-        });
-        continue;
+      for (const err of configErrors) {
+        connectionErrors.push({ name: err.server, message: err.message });
       }
 
-      const connected = result.value;
-      servers[name] = connected;
-      totalTools += registerToolsForServer(connected);
+      const entries = Object.entries(validServers);
+      const results = await Promise.allSettled(
+        entries.map(([name, serverConfig]) => connectServer(name, serverConfig))
+      );
+
+      for (let i = 0; i < entries.length; i++) {
+        const [name] = entries[i];
+        const result = results[i];
+
+        if (result.status === "rejected") {
+          const reason = result.reason;
+          connectionErrors.push({
+            name,
+            message: isAuthError(reason)
+              ? `authentication failed.\n${AUTH_REMEDIATION}`
+              : reason?.message ?? String(reason),
+          });
+          continue;
+        }
+
+        const connected = result.value;
+        servers[name] = connected;
+        totalTools += registerToolsForServer(connected);
+      }
     }
   }
 

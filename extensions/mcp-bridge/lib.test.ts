@@ -14,6 +14,7 @@ import {
   isAuthError,
   isTransportError,
   extractText,
+  validateConfig,
   AUTH_REMEDIATION,
 } from "./lib.js";
 
@@ -301,6 +302,22 @@ describe("extractText", () => {
       "(empty response)"
     );
   });
+
+  it("handles null content gracefully", () => {
+    assert.equal(extractText({ content: null }), "(empty response)");
+  });
+
+  it("handles undefined content gracefully", () => {
+    assert.equal(extractText({}), "(empty response)");
+  });
+
+  it("handles undefined result gracefully", () => {
+    assert.equal(extractText(undefined), "(empty response)");
+  });
+
+  it("handles null result gracefully", () => {
+    assert.equal(extractText(null), "(empty response)");
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -320,6 +337,143 @@ describe("AUTH_REMEDIATION", () => {
 // ═══════════════════════════════════════════════════════════════════════════
 // Mutual exclusivity: auth vs transport errors
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// validateConfig
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe("validateConfig", () => {
+  it("accepts valid HTTP server config", () => {
+    const { servers, errors } = validateConfig({
+      servers: { s: { url: "https://example.com/mcp/" } },
+    });
+    assert.equal(errors.length, 0);
+    assert.ok("s" in servers);
+  });
+
+  it("accepts valid stdio server config", () => {
+    const { servers, errors } = validateConfig({
+      servers: { s: { command: "npx", args: ["-y", "foo"] } },
+    });
+    assert.equal(errors.length, 0);
+    assert.ok("s" in servers);
+  });
+
+  it("accepts HTTP config with headers and timeout", () => {
+    const { errors } = validateConfig({
+      servers: {
+        s: { url: "https://x.com/mcp/", headers: { Authorization: "Bearer tok" }, timeout: 5000 },
+      },
+    });
+    assert.equal(errors.length, 0);
+  });
+
+  it("accepts stdio config with env", () => {
+    const { errors } = validateConfig({
+      servers: { s: { command: "python", env: { KEY: "val" } } },
+    });
+    assert.equal(errors.length, 0);
+  });
+
+  it("rejects missing servers key", () => {
+    const { errors } = validateConfig({});
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("servers"));
+  });
+
+  it("rejects null input", () => {
+    const { errors } = validateConfig(null);
+    assert.equal(errors.length, 1);
+  });
+
+  it("rejects config with neither url nor command", () => {
+    const { errors } = validateConfig({ servers: { s: { headers: {} } } });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("url"));
+  });
+
+  it("rejects config with both url and command", () => {
+    const { errors } = validateConfig({
+      servers: { s: { url: "https://x.com", command: "npx" } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("both"));
+  });
+
+  it("rejects invalid URL", () => {
+    const { errors } = validateConfig({
+      servers: { s: { url: "not a url" } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("invalid url"));
+  });
+
+  it("rejects non-object headers", () => {
+    const { errors } = validateConfig({
+      servers: { s: { url: "https://x.com/mcp/", headers: "nope" } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("headers"));
+  });
+
+  it("rejects negative timeout", () => {
+    const { errors } = validateConfig({
+      servers: { s: { url: "https://x.com/mcp/", timeout: -1 } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("timeout"));
+  });
+
+  it("rejects string timeout", () => {
+    const { errors } = validateConfig({
+      servers: { s: { url: "https://x.com/mcp/", timeout: "5000" } },
+    });
+    assert.equal(errors.length, 1);
+  });
+
+  it("rejects non-array args", () => {
+    const { errors } = validateConfig({
+      servers: { s: { command: "npx", args: "bad" } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("args"));
+  });
+
+  it("rejects non-object env", () => {
+    const { errors } = validateConfig({
+      servers: { s: { command: "npx", env: "bad" } },
+    });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("env"));
+  });
+
+  it("rejects non-object server entry", () => {
+    const { errors } = validateConfig({ servers: { s: "bad" } });
+    assert.equal(errors.length, 1);
+    assert.ok(errors[0].message.includes("object"));
+  });
+
+  it("validates multiple servers independently", () => {
+    const { servers, errors } = validateConfig({
+      servers: {
+        good: { url: "https://x.com/mcp/" },
+        bad: { url: "not valid" },
+        also_good: { command: "npx" },
+      },
+    });
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].server, "bad");
+    assert.ok("good" in servers);
+    assert.ok("also_good" in servers);
+    assert.ok(!("bad" in servers));
+  });
+
+  it("returns empty servers for empty servers object", () => {
+    const { servers, errors } = validateConfig({ servers: {} });
+    assert.equal(errors.length, 0);
+    assert.equal(Object.keys(servers).length, 0);
+  });
+});
 
 describe("auth vs transport mutual exclusivity", () => {
   const authErrors = [
