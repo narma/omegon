@@ -19,6 +19,9 @@ _Bugs, flaky tests, workarounds_
 
 ## Patterns & Conventions
 _Code style, project conventions, common approaches_
+
+## Specs
+_Active specifications, acceptance criteria, and design contracts driving current work_
 `;
 
 export const SECTIONS = [
@@ -27,6 +30,7 @@ export const SECTIONS = [
   "Constraints",
   "Known Issues",
   "Patterns & Conventions",
+  "Specs",
 ] as const;
 
 export type SectionName = (typeof SECTIONS)[number];

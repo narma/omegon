@@ -705,12 +705,17 @@ export class FactStore {
        ORDER BY section, created_at`
     ).all(mind) as Fact[];
 
-    // Apply time-based confidence decay
+    // Apply time-based confidence decay (Specs are exempt — binary exist/not-exist)
+    const NO_DECAY_SECTIONS: readonly string[] = ["Specs"];
     const now = Date.now();
     for (const fact of facts) {
-      const lastReinforced = new Date(fact.last_reinforced).getTime();
-      const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
-      fact.confidence = computeConfidence(daysSince, fact.reinforcement_count, this.decayProfile);
+      if (NO_DECAY_SECTIONS.includes(fact.section)) {
+        fact.confidence = 1.0;
+      } else {
+        const lastReinforced = new Date(fact.last_reinforced).getTime();
+        const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+        fact.confidence = computeConfidence(daysSince, fact.reinforcement_count, this.decayProfile);
+      }
     }
 
     // Sort by confidence descending within each section
@@ -846,6 +851,7 @@ export class FactStore {
       Constraints: "_Requirements, limitations, environment details_",
       "Known Issues": "_Bugs, flaky tests, workarounds_",
       "Patterns & Conventions": "_Code style, project conventions, common approaches_",
+      Specs: "_Active specifications, acceptance criteria, and design contracts driving current work_",
     };
 
     // Build a set of rendered fact IDs for edge lookup

@@ -10,13 +10,14 @@ import {
 
 describe("SECTIONS and DEFAULT_TEMPLATE", () => {
   it("exports 5 sections", () => {
-    assert.equal(SECTIONS.length, 5);
+    assert.equal(SECTIONS.length, 6);
     assert.deepEqual([...SECTIONS], [
       "Architecture",
       "Decisions",
       "Constraints",
       "Known Issues",
       "Patterns & Conventions",
+      "Specs",
     ]);
   });
 

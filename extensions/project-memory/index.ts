@@ -448,7 +448,7 @@ export default function (pi: ExtensionAPI) {
     ].join(" "),
     parameters: Type.Object({
       section: StringEnum(
-        ["Architecture", "Decisions", "Constraints", "Known Issues", "Patterns & Conventions"] as const,
+        ["Architecture", "Decisions", "Constraints", "Known Issues", "Patterns & Conventions", "Specs"] as const,
         { description: "Memory section to add the fact to" },
       ),
       content: Type.String({
@@ -482,6 +482,50 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: `Stored in ${params.section}: ${content}` }],
         details: { section: params.section, id: result.id, facts: store.countActiveFacts(mind) },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_supersede",
+    label: "Supersede Memory Fact",
+    description: [
+      "Atomically replace an existing fact with a new version.",
+      "The old fact is marked superseded (searchable in archive) and the new fact is stored.",
+      "Ideal for updating specs, correcting facts, or evolving decisions.",
+      "Get fact IDs from memory_query output (shown in [brackets]).",
+    ].join(" "),
+    parameters: Type.Object({
+      fact_id: Type.String({ description: "ID of the fact to supersede" }),
+      section: StringEnum(
+        ["Architecture", "Decisions", "Constraints", "Known Issues", "Patterns & Conventions", "Specs"] as const,
+        { description: "Memory section for the new fact (can differ from original)" },
+      ),
+      content: Type.String({
+        description: "New fact content (replaces the old fact)",
+      }),
+    }),
+    async execute(_toolCallId, params) {
+      if (!store) {
+        return {
+          content: [{ type: "text", text: "Project memory not initialized." }],
+          isError: true,
+        };
+      }
+
+      const mind = activeMind();
+      const content = params.content.replace(/^-\s*/, "").trim();
+      const result = store.storeFact({
+        mind,
+        section: params.section as any,
+        content,
+        source: "manual",
+        supersedes: params.fact_id,
+      });
+
+      return {
+        content: [{ type: "text", text: `Superseded [${params.fact_id}] → new fact in ${params.section}: ${content}` }],
+        details: { section: params.section, oldId: params.fact_id, newId: result.id, facts: store.countActiveFacts(mind) },
       };
     },
   });
@@ -1110,6 +1154,7 @@ export default function (pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       if (!store) {
         ctx.shutdown();
+        setTimeout(() => process.exit(0), 2000);
         return;
       }
 
@@ -1146,6 +1191,9 @@ export default function (pi: ExtensionAPI) {
       await new Promise(r => setTimeout(r, 200));
 
       ctx.shutdown();
+
+      // Fallback: if shutdown() doesn't terminate within 2s, force exit
+      setTimeout(() => process.exit(0), 2000);
     },
   });
 }

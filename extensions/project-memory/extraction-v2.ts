@@ -167,7 +167,7 @@ RULES:
 - Use "reinforce" when the conversation confirms an existing fact without changing it.
 - Use "archive" sparingly — only when a fact is clearly contradicted.
 - Keep fact content self-contained and concise (one line, no bullet prefix).
-- Valid sections: Architecture, Decisions, Constraints, Known Issues, Patterns & Conventions
+- Valid sections: Architecture, Decisions, Constraints, Known Issues, Patterns & Conventions, Specs
 
 TARGET: aim for at most ${maxLines} active facts total. If the memory is near capacity, use "archive" on the least relevant facts to make room.
 

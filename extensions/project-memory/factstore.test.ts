@@ -381,6 +381,39 @@ describe("computeConfidence", () => {
     const c = computeConfidence(30, 1); // 30 days, 1 reinforcement
     assert.ok(c < 0.3, `Expected <0.3 after 30 days with 1 reinforcement, got ${c}`);
   });
+
+  it("Specs section facts are immune to confidence decay", () => {
+    const d = tmpDir();
+    const s = new FactStore(d);
+    try {
+      const mind = "test-project";
+      s.createMind(mind, "test");
+      const { id } = s.storeFact({ mind, section: "Specs", content: "API must return ≤100ms" });
+
+      // Backdate the fact's last_reinforced to 365 days ago
+      const oldDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+      (s as any).db.prepare(
+        `UPDATE facts SET last_reinforced = ? WHERE id = ?`
+      ).run(oldDate, id);
+
+      const facts = s.getActiveFacts(mind);
+      const spec = facts.find(f => f.id === id)!;
+      assert.equal(spec.confidence, 1.0, "Specs facts should always have confidence 1.0 regardless of age");
+
+      // Verify a non-Specs fact DOES decay with the same age
+      const { id: archId } = s.storeFact({ mind, section: "Architecture", content: "Uses PostgreSQL" });
+      (s as any).db.prepare(
+        `UPDATE facts SET last_reinforced = ? WHERE id = ?`
+      ).run(oldDate, archId);
+
+      const facts2 = s.getActiveFacts(mind);
+      const arch = facts2.find(f => f.id === archId)!;
+      assert.ok(arch.confidence < 0.1, `Architecture fact should have decayed after 365 days, got ${arch.confidence}`);
+    } finally {
+      s.close();
+      fs.rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 // --- Extraction output parsing ---
