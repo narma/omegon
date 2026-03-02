@@ -67,13 +67,6 @@ function isAuthError(err: any): boolean {
   return false;
 }
 
-function formatError(err: any, serverName: string): string {
-  if (isAuthError(err)) {
-    return `[mcp-bridge] ${serverName}: authentication failed.\n${AUTH_REMEDIATION}`;
-  }
-  return `Error: ${err.message}`;
-}
-
 // ---------------------------------------------------------------------------
 // Extension
 // ---------------------------------------------------------------------------
@@ -84,6 +77,10 @@ export default function (pi: ExtensionAPI) {
     path.dirname(new URL(import.meta.url).pathname),
     "mcp.json"
   );
+
+  // In-flight reconnect promises, keyed by server name. Prevents concurrent
+  // reconnect attempts from racing and leaking duplicate connections.
+  const reconnecting = new Map<string, Promise<ConnectedServer | null>>();
 
   // ── Env var resolution ──────────────────────────────────────────────────
 
@@ -103,19 +100,32 @@ export default function (pi: ExtensionAPI) {
 
   // ── Timeout helper ──────────────────────────────────────────────────────
 
-  function withTimeout<T>(
-    promise: Promise<T>,
+  /**
+   * Race a promise against a deadline. On timeout, attempts to close the
+   * transport to avoid leaking child processes or HTTP connections.
+   */
+  function withTimeout(
+    promise: Promise<ConnectedServer>,
     ms: number,
     label: string
-  ): Promise<T> {
+  ): Promise<ConnectedServer> {
+    let settled = false;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(
-        () => reject(new Error(`[mcp-bridge] ${label}: timed out after ${ms}ms`)),
-        ms
-      );
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`[mcp-bridge] ${label}: timed out after ${ms}ms`));
+          // Best-effort cleanup: the inner promise may still resolve with a
+          // ConnectedServer whose transport is alive. Close it.
+          promise.then(
+            (s) => { try { s.transport.close(); } catch {} },
+            () => {} // inner already failed, nothing to clean up
+          );
+        }
+      }, ms);
       promise.then(
-        (v) => { clearTimeout(timer); resolve(v); },
-        (e) => { clearTimeout(timer); reject(e); }
+        (v) => { if (!settled) { settled = true; clearTimeout(timer); resolve(v); } },
+        (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } }
       );
     });
   }
@@ -188,23 +198,65 @@ export default function (pi: ExtensionAPI) {
 
   // ── Reconnection ───────────────────────────────────────────────────────
 
-  async function reconnectServer(
+  /**
+   * Reconnect a server, deduplicating concurrent attempts. If a reconnect
+   * is already in flight for this server, returns the existing promise.
+   */
+  function reconnectServer(
     name: string,
     config: ServerConfig
   ): Promise<ConnectedServer | null> {
-    // Tear down old connection if present
-    const old = servers[name];
-    if (old) {
-      try { await old.client.close(); } catch {}
-      delete servers[name];
-    }
+    const inflight = reconnecting.get(name);
+    if (inflight) return inflight;
 
-    try {
-      return await connectServer(name, config);
-    } catch (err: any) {
-      console.error(`[mcp-bridge] Reconnect failed for ${name}: ${err.message}`);
-      return null;
-    }
+    const attempt = (async (): Promise<ConnectedServer | null> => {
+      // Tear down old connection
+      const old = servers[name];
+      if (old) {
+        try { await old.client.close(); } catch {}
+        delete servers[name];
+      }
+
+      try {
+        const fresh = await connectServer(name, config);
+        servers[name] = fresh;
+        return fresh;
+      } catch (err: any) {
+        console.error(`[mcp-bridge] Reconnect failed for ${name}: ${err.message}`);
+        return null;
+      }
+    })();
+
+    // Clear the mutex when done regardless of outcome
+    attempt.finally(() => reconnecting.delete(name));
+    reconnecting.set(name, attempt);
+
+    return attempt;
+  }
+
+  // ── Tool execution helper ──────────────────────────────────────────────
+
+  function getServer(name: string): ConnectedServer | undefined {
+    return servers[name];
+  }
+
+  function extractText(result: any): string {
+    return (result.content as any[])
+      .filter((c: any) => c.type === "text")
+      .map((c: any) => c.text)
+      .join("\n") || "(empty response)";
+  }
+
+  function isTransportError(err: any): boolean {
+    const msg = err?.message ?? "";
+    return (
+      msg.includes("not connected") ||
+      msg.includes("aborted") ||
+      msg.includes("ECONNREFUSED") ||
+      msg.includes("fetch failed") ||
+      msg.includes("network") ||
+      err?.code === "ECONNRESET"
+    );
   }
 
   // ── Tool registration ──────────────────────────────────────────────────
@@ -215,100 +267,76 @@ export default function (pi: ExtensionAPI) {
   }
 
   function registerToolsForServer(server: ConnectedServer): number {
+    const serverName = server.name;
+    const serverConfig = server.config;
     let count = 0;
+
     for (const tool of server.tools) {
-      const piToolName = `mcp_${server.name}_${tool.name}`;
+      const toolName = tool.name;
+      const piToolName = `mcp_${serverName}_${toolName}`;
 
       pi.registerTool({
         name: piToolName,
-        label: `${server.name}/${tool.name}`,
-        description: tool.description ?? `MCP tool from ${server.name}`,
+        label: `${serverName}/${toolName}`,
+        description: tool.description ?? `MCP tool from ${serverName}`,
         parameters: jsonSchemaToTypebox(tool.inputSchema),
 
         async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+          // Always read current server — may have been replaced by reconnect
+          const current = getServer(serverName);
+          if (!current) {
+            return {
+              content: [{ type: "text", text: `Error: server ${serverName} is not connected` }],
+              details: { server: serverName, tool: toolName, error: true },
+            };
+          }
+
           try {
-            const result = await server.client.callTool({
-              name: tool.name,
+            const result = await current.client.callTool({
+              name: toolName,
               arguments: params,
             });
 
-            const textParts = (result.content as any[])
-              .filter((c: any) => c.type === "text")
-              .map((c: any) => c.text)
-              .join("\n");
-
             return {
-              content: [
-                { type: "text", text: textParts || "(empty response)" },
-              ],
-              details: { server: server.name, tool: tool.name },
+              content: [{ type: "text", text: extractText(result) }],
+              details: { server: serverName, tool: toolName },
             };
           } catch (err: any) {
-            // Surface auth errors immediately — reconnecting won't help
+            // Auth errors — reconnecting won't help
             if (isAuthError(err)) {
               return {
                 content: [
                   {
                     type: "text",
-                    text: formatError(err, server.name),
+                    text: `[mcp-bridge] ${serverName}: authentication failed.\n${AUTH_REMEDIATION}`,
                   },
                 ],
-                details: { server: server.name, tool: tool.name, error: true, auth: true },
+                details: { server: serverName, tool: toolName, error: true, auth: true },
               };
             }
 
-            // Attempt one reconnect on transport-level errors
-            const isTransportError =
-              err.message?.includes("not connected") ||
-              err.message?.includes("aborted") ||
-              err.message?.includes("ECONNREFUSED") ||
-              err.message?.includes("fetch failed") ||
-              err.message?.includes("network") ||
-              err.code === "ECONNRESET";
-
-            if (isTransportError) {
-              const reconnected = await reconnectServer(
-                server.name,
-                server.config
-              );
+            // Transport errors — attempt one reconnect + retry
+            if (isTransportError(err)) {
+              const reconnected = await reconnectServer(serverName, serverConfig);
               if (reconnected) {
-                servers[server.name] = reconnected;
-                // Retry the call once against the fresh connection
                 try {
                   const retry = await reconnected.client.callTool({
-                    name: tool.name,
+                    name: toolName,
                     arguments: params,
                   });
-                  const retryText = (retry.content as any[])
-                    .filter((c: any) => c.type === "text")
-                    .map((c: any) => c.text)
-                    .join("\n");
                   return {
-                    content: [
-                      {
-                        type: "text",
-                        text: retryText || "(empty response)",
-                      },
-                    ],
-                    details: {
-                      server: server.name,
-                      tool: tool.name,
-                      reconnected: true,
-                    },
+                    content: [{ type: "text", text: extractText(retry) }],
+                    details: { server: serverName, tool: toolName, reconnected: true },
                   };
                 } catch (retryErr: any) {
+                  const msg = isAuthError(retryErr)
+                    ? `[mcp-bridge] ${serverName}: authentication failed.\n${AUTH_REMEDIATION}`
+                    : `Error after reconnect: ${retryErr.message}`;
                   return {
-                    content: [
-                      {
-                        type: "text",
-                        text: isAuthError(retryErr)
-                          ? formatError(retryErr, server.name)
-                          : `Error after reconnect: ${retryErr.message}`,
-                      },
-                    ],
+                    content: [{ type: "text", text: msg }],
                     details: {
-                      server: server.name,
-                      tool: tool.name,
+                      server: serverName,
+                      tool: toolName,
                       error: true,
                       ...(isAuthError(retryErr) && { auth: true }),
                     },
@@ -319,7 +347,7 @@ export default function (pi: ExtensionAPI) {
 
             return {
               content: [{ type: "text", text: `Error: ${err.message}` }],
-              details: { server: server.name, tool: tool.name, error: true },
+              details: { server: serverName, tool: toolName, error: true },
             };
           }
         },

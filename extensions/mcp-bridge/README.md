@@ -71,8 +71,9 @@ Or add a recipe to `~/.pi/agent/secrets.json`:
 ## Behavior
 
 - **Parallel connection**: All servers connect concurrently at session start. One slow/failing server does not block others.
-- **Timeouts**: Each connection has an independent timeout (default 15s). Failures are reported per-server.
-- **Reconnection**: On transport-level errors (connection reset, fetch failure), the bridge attempts one automatic reconnect + retry before returning an error.
+- **Timeouts**: Each connection has an independent timeout (default 15s). Timed-out transports are closed to prevent leaked child processes or HTTP connections.
+- **Reconnection**: On transport-level errors (connection reset, fetch failure), the bridge attempts one automatic reconnect + retry before returning an error. Concurrent reconnect attempts to the same server are deduplicated.
+- **Auth error detection**: 401/403 responses short-circuit reconnect (expired tokens can't be fixed by reconnecting) and return actionable guidance: `Run gh auth login to re-authenticate, then restart your pi session.`
 - **Tool naming**: Tools are registered as `mcp_{server}_{tool}`, e.g., `mcp_scribe_list_partnerships`.
 - **Shutdown**: All connections are closed on session shutdown.
 
