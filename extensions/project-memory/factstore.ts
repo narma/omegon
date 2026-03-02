@@ -26,9 +26,16 @@ import { SECTIONS, type SectionName } from "./template.js";
 function loadDatabase(): any {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("better-sqlite3");
+    const BetterSqlite3 = require("better-sqlite3");
+    // Verify the native addon loads (ABI mismatch throws here, not at require time).
+    // Create a throwaway in-memory DB to exercise the native binding.
+    const test = new BetterSqlite3(":memory:");
+    test.close();
+    return BetterSqlite3;
   } catch {
-    // Fallback: wrap node:sqlite DatabaseSync to match better-sqlite3 API subset
+    // Fallback: wrap node:sqlite DatabaseSync to match better-sqlite3 API subset.
+    // Triggers when better-sqlite3 is missing OR its native addon was compiled
+    // against a different Node.js version (ERR_DLOPEN_FAILED).
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { DatabaseSync } = require("node:sqlite");
     return class NodeSqliteWrapper {

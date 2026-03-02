@@ -79,22 +79,44 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     memoryDir = path.join(ctx.cwd, ".pi", "memory");
 
-    // Check for migration
-    if (needsMigration(memoryDir)) {
-      store = new FactStore(memoryDir);
-      const result = migrateToFactStore(memoryDir, store);
-      markMigrated(memoryDir);
-      if (ctx.hasUI) {
-        const msg = `Memory migrated to SQLite: ${result.factsImported} facts imported, ${result.archiveFactsImported} archive facts, ${result.mindsImported} minds`;
-        ctx.ui.notify(msg, "success");
+    // Initialize project store
+    try {
+      if (needsMigration(memoryDir)) {
+        store = new FactStore(memoryDir);
+        const result = migrateToFactStore(memoryDir, store);
+        markMigrated(memoryDir);
+        if (ctx.hasUI) {
+          const msg = `Memory migrated to SQLite: ${result.factsImported} facts imported, ${result.archiveFactsImported} archive facts, ${result.mindsImported} minds`;
+          ctx.ui.notify(msg, "success");
+        }
+      } else {
+        store = new FactStore(memoryDir);
       }
-    } else {
-      store = new FactStore(memoryDir);
+    } catch (err: any) {
+      const hint = /DLOPEN|NODE_MODULE_VERSION|compiled against/.test(err.message)
+        ? "\nFix: run `npm rebuild better-sqlite3` in the pi-kit directory, then restart."
+        : "";
+      ctx.ui.notify(
+        `[project-memory] Failed to open project database: ${err.message}${hint}`,
+        "error"
+      );
+      // store stays null — tools will report "not initialized"
     }
 
     // Initialize global store (user-level, shared across projects)
     // Uses global.db to avoid collision with project facts.db when CWD is ~/
-    globalStore = new FactStore(globalMemoryDir, { decay: GLOBAL_DECAY, dbName: "global.db" });
+    try {
+      globalStore = new FactStore(globalMemoryDir, { decay: GLOBAL_DECAY, dbName: "global.db" });
+    } catch (err: any) {
+      const hint = /DLOPEN|NODE_MODULE_VERSION|compiled against/.test(err.message)
+        ? "\nFix: run `npm rebuild better-sqlite3` in the pi-kit directory, then restart."
+        : "";
+      ctx.ui.notify(
+        `[project-memory] Failed to open global database: ${err.message}${hint}`,
+        "error"
+      );
+      // globalStore stays null — global features degrade gracefully
+    }
 
     // Auto-import: if facts.jsonl exists and is newer than facts.db, merge it in.
     // This enables cross-machine sync — pull facts.jsonl via git, rebuild local db.
