@@ -11,7 +11,9 @@
  * Tools:
  *   memory_query          — Read active memory (rendered Markdown-KV)
  *   memory_store          — Explicitly add a fact
+ *   memory_archive        — Archive stale/redundant facts by ID
  *   memory_search_archive — Search all facts (including archived/superseded)
+ *   memory_compact        — Trigger context compaction + memory reload
  *
  * Commands:
  *   /memory               — Interactive mind manager
@@ -355,7 +357,7 @@ export default function (pi: ExtensionAPI) {
       const globalMind = globalStore.getActiveMind() ?? "default";
       const globalFactCount = globalStore.countActiveFacts(globalMind);
       if (globalFactCount > 0) {
-        const globalRendered = globalStore.renderForInjection(globalMind, { maxFacts: 30 });
+        const globalRendered = globalStore.renderForInjection(globalMind, { maxFacts: 15 });
         globalSection = `\n\n<!-- Global Knowledge — cross-project facts and connections -->\n${globalRendered}`;
       }
     }
@@ -429,7 +431,7 @@ export default function (pi: ExtensionAPI) {
         return { content: [{ type: "text", text: "Project memory not initialized." }] };
       }
       const mind = activeMind();
-      const rendered = store.renderForInjection(mind);
+      const rendered = store.renderForInjection(mind, { showIds: true });
       const factCount = store.countActiveFacts(mind);
       return {
         content: [{ type: "text", text: rendered }],
@@ -603,6 +605,98 @@ export default function (pi: ExtensionAPI) {
       return {
         content: [{ type: "text", text: `Connected: ${sourceFact.content.slice(0, 50)} --${params.relation}--> ${targetFact.content.slice(0, 50)}` }],
         details: { id: result.id, source: params.source_fact_id, target: params.target_fact_id, relation: params.relation },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_archive",
+    label: "Archive Memory Fact",
+    description: [
+      "Archive one or more facts from project memory by ID.",
+      "Use to remove stale, redundant, or incorrect facts.",
+      "Archived facts are searchable via memory_search_archive but no longer injected into context.",
+      "Get fact IDs from memory_query output (shown in [brackets] when using the tool).",
+    ].join(" "),
+    parameters: Type.Object({
+      fact_ids: Type.Array(Type.String(), {
+        description: "One or more fact IDs to archive",
+        minItems: 1,
+      }),
+      reason: Type.Optional(Type.String({
+        description: "Why these facts are being archived (logged, not shown to user)",
+      })),
+    }),
+    async execute(_toolCallId, params) {
+      if (!store) {
+        return { content: [{ type: "text", text: "Project memory not initialized." }], isError: true };
+      }
+
+      const mind = activeMind();
+      const results: string[] = [];
+      let archived = 0;
+
+      for (const id of params.fact_ids) {
+        const fact = store.getFact(id);
+        if (!fact) {
+          results.push(`${id}: not found`);
+          continue;
+        }
+        if (fact.status === "archived") {
+          results.push(`${id}: already archived`);
+          continue;
+        }
+        if (fact.mind !== mind) {
+          results.push(`${id}: belongs to mind "${fact.mind}", not current mind "${mind}"`);
+          continue;
+        }
+        store.archiveFact(id);
+        archived++;
+        results.push(`${id}: archived (was: ${fact.content.slice(0, 60)}…)`);
+      }
+
+      const remaining = store.countActiveFacts(mind);
+      return {
+        content: [{ type: "text", text: results.join("\n") }],
+        details: { archived, remaining, reason: params.reason },
+      };
+    },
+  });
+
+  pi.registerTool({
+    name: "memory_compact",
+    label: "Compact Context",
+    description: [
+      "Trigger context compaction to free up context window space.",
+      "Summarizes older conversation history, preserving recent work.",
+      "After compaction, use memory_query to reload project knowledge into the fresh context.",
+      "Use proactively when context is growing large, or after bulk archiving stale facts.",
+      "The compaction runs asynchronously — the agent loop continues after it completes.",
+    ].join(" "),
+    parameters: Type.Object({
+      instructions: Type.Optional(Type.String({
+        description: "Optional focus instructions for the compaction summary (e.g., 'preserve the architecture discussion')",
+      })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const usage = ctx.getContextUsage();
+      const pct = usage?.percent != null ? `${Math.round(usage.percent)}%` : "unknown";
+      const tokens = usage?.tokens?.toLocaleString() ?? "unknown";
+
+      ctx.compact({
+        customInstructions: params.instructions,
+      });
+
+      return {
+        content: [{
+          type: "text",
+          text: [
+            `Context compaction triggered (was ${pct} full, ${tokens} tokens).`,
+            "Compaction runs in the background — older messages will be summarized.",
+            "After the next response, use memory_query to reload project knowledge.",
+          ].join("\n"),
+        }],
+        details: { tokensBefore: usage?.tokens, percent: pct },
       };
     },
   });

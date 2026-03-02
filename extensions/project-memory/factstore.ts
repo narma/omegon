@@ -810,10 +810,11 @@ export class FactStore {
    * Render active facts as Markdown-KV for LLM context injection.
    * Filters by confidence threshold and respects a line budget.
    */
-  renderForInjection(mind: string, opts?: { maxFacts?: number; minConfidence?: number; maxEdges?: number }): string {
-    const maxFacts = opts?.maxFacts ?? 80;
+  renderForInjection(mind: string, opts?: { maxFacts?: number; minConfidence?: number; maxEdges?: number; showIds?: boolean }): string {
+    const maxFacts = opts?.maxFacts ?? 50;
     const maxEdges = opts?.maxEdges ?? 20;
     const minConfidence = opts?.minConfidence ?? this.decayProfile.minimumConfidence;
+    const showIds = opts?.showIds ?? false;
 
     let facts = this.getActiveFacts(mind);
 
@@ -858,7 +859,7 @@ export class FactStore {
       if (sectionFacts.length > 0) {
         for (const f of sectionFacts) {
           const date = f.created_at.split("T")[0];
-          lines.push(`- ${f.content} [${date}]`);
+          lines.push(showIds ? `- [${f.id}] ${f.content} [${date}]` : `- ${f.content} [${date}]`);
           renderedFactIds.add(f.id);
         }
       }

@@ -22,12 +22,12 @@ export interface MemoryConfig {
 }
 
 export const DEFAULT_CONFIG: MemoryConfig = {
-  maxLines: 80,
+  maxLines: 50,
   minimumTokensToInit: 10_000,
   minimumTokensBetweenUpdate: 5_000,
-  toolCallsBetweenUpdates: 3,
+  toolCallsBetweenUpdates: 8,
   manualStoreThreshold: 3,
-  extractionModel: "claude-opus-4-6",
+  extractionModel: "claude-sonnet-4-6",
   extractionTimeout: 60_000,
   shutdownExtractionTimeout: 15_000,
 };
