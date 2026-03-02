@@ -13,8 +13,8 @@
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
 const EMBED_MODELS = ["qwen3-embedding:0.6b", "qwen3-embedding:4b"] as const;
 
-/** Embedding dimensions by model (known at compile time to avoid a probe call) */
-const MODEL_DIMS: Record<string, number> = {
+/** Known embedding dimensions by model — used for mismatch detection */
+export const MODEL_DIMS: Record<string, number> = {
   "qwen3-embedding:0.6b": 1024,
   "qwen3-embedding:4b": 2048,
 };
@@ -65,22 +65,6 @@ export async function embed(
   }
 
   return null;
-}
-
-/**
- * Embed multiple texts in sequence (Ollama doesn't support batch natively).
- * Returns null entries for failures.
- */
-export async function embedBatch(
-  texts: string[],
-  opts?: { baseUrl?: string; model?: string; timeout?: number; onProgress?: (done: number, total: number) => void },
-): Promise<(EmbeddingResult | null)[]> {
-  const results: (EmbeddingResult | null)[] = [];
-  for (let i = 0; i < texts.length; i++) {
-    results.push(await embed(texts[i], opts));
-    opts?.onProgress?.(i + 1, texts.length);
-  }
-  return results;
 }
 
 /**

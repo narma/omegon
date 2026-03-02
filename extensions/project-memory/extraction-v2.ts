@@ -23,22 +23,40 @@ import type { Fact, Edge } from "./factstore.js";
 /** Track the currently running extraction process for cancellation */
 let activeProc: ChildProcess | null = null;
 
+/** Track all spawned processes for cleanup on module unload */
+const allProcs = new Set<ChildProcess>();
+
+function killProc(proc: ChildProcess): void {
+  try {
+    if (proc.pid) process.kill(-proc.pid, "SIGTERM");
+  } catch {
+    try { proc.kill("SIGTERM"); } catch { /* already dead */ }
+  }
+}
+
 /**
  * Kill the active extraction process if one is running.
  * Returns true if a process was killed.
  */
 export function killActiveExtraction(): boolean {
   if (activeProc) {
-    // Kill the process group (negative PID) since we spawn detached
-    try {
-      if (activeProc.pid) process.kill(-activeProc.pid, "SIGTERM");
-    } catch {
-      activeProc.kill("SIGTERM");
-    }
+    killProc(activeProc);
     activeProc = null;
     return true;
   }
   return false;
+}
+
+/**
+ * Kill ALL tracked subprocesses (extraction + episode generation).
+ * Use during shutdown/reload to prevent orphaned processes.
+ */
+export function killAllSubprocesses(): void {
+  for (const proc of allProcs) {
+    killProc(proc);
+  }
+  allProcs.clear();
+  activeProc = null;
 }
 
 /** Check if an extraction is currently in progress */
@@ -82,6 +100,7 @@ function spawnExtraction(opts: {
       env: { ...process.env, TERM: "dumb" },
     });
     activeProc = proc;
+    allProcs.add(proc);
 
     let stdout = "";
     let stderr = "";
@@ -90,17 +109,17 @@ function spawnExtraction(opts: {
     proc.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
 
     let escalationTimer: ReturnType<typeof setTimeout> | null = null;
-    const killProc = (signal: NodeJS.Signals) => {
+    const killThisProc = (signal: NodeJS.Signals) => {
       try {
         if (proc.pid) process.kill(-proc.pid, signal);
       } catch {
-        proc.kill(signal);
+        try { proc.kill(signal); } catch { /* already dead */ }
       }
     };
     const timeoutHandle = setTimeout(() => {
-      killProc("SIGTERM");
+      killThisProc("SIGTERM");
       escalationTimer = setTimeout(() => {
-        if (!proc.killed) killProc("SIGKILL");
+        if (!proc.killed) killThisProc("SIGKILL");
       }, 5000);
       reject(new Error(`${opts.label} timed out`));
     }, opts.timeout);
@@ -109,6 +128,7 @@ function spawnExtraction(opts: {
       clearTimeout(timeoutHandle);
       if (escalationTimer) clearTimeout(escalationTimer);
       activeProc = null;
+      allProcs.delete(proc);
 
       const output = stdout.trim();
       if (code === 0 && output) {
@@ -127,6 +147,7 @@ function spawnExtraction(opts: {
     proc.on("error", (err) => {
       clearTimeout(timeoutHandle);
       activeProc = null;
+      allProcs.delete(proc);
       reject(err);
     });
   });

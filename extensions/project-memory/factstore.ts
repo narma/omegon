@@ -18,6 +18,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { SECTIONS, type SectionName } from "./template.js";
+import { cosineSimilarity, vectorToBlob, blobToVector } from "./embeddings.js";
 
 /**
  * Resolve the SQLite database constructor.
@@ -570,12 +571,14 @@ export class FactStore {
     return { reinforced, added, newFactIds };
   }
 
-  /** Archive a fact */
+  /** Archive a fact and clean up its vector embedding */
   archiveFact(id: string): void {
     const now = new Date().toISOString();
     this.db.prepare(
       `UPDATE facts SET status = 'archived', archived_at = ? WHERE id = ?`
     ).run(now, id);
+    // Clean up orphaned vector (CASCADE only fires on DELETE, not status change)
+    this.db.prepare(`DELETE FROM facts_vec WHERE fact_id = ?`).run(id);
   }
 
   /** Archive all facts from a specific session */
@@ -971,7 +974,7 @@ export class FactStore {
    * Render an arbitrary list of facts as Markdown-KV.
    * Unlike renderForInjection, this doesn't query the DB — it formats what you give it.
    */
-  renderFactList(facts: Fact[], opts?: { showIds?: boolean; includeEdges?: boolean }): string {
+  renderFactList(facts: Fact[], opts?: { showIds?: boolean }): string {
     const showIds = opts?.showIds ?? false;
 
     const lines: string[] = [
@@ -1220,6 +1223,26 @@ export class FactStore {
       }));
     }
 
+    // Export episodes
+    const allEpisodes = this.db.prepare(
+      `SELECT * FROM episodes ORDER BY date DESC`
+    ).all() as Episode[];
+
+    for (const ep of allEpisodes) {
+      const factIds = this.getEpisodeFactIds(ep.id);
+      lines.push(JSON.stringify({
+        _type: "episode",
+        id: ep.id,
+        mind: ep.mind,
+        title: ep.title,
+        narrative: ep.narrative,
+        date: ep.date,
+        session_id: ep.session_id,
+        created_at: ep.created_at,
+        fact_ids: factIds,
+      }));
+    }
+
     return lines.join("\n") + "\n";
   }
 
@@ -1335,6 +1358,31 @@ export class FactStore {
             }
             break;
           }
+          case "episode": {
+            // Import episode if not already present
+            const existing = this.getEpisode(record.id);
+            if (!existing) {
+              const mind = record.mind ?? "default";
+              if (!this.mindExists(mind)) {
+                this.createMind(mind, "", { origin_type: "local" });
+                mindsCreated++;
+              }
+              // Remap fact IDs
+              const factIds = (record.fact_ids as string[] ?? [])
+                .map((id: string) => factIdMap.get(id) ?? id)
+                .filter((id: string) => !!this.getFact(id));
+
+              this.storeEpisode({
+                mind,
+                title: record.title,
+                narrative: record.narrative,
+                date: record.date,
+                sessionId: record.session_id ?? undefined,
+                factIds,
+              });
+            }
+            break;
+          }
         }
       }
     });
@@ -1361,7 +1409,7 @@ export class FactStore {
 
   /** Store an embedding for a fact */
   storeFactVector(factId: string, embedding: Float32Array, model: string): void {
-    const blob = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+    const blob = vectorToBlob(embedding);
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT OR REPLACE INTO facts_vec (fact_id, embedding, model, dims, created_at)
@@ -1375,10 +1423,7 @@ export class FactStore {
       `SELECT embedding FROM facts_vec WHERE fact_id = ?`
     ).get(factId);
     if (!row?.embedding) return null;
-    const buf = row.embedding as Buffer;
-    const aligned = new ArrayBuffer(buf.length);
-    new Uint8Array(aligned).set(buf);
-    return new Float32Array(aligned);
+    return blobToVector(row.embedding as Buffer);
   }
 
   /** Check if a fact has a stored vector */
@@ -1412,6 +1457,8 @@ export class FactStore {
    * Semantic search: find top-k active facts most similar to a query vector.
    * Returns facts with similarity scores, filtered by mind and min confidence.
    * Applies confidence decay and computes final score as similarity × confidence.
+   *
+   * Skips vectors with mismatched dimensions (e.g., from a different embedding model).
    */
   semanticSearch(
     queryVec: Float32Array,
@@ -1420,10 +1467,11 @@ export class FactStore {
   ): (Fact & { similarity: number; score: number })[] {
     const k = opts?.k ?? 10;
     const minSim = opts?.minSimilarity ?? 0.3;
+    const queryDims = queryVec.length;
 
     // Get all active facts with vectors for this mind
     let query = `
-      SELECT f.*, v.embedding FROM facts f
+      SELECT f.*, v.embedding, v.dims FROM facts f
       JOIN facts_vec v ON f.id = v.fact_id
       WHERE f.mind = ? AND f.status = 'active'
     `;
@@ -1434,7 +1482,7 @@ export class FactStore {
       params.push(opts.section);
     }
 
-    const rows = this.db.prepare(query).all(...params) as (Fact & { embedding: Buffer })[];
+    const rows = this.db.prepare(query).all(...params) as (Fact & { embedding: Buffer; dims: number })[];
 
     // Compute similarities
     const NO_DECAY_SECTIONS: readonly string[] = ["Specs"];
@@ -1442,21 +1490,11 @@ export class FactStore {
     const scored: (Fact & { similarity: number; score: number })[] = [];
 
     for (const row of rows) {
-      // Deserialize vector
-      const buf = row.embedding as Buffer;
-      const aligned = new ArrayBuffer(buf.length);
-      new Uint8Array(aligned).set(buf);
-      const factVec = new Float32Array(aligned);
+      // Skip vectors with mismatched dimensions (stale model)
+      if (row.dims !== queryDims) continue;
 
-      // Cosine similarity
-      let dot = 0, normA = 0, normB = 0;
-      for (let i = 0; i < queryVec.length; i++) {
-        dot += queryVec[i] * factVec[i];
-        normA += queryVec[i] * queryVec[i];
-        normB += factVec[i] * factVec[i];
-      }
-      const denom = Math.sqrt(normA) * Math.sqrt(normB);
-      const similarity = denom === 0 ? 0 : dot / denom;
+      const factVec = blobToVector(row.embedding);
+      const similarity = cosineSimilarity(queryVec, factVec);
 
       if (similarity < minSim) continue;
 
@@ -1471,7 +1509,7 @@ export class FactStore {
       }
 
       // Remove embedding from returned object
-      const { embedding: _, ...fact } = row;
+      const { embedding: _, dims: _d, ...fact } = row;
       scored.push({
         ...fact,
         confidence,
@@ -1488,6 +1526,7 @@ export class FactStore {
   /**
    * Find facts similar to a given fact (for conflict detection).
    * Returns facts in the same section with high similarity but different content hash.
+   * Skips vectors with mismatched dimensions.
    */
   findSimilarFacts(
     factContent: string,
@@ -1498,40 +1537,46 @@ export class FactStore {
   ): (Fact & { similarity: number })[] {
     const threshold = opts?.threshold ?? 0.8;
     const limit = opts?.limit ?? 5;
+    const queryDims = queryVec.length;
     const contentHashVal = contentHash(factContent);
 
     const rows = this.db.prepare(`
-      SELECT f.*, v.embedding FROM facts f
+      SELECT f.*, v.embedding, v.dims FROM facts f
       JOIN facts_vec v ON f.id = v.fact_id
       WHERE f.mind = ? AND f.section = ? AND f.status = 'active'
         AND f.content_hash != ?
-    `).all(mind, section, contentHashVal) as (Fact & { embedding: Buffer })[];
+    `).all(mind, section, contentHashVal) as (Fact & { embedding: Buffer; dims: number })[];
 
     const results: (Fact & { similarity: number })[] = [];
 
     for (const row of rows) {
-      const buf = row.embedding as Buffer;
-      const aligned = new ArrayBuffer(buf.length);
-      new Uint8Array(aligned).set(buf);
-      const factVec = new Float32Array(aligned);
+      if (row.dims !== queryDims) continue;
 
-      let dot = 0, normA = 0, normB = 0;
-      for (let i = 0; i < queryVec.length; i++) {
-        dot += queryVec[i] * factVec[i];
-        normA += queryVec[i] * queryVec[i];
-        normB += factVec[i] * factVec[i];
-      }
-      const denom = Math.sqrt(normA) * Math.sqrt(normB);
-      const similarity = denom === 0 ? 0 : dot / denom;
+      const factVec = blobToVector(row.embedding);
+      const similarity = cosineSimilarity(queryVec, factVec);
 
       if (similarity >= threshold) {
-        const { embedding: _, ...fact } = row;
+        const { embedding: _, dims: _d, ...fact } = row;
         results.push({ ...fact, similarity });
       }
     }
 
     results.sort((a, b) => b.similarity - a.similarity);
     return results.slice(0, limit);
+  }
+
+  /**
+   * Purge vectors with mismatched dimensions. Called when embedding model changes.
+   * Returns number of vectors purged.
+   */
+  purgeStaleVectors(expectedDims: number): number {
+    const result = this.db.prepare(
+      `DELETE FROM facts_vec WHERE dims != ?`
+    ).run(expectedDims);
+    const episodeResult = this.db.prepare(
+      `DELETE FROM episodes_vec WHERE dims != ?`
+    ).run(expectedDims);
+    return result.changes + episodeResult.changes;
   }
 
   // ---------------------------------------------------------------------------
@@ -1601,7 +1646,7 @@ export class FactStore {
 
   /** Store an episode embedding */
   storeEpisodeVector(episodeId: string, embedding: Float32Array, model: string): void {
-    const blob = Buffer.from(embedding.buffer, embedding.byteOffset, embedding.byteLength);
+    const blob = vectorToBlob(embedding);
     const now = new Date().toISOString();
     this.db.prepare(`
       INSERT OR REPLACE INTO episodes_vec (episode_id, embedding, model, dims, created_at)
@@ -1609,7 +1654,7 @@ export class FactStore {
     `).run(episodeId, blob, model, embedding.length, now);
   }
 
-  /** Semantic search over episodes */
+  /** Semantic search over episodes. Skips vectors with mismatched dimensions. */
   semanticSearchEpisodes(
     queryVec: Float32Array,
     mind: string,
@@ -1617,32 +1662,24 @@ export class FactStore {
   ): (Episode & { similarity: number })[] {
     const k = opts?.k ?? 5;
     const minSim = opts?.minSimilarity ?? 0.3;
+    const queryDims = queryVec.length;
 
     const rows = this.db.prepare(`
-      SELECT e.*, v.embedding FROM episodes e
+      SELECT e.*, v.embedding, v.dims FROM episodes e
       JOIN episodes_vec v ON e.id = v.episode_id
       WHERE e.mind = ?
-    `).all(mind) as (Episode & { embedding: Buffer })[];
+    `).all(mind) as (Episode & { embedding: Buffer; dims: number })[];
 
     const results: (Episode & { similarity: number })[] = [];
 
     for (const row of rows) {
-      const buf = row.embedding as Buffer;
-      const aligned = new ArrayBuffer(buf.length);
-      new Uint8Array(aligned).set(buf);
-      const vec = new Float32Array(aligned);
+      if (row.dims !== queryDims) continue;
 
-      let dot = 0, normA = 0, normB = 0;
-      for (let i = 0; i < queryVec.length; i++) {
-        dot += queryVec[i] * vec[i];
-        normA += queryVec[i] * queryVec[i];
-        normB += vec[i] * vec[i];
-      }
-      const denom = Math.sqrt(normA) * Math.sqrt(normB);
-      const similarity = denom === 0 ? 0 : dot / denom;
+      const vec = blobToVector(row.embedding);
+      const similarity = cosineSimilarity(queryVec, vec);
 
       if (similarity >= minSim) {
-        const { embedding: _, ...episode } = row;
+        const { embedding: _, dims: _d, ...episode } = row;
         results.push({ ...episode, similarity });
       }
     }

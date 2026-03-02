@@ -48,14 +48,14 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { Type } from "@sinclair/typebox";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { FactStore, parseExtractionOutput, GLOBAL_DECAY, type MindRecord, type Fact } from "./factstore.js";
-import { embed, isEmbeddingAvailable } from "./embeddings.js";
+import { embed, isEmbeddingAvailable, MODEL_DIMS } from "./embeddings.js";
 import { DEFAULT_CONFIG, type MemoryConfig } from "./types.js";
 import {
   type ExtractionTriggerState,
   createTriggerState,
   shouldExtract,
 } from "./triggers.js";
-import { runExtractionV2, runGlobalExtraction, killActiveExtraction, generateEpisode } from "./extraction-v2.js";
+import { runExtractionV2, runGlobalExtraction, killActiveExtraction, killAllSubprocesses, generateEpisode } from "./extraction-v2.js";
 import { migrateToFactStore, needsMigration, markMigrated } from "./migration.js";
 import { SECTIONS } from "./template.js";
 import { serializeConversation, convertToLlm } from "@mariozechner/pi-coding-agent";
@@ -282,7 +282,18 @@ export default function (pi: ExtensionAPI) {
       const embedStatus = await isEmbeddingAvailable();
       embeddingAvailable = embedStatus.available;
       embeddingModel = embedStatus.model;
-      if (embeddingAvailable) {
+      if (embeddingAvailable && embeddingModel) {
+        // Purge vectors from a different model (dimension mismatch)
+        const expectedDims = MODEL_DIMS[embeddingModel];
+        if (expectedDims && store) {
+          const purged = store.purgeStaleVectors(expectedDims);
+          if (purged > 0 && ctx.hasUI) {
+            ctx.ui.notify(`Purged ${purged} stale vectors (model changed to ${embeddingModel})`, "info");
+          }
+        }
+        if (expectedDims && globalStore) {
+          globalStore.purgeStaleVectors(expectedDims);
+        }
         // Fire-and-forget background indexing — don't block session start
         backgroundIndexFacts(ctx).catch(() => {});
       }
@@ -299,7 +310,8 @@ export default function (pi: ExtensionAPI) {
     // Kill any running extraction subprocess immediately.
     // On /reload, the old module is discarded — orphaned subprocesses with dangling
     // pipe listeners corrupt terminal state (ANSI escape sequences leak to stdout).
-    killActiveExtraction();
+    // killAllSubprocesses covers both extraction and episode generation processes.
+    killAllSubprocesses();
 
     // Wait for the extraction promise to fully settle after kill.
     // Must not close DB until the promise resolves/rejects — otherwise the
@@ -947,6 +959,26 @@ export default function (pi: ExtensionAPI) {
 
       const mind = activeMind();
       const content = params.content.replace(/^-\s*/, "").trim();
+
+      // Pre-store conflict detection: embed and check BEFORE committing
+      let conflictWarning = "";
+      let precomputedVec: Float32Array | null = null;
+      if (embeddingAvailable) {
+        precomputedVec = await embedText(`[${params.section}] ${content}`);
+        if (precomputedVec) {
+          const similar = store.findSimilarFacts(content, precomputedVec, mind, params.section, {
+            threshold: 0.85,
+            limit: 3,
+          });
+          if (similar.length > 0) {
+            const warnings = similar.map(s =>
+              `  ⚠ [${s.id}] (${(s.similarity * 100).toFixed(0)}% similar): ${s.content.slice(0, 100)}`
+            );
+            conflictWarning = "\n\nPotential conflicts detected — consider using memory_supersede if this replaces an existing fact:\n" + warnings.join("\n");
+          }
+        }
+      }
+
       const result = store.storeFact({
         mind,
         section: params.section as any,
@@ -962,25 +994,11 @@ export default function (pi: ExtensionAPI) {
         };
       }
 
-      // Auto-embed the new fact for semantic retrieval
-      embedFact(result.id).catch(() => {}); // fire-and-forget
-
-      // Conflict detection: check for semantically similar but not identical facts
-      let conflictWarning = "";
-      if (embeddingAvailable) {
-        const factVec = await embedText(`[${params.section}] ${content}`);
-        if (factVec) {
-          const similar = store.findSimilarFacts(content, factVec, mind, params.section, {
-            threshold: 0.85,
-            limit: 3,
-          });
-          if (similar.length > 0) {
-            const warnings = similar.map(s =>
-              `  ⚠ [${s.id}] (${(s.similarity * 100).toFixed(0)}% similar): ${s.content.slice(0, 100)}`
-            );
-            conflictWarning = "\n\nPotential conflicts detected — consider using memory_supersede if this replaces an existing fact:\n" + warnings.join("\n");
-          }
-        }
+      // Store the precomputed vector directly (avoids redundant embedding call)
+      if (precomputedVec && embeddingModel) {
+        store.storeFactVector(result.id, precomputedVec, embeddingModel);
+      } else {
+        embedFact(result.id).catch(() => {}); // fallback fire-and-forget
       }
 
       addToWorkingMemory(result.id);
