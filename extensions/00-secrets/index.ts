@@ -17,7 +17,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 
 // ============================================================================
 // Config
@@ -296,13 +296,20 @@ const KEYCHAIN_SERVICE_PREFIX = "pi-kit/";
  * Store a value in the macOS login keychain under service "pi-kit/<name>".
  * macOS will prompt Touch ID / password / smart card automatically if the
  * keychain is locked — the OS owns the auth flow, we just call the command.
+ *
+ * Uses execFileSync (no shell) to avoid bash interpreting $, `, \, ! in
+ * the secret value. JSON.stringify + execSync was silently eating characters
+ * like $FOO (expanded as empty variable).
  */
 function storeInKeychain(secretName: string, value: string): void {
   // Use -U to update if item already exists
-  execSync(
-    `security add-generic-password -U -a ${JSON.stringify(KEYCHAIN_ACCOUNT)} -s ${JSON.stringify(KEYCHAIN_SERVICE_PREFIX + secretName)} -w ${JSON.stringify(value)}`,
-    { stdio: ["pipe", "pipe", "pipe"], timeout: 30_000 }
-  );
+  execFileSync("security", [
+    "add-generic-password",
+    "-U",
+    "-a", KEYCHAIN_ACCOUNT,
+    "-s", KEYCHAIN_SERVICE_PREFIX + secretName,
+    "-w", value,
+  ], { stdio: ["pipe", "pipe", "pipe"], timeout: 30_000 });
 }
 
 function keychainRecipe(secretName: string): string {
@@ -598,10 +605,9 @@ export default function (pi: ExtensionAPI) {
             // 1. Try to read from keychain first
             let existing: string | undefined;
             try {
-              existing = execSync(
-                `security find-generic-password -a ${JSON.stringify(KEYCHAIN_ACCOUNT)} -ws ${JSON.stringify(service)}`,
-                { encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] }
-              ).trim();
+              existing = execFileSync("security", [
+                "find-generic-password", "-a", KEYCHAIN_ACCOUNT, "-ws", service,
+              ], { encoding: "utf-8", timeout: 10_000, stdio: ["pipe", "pipe", "pipe"] }).trim();
             } catch {
               // Not found — that's fine, we'll create it
             }
