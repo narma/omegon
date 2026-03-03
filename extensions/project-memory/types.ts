@@ -19,6 +19,10 @@ export interface MemoryConfig {
   extractionTimeout: number;
   /** Timeout for shutdown extraction in ms (shorter — blocks exit) */
   shutdownExtractionTimeout: number;
+  /** Context % at which to warn the agent to consider compacting */
+  compactionWarningPercent: number;
+  /** Context % at which to auto-compact without asking */
+  compactionAutoPercent: number;
 }
 
 export const DEFAULT_CONFIG: MemoryConfig = {
@@ -30,5 +34,7 @@ export const DEFAULT_CONFIG: MemoryConfig = {
   extractionModel: "claude-sonnet-4-6",
   extractionTimeout: 60_000,
   shutdownExtractionTimeout: 15_000,
+  compactionWarningPercent: 65,
+  compactionAutoPercent: 85,
 };
 

@@ -81,6 +81,10 @@ export default function (pi: ExtensionAPI) {
   let memoryDir = "";
   const globalMemoryDir = path.join(os.homedir(), ".pi", "memory");
 
+  // --- Context Pressure State ---
+  let compactionWarned = false;   // true after we've injected a warning this cycle
+  let autoCompacted = false;      // true after auto-compaction triggered this cycle
+
   // --- Embedding / Semantic Retrieval State ---
   let embeddingAvailable = false;
   let embeddingModel: string | undefined;
@@ -275,6 +279,8 @@ export default function (pi: ExtensionAPI) {
     activeExtractionPromise = null;
     sessionActive = true;
     consecutiveExtractionFailures = 0;
+    compactionWarned = false;
+    autoCompacted = false;
     workingMemory.clear();
 
     // Detect embedding availability and start background indexing
@@ -404,6 +410,8 @@ export default function (pi: ExtensionAPI) {
 
     triggerState.toolCallsSinceExtract = 0;
     triggerState.manualStoresSinceExtract = 0;
+    compactionWarned = false;
+    autoCompacted = false;
   });
 
   // --- Extraction cycle ---
@@ -646,6 +654,19 @@ export default function (pi: ExtensionAPI) {
       ? ` Showing ${injectionMode} subset — use memory_recall for more.`
       : "";
 
+    // Context pressure warning
+    let pressureWarning = "";
+    if (compactionWarned && !autoCompacted) {
+      const usage = ctx.getContextUsage();
+      const pct = usage?.percent != null ? Math.round(usage.percent) : null;
+      if (pct !== null && pct >= config.compactionWarningPercent) {
+        pressureWarning = `\n\n⚠️ **Context pressure: ${pct}%** — You should call **memory_compact** soon. ` +
+          `All stored facts and working memory survive compaction. ` +
+          `If you're between tasks or at a natural boundary, compact now. ` +
+          `Auto-compaction triggers at ${config.compactionAutoPercent}%.`;
+      }
+    }
+
     return {
       message: {
         customType: "project-memory",
@@ -655,6 +676,7 @@ export default function (pi: ExtensionAPI) {
           rendered,
           episodeSection,
           globalSection,
+          pressureWarning,
         ].join(" "),
         display: false,
       },
@@ -674,6 +696,24 @@ export default function (pi: ExtensionAPI) {
 
     const usage = ctx.getContextUsage();
     if (!usage) return;
+
+    // --- Context Pressure: Auto-compact at critical threshold ---
+    const pct = usage.percent ?? 0;
+    if (pct >= config.compactionAutoPercent && !autoCompacted) {
+      autoCompacted = true;
+      if (ctx.hasUI) {
+        ctx.ui.notify(
+          `Context at ${Math.round(pct)}% — auto-compacting to preserve session continuity.`,
+          "warning",
+        );
+      }
+      ctx.compact({
+        customInstructions: "Session hit auto-compaction threshold. Preserve recent work context and any in-progress task state.",
+      });
+    } else if (pct >= config.compactionWarningPercent && !compactionWarned) {
+      // Mark warning — will be injected via before_agent_start
+      compactionWarned = true;
+    }
 
     if (shouldExtract(triggerState, usage.tokens, config, consecutiveExtractionFailures)) {
       activeExtractionPromise = (async () => {
