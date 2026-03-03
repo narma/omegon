@@ -1,6 +1,9 @@
 {
   "name": "pi-kit",
   "version": "1.1.0",
+  "scripts": {
+    "test": "npx tsx --test extensions/**/*.test.ts"
+  },
   "description": "Pi package — extensions, prompts, skills, and themes for the pi coding agent",
   "keywords": ["pi-package"],
   "author": "",
