@@ -3,6 +3,7 @@
  *
  * Provides:
  *   - `cleave_assess` tool: Assess directive complexity (LLM-callable)
+ *   - `/assess` command: Code assessment toolkit (cleave, diff, complexity)
  *   - `/cleave` command: Full decomposition workflow
  *
  * State machine: ASSESS → PLAN → CONFIRM → DISPATCH → HARVEST → REPORT
@@ -147,6 +148,266 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 					availablePatterns: Object.values(PATTERNS).map((p) => p.name),
 				},
 			};
+		},
+	});
+
+	// ── /assess command ──────────────────────────────────────────────────
+	const ASSESS_SUBS = [
+		{ value: "cleave", label: "cleave", description: "Adversarial review → fix plan → auto-execute" },
+		{ value: "diff", label: "diff", description: "Assess uncommitted or recent changes for issues" },
+		{ value: "complexity", label: "complexity", description: "Assess directive complexity (cleave_assess)" },
+	];
+
+	pi.registerCommand("assess", {
+		description: "Code assessment toolkit (usage: /assess <cleave|diff|complexity> [args])",
+		getArgumentCompletions: (prefix: string) => {
+			const filtered = ASSESS_SUBS.filter((s) => s.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
+		handler: async (args, ctx) => {
+			const parts = (args || "").trim().split(/\s+/);
+			const sub = parts[0] || "";
+			const rest = parts.slice(1).join(" ");
+
+			switch (sub) {
+				// ── /assess cleave ──────────────────────────────────────
+				// Adversarial review of recent work → produce categorized
+				// issue list → immediately dispatch cleave to fix everything.
+				case "cleave": {
+					// Gather context: recent git changes
+					let diffStat = "";
+					let diffContent = "";
+					let recentLog = "";
+					try {
+						const stat = await pi.exec("git", ["diff", "--stat", "HEAD~3"], { cwd: ctx.cwd, timeout: 5_000 });
+						diffStat = stat.stdout.trim();
+						const diff = await pi.exec("git", ["diff", "HEAD~3"], { cwd: ctx.cwd, timeout: 10_000 });
+						diffContent = diff.stdout.slice(0, 30_000); // Cap to avoid blowing context
+						const log = await pi.exec("git", ["log", "--oneline", "-10"], { cwd: ctx.cwd, timeout: 5_000 });
+						recentLog = log.stdout.trim();
+					} catch {
+						// Fall back to unstaged diff
+						try {
+							const stat = await pi.exec("git", ["diff", "--stat"], { cwd: ctx.cwd, timeout: 5_000 });
+							diffStat = stat.stdout.trim();
+							const diff = await pi.exec("git", ["diff"], { cwd: ctx.cwd, timeout: 10_000 });
+							diffContent = diff.stdout.slice(0, 30_000);
+						} catch { /* non-git or error — proceed anyway */ }
+					}
+
+					if (!diffStat && !diffContent) {
+						pi.sendMessage({
+							customType: "view",
+							content: "No recent changes found. Nothing to assess.",
+							display: true,
+						});
+						return;
+					}
+
+					pi.sendMessage({
+						customType: "view",
+						content: [
+							"**Assess → Cleave pipeline starting...**",
+							"",
+							`Reviewing changes from last 3 commits:`,
+							"```",
+							diffStat,
+							"```",
+						].join("\n"),
+						display: true,
+					});
+
+					pi.sendUserMessage(
+						[
+							"## Adversarial Review → Auto-Fix Pipeline",
+							"",
+							"You are doing an adversarial code review of recent changes.",
+							"Your job is to find real issues, then fix them automatically.",
+							"",
+							"### Step 1: Review",
+							"",
+							"Analyze these recent changes for:",
+							"- **Critical bugs**: logic errors, race conditions, missing error handling",
+							"- **Warnings**: misleading names, missing edge cases, fragile patterns",
+							"- **Nits**: dead code, style inconsistencies (low priority)",
+							"",
+							"Recent commits:",
+							"```",
+							recentLog,
+							"```",
+							"",
+							"Diff stat:",
+							"```",
+							diffStat,
+							"```",
+							"",
+							"Full diff (truncated to 30KB):",
+							"```diff",
+							diffContent,
+							"```",
+							"",
+							"### Step 2: Categorize",
+							"",
+							"Present findings as a numbered list grouped by severity:",
+							"- **C1, C2...** for critical issues",
+							"- **W1, W2...** for warnings",
+							"- **N1, N2...** for nits",
+							"",
+							"### Step 3: Fix",
+							"",
+							"After presenting the list, **immediately fix all Critical and Warning issues**.",
+							"Do NOT wait for confirmation — the user invoked `/assess cleave` which means",
+							'"assess and fix in one shot". Work through C and W items systematically.',
+							"Nits are optional — fix them if trivial, skip if not.",
+							"",
+							"After all fixes, run the test suite to verify nothing broke.",
+							"Then commit with a conventional commit message summarizing all fixes.",
+						].join("\n"),
+						{ deliverAs: "followUp" },
+					);
+					return;
+				}
+
+				// ── /assess diff [ref] ─────────────────────────────────
+				// Assess a specific diff range for issues (review only, no auto-fix)
+				case "diff": {
+					const ref = rest || "HEAD~1";
+					let diffContent = "";
+					let diffStat = "";
+					try {
+						const stat = await pi.exec("git", ["diff", "--stat", ref], { cwd: ctx.cwd, timeout: 5_000 });
+						diffStat = stat.stdout.trim();
+						const diff = await pi.exec("git", ["diff", ref], { cwd: ctx.cwd, timeout: 10_000 });
+						diffContent = diff.stdout.slice(0, 40_000);
+					} catch (e: any) {
+						pi.sendMessage({
+							customType: "view",
+							content: `Failed to get diff for \`${ref}\`: ${e.message}`,
+							display: true,
+						});
+						return;
+					}
+
+					if (!diffContent) {
+						pi.sendMessage({
+							customType: "view",
+							content: `No changes found relative to \`${ref}\`.`,
+							display: true,
+						});
+						return;
+					}
+
+					pi.sendMessage({
+						customType: "view",
+						content: [
+							`**Assessing diff since \`${ref}\`...**`,
+							"```",
+							diffStat,
+							"```",
+						].join("\n"),
+						display: true,
+					});
+
+					pi.sendUserMessage(
+						[
+							`## Code Review: diff since \`${ref}\``,
+							"",
+							"Do an adversarial code review of these changes.",
+							"Find bugs, fragile patterns, missing edge cases, and style issues.",
+							"",
+							"Categorize findings as:",
+							"- **C1, C2...** Critical (logic errors, security, data loss)",
+							"- **W1, W2...** Warning (fragile, misleading, missing cases)",
+							"- **N1, N2...** Nit (style, dead code, minor)",
+							"",
+							"Diff stat:",
+							"```",
+							diffStat,
+							"```",
+							"",
+							"```diff",
+							diffContent,
+							"```",
+							"",
+							"Present findings only — do NOT fix anything unless I ask.",
+						].join("\n"),
+						{ deliverAs: "followUp" },
+					);
+					return;
+				}
+
+				// ── /assess complexity <directive> ─────────────────────
+				case "complexity": {
+					if (!rest) {
+						pi.sendMessage({
+							customType: "view",
+							content: "Usage: `/assess complexity <directive>`\n\nAssess whether a task should be decomposed or executed directly.",
+							display: true,
+						});
+						return;
+					}
+
+					const assessment = assessDirective(rest);
+					pi.sendMessage({
+						customType: "view",
+						content: [
+							formatAssessment(assessment),
+							"",
+							assessment.decision === "cleave"
+								? "**→ Decomposition recommended.** Use `/cleave " + rest + "` to proceed."
+								: assessment.decision === "execute"
+									? "**→ Execute directly.** Task is below complexity threshold."
+									: "**→ Manual assessment needed.** No pattern matched.",
+						].join("\n"),
+						display: true,
+					});
+					return;
+				}
+
+				// ── /assess (no subcommand) ────────────────────────────
+				default: {
+					// If they typed something that's not a subcommand, treat
+					// it as a complexity assessment of the whole string
+					if (sub && !ASSESS_SUBS.some((s) => s.value === sub)) {
+						const fullDirective = args!.trim();
+						const assessment = assessDirective(fullDirective);
+						pi.sendMessage({
+							customType: "view",
+							content: [
+								formatAssessment(assessment),
+								"",
+								assessment.decision === "cleave"
+									? "**→ Decomposition recommended.** Use `/cleave " + fullDirective + "` to proceed."
+									: assessment.decision === "execute"
+										? "**→ Execute directly.** Task is below complexity threshold."
+										: "**→ Manual assessment needed.** No pattern matched.",
+							].join("\n"),
+							display: true,
+						});
+						return;
+					}
+
+					pi.sendMessage({
+						customType: "view",
+						content: [
+							"**Assess — Code Assessment Toolkit**",
+							"",
+							"| Subcommand | Description |",
+							"|---|---|",
+							"| `/assess cleave` | Adversarial review of recent work → auto-fix all issues |",
+							"| `/assess diff [ref]` | Review changes since ref (default: HEAD~1) — analysis only |",
+							"| `/assess complexity <directive>` | Check if a task needs decomposition |",
+							"| `/assess <directive>` | Shorthand for `/assess complexity <directive>` |",
+							"",
+							"**`/assess cleave`** is the power move: reviews the last 3 commits,",
+							"finds Critical and Warning issues, then immediately fixes them all",
+							"and commits the result.",
+						].join("\n"),
+						display: true,
+					});
+					return;
+				}
+			}
 		},
 	});
 
