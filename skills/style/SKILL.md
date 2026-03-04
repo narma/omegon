@@ -7,6 +7,21 @@ description: Unified visual style guide. Defines the Verdant color system, typog
 
 Canonical design system for all visual output. Every diagram, theme, and generated image should derive from these tokens. When in doubt, reference this — not ad-hoc hex values.
 
+## When Invoked Directly
+
+When the user runs `/style` (or `/skill:style`), respond based on arguments:
+
+| Invocation | Action |
+|------------|--------|
+| `/style` (no args) | Display the Quick Reference Card (bottom of this doc) as a formatted code block, then offer: "Run `/style palette` to render a visual swatch, or `/style check <file>` to audit colors." |
+| `/style palette` | Render a Mermaid diagram showing the full Verdant palette as a visual swatch — use labeled colored nodes for each token group (core, signals, excalidraw semantics). |
+| `/style mermaid` | Output the Mermaid `%%{init}%%` dark theme block ready to copy-paste. |
+| `/style check <file>` | Read the specified file, find any hardcoded hex colors, and report which ones match Verdant tokens, which match Excalidraw semantics, and which are off-palette. |
+| `/style excalidraw` | Display the Excalidraw semantic palette table with fill/stroke pairs and usage guidance. |
+| `/style <anything else>` | Treat as a question about the style system and answer from this document. |
+
+---
+
 ## Design Philosophy
 
 **Verdant** — dark, organic, high-contrast. Forest canopy at night: deep backgrounds, teal-green accents, warm semantic signals. Clean lines, zero roughness, monospace text. Professional but not sterile.
