@@ -4,7 +4,7 @@
 // @config EXCALIDRAW_RENDER_DIR "Path to Excalidraw render pipeline (uv + playwright)" [default: <pi-kit>/skills/visualize/references/excalidraw]
 
 /**
- * diffuse — Visual generation extension for pi
+ * render — Visual rendering extension for pi
  *
  * Provides three tools:
  *   - generate_image_local: AI image generation via FLUX.1 (mflux, Apple Silicon MLX)
@@ -99,7 +99,7 @@ const PRESET_DEFAULTS: Record<string, { model: string; steps: number; guidance: 
 // Extension
 // ---------------------------------------------------------------------------
 
-export default function diffuseExtension(pi: ExtensionAPI) {
+export default function renderExtension(pi: ExtensionAPI) {
 
 	// ------------------------------------------------------------------
 	// generate_image_local — FLUX.1 via mflux on Apple Silicon
@@ -366,10 +366,10 @@ export default function diffuseExtension(pi: ExtensionAPI) {
 	});
 
 	// ------------------------------------------------------------------
-	// /diffuse command — quick image generation shortcut
+	// /render command — quick image generation shortcut
 	// ------------------------------------------------------------------
-	pi.registerCommand("diffuse", {
-		description: "Generate an image locally (usage: /diffuse <prompt>)",
+	pi.registerCommand("render", {
+		description: "Generate an image locally (usage: /render <prompt>)",
 		handler: async (args, _ctx) => {
 			if (!args?.trim()) {
 				// Show status instead of error
@@ -384,7 +384,7 @@ export default function diffuseExtension(pi: ExtensionAPI) {
 					`Excalidraw (render_excalidraw): ${excaliOk ? "✅ ready" : `⚠️  not set up — \`cd ${EXCALIDRAW_RENDER_DIR} && uv sync && uv run playwright install chromium\``}`,
 					`Output directory: \`${VISUALS_DIR}\``,
 					``,
-					`Usage: \`/diffuse <prompt>\``,
+					`Usage: \`/render <prompt>\``,
 				].join("\n");
 				pi.sendMessage({ customType: "view", content: status, display: true });
 				return;

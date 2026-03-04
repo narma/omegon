@@ -65,7 +65,7 @@ Derived from `themes/verdant.json`. These are the ground-truth tokens.
 
 ### Excalidraw Semantic Palette
 
-For diagram elements. Maps purpose → fill/stroke pairs. Defined in `extensions/diffuse/excalidraw/types.ts`.
+For diagram elements. Maps purpose → fill/stroke pairs. Defined in `extensions/render/excalidraw/types.ts`.
 
 | Purpose | Fill | Stroke | When to Use |
 |---------|------|--------|-------------|

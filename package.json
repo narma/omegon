@@ -12,7 +12,7 @@
     "extensions": [
       "./extensions/00-secrets",
       "./extensions/defaults.ts",
-      "./extensions/diffuse",
+      "./extensions/render",
       "./extensions/local-inference",
       "./extensions/mcp-bridge",
       "./extensions/model-budget.ts",

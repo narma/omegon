@@ -90,7 +90,7 @@ npm install -g @mermaid-js/mermaid-cli
 
 For freeform visual arguments that go beyond boxes-and-arrows. The Excalidraw pipeline has two parts:
 
-1. **Element factories** (`extensions/diffuse/excalidraw/`) — TypeScript functions that generate valid `.excalidraw` JSON
+1. **Element factories** (`extensions/render/excalidraw/`) — TypeScript functions that generate valid `.excalidraw` JSON
 2. **Renderer** (`render_excalidraw` tool) — Playwright + Chromium → PNG
 
 ### Workflow
@@ -208,7 +208,7 @@ Each Excalidraw element has 25+ required fields. Use this minimal template and f
 - `fontFamily`: 1=Virgil (handwritten), 2=Helvetica, 3=Cascadia (monospace), 5=Excalifont
 - Text on dark backgrounds: use `strokeColor: "#ffffff"`. On light backgrounds: `"#374151"`
 
-> **Note:** TypeScript element factory functions exist at `extensions/diffuse/excalidraw/` that automate
+> **Note:** TypeScript element factory functions exist at `extensions/render/excalidraw/` that automate
 > ID generation, index ordering, text measurement, and binding wiring. These are available for future
 > tool integration but are not currently callable by the agent. See `UPSTREAM.md` for details.
 
@@ -276,7 +276,7 @@ uv run playwright install chromium
 
 ### Upstream Tracking
 
-The element factory is vendored from `@swiftlysingh/excalidraw-cli@1.1.0`. See `extensions/diffuse/excalidraw/UPSTREAM.md` for sync instructions and breaking change risks.
+The element factory is vendored from `@swiftlysingh/excalidraw-cli@1.1.0`. See `extensions/render/excalidraw/UPSTREAM.md` for sync instructions and breaking change risks.
 
 ---
 
@@ -314,4 +314,4 @@ generate_image_local(prompt="...", preset="dev", quantize="4")
 - Use `schnell` for fast drafts, `dev` for quality finals
 - `diagram` preset gives 4:3 landscape good for technical visuals
 - `seed` parameter makes results reproducible
-- `/diffuse <prompt>` as a quick command shortcut
+- `/render <prompt>` as a quick command shortcut

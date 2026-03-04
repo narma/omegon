@@ -1,7 +1,7 @@
 /**
  * Tests for Excalidraw element factories.
  *
- * Run: node --experimental-strip-types --test extensions/diffuse/excalidraw/elements.test.ts
+ * Run: node --experimental-strip-types --test extensions/render/excalidraw/elements.test.ts
  */
 
 import { describe, it, beforeEach } from "node:test";
