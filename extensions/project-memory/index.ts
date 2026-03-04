@@ -1811,7 +1811,10 @@ export default function (pi: ExtensionAPI) {
     description: "Run memory extraction and exit gracefully (avoids /reload terminal corruption)",
     handler: async (_args, ctx) => {
       if (!store) {
-        await ctx.shutdown();
+        ctx.shutdown();
+        await new Promise<void>(resolve => {
+          setTimeout(() => { resolve(); process.exit(0); }, 30_000);
+        });
         return;
       }
 
@@ -1847,7 +1850,22 @@ export default function (pi: ExtensionAPI) {
       // Small delay so the notification renders
       await new Promise(r => setTimeout(r, 200));
 
-      await ctx.shutdown();
+      // ctx.shutdown() is fire-and-forget internally (sets shutdownRequested flag
+      // and calls void this.shutdown() in interactive mode). We must keep this
+      // command handler alive so control doesn't return to the REPL prompt —
+      // otherwise the user sees the input prompt again instead of the process exiting.
+      ctx.shutdown();
+
+      // Block until process.exit() is called by the shutdown flow.
+      // The shutdown handler runs session_shutdown events (episode generation,
+      // JSONL export) then calls process.exit(0). If that takes too long or
+      // hangs, force exit after 30s as a safety net.
+      await new Promise<void>(resolve => {
+        setTimeout(() => {
+          resolve();
+          process.exit(0);
+        }, 30_000);
+      });
     },
   });
 }
