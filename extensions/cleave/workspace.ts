@@ -1,25 +1,30 @@
 /**
  * cleave/workspace — Lightweight workspace management.
  *
- * Creates and manages .cleave-* workspace directories containing:
- * - state.json: serialized CleaveState (replaces manifest.yaml)
+ * Creates and manages workspace directories under ~/.pi/cleave/ containing:
+ * - state.json: serialized CleaveState
  * - {n}-task.md: child task files
  *
- * Simplified from the Python version — uses JSON instead of YAML,
- * and relies on pi's memory/session system for broader context.
+ * Workspaces live outside the target repo to avoid polluting the working tree.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ChildPlan, CleaveState, SplitPlan } from "./types.js";
 
+/** Base directory for all cleave workspaces. */
+const CLEAVE_HOME = join(homedir(), ".pi", "cleave");
+
 /**
- * Generate a unique workspace directory name from a directive.
+ * Generate a unique workspace directory path from a directive.
  *
- * Creates a human-readable slug: ".cleave-add-jwt-auth"
- * Appends numeric suffix if collision: ".cleave-add-jwt-auth-2"
+ * Creates a human-readable path: ~/.pi/cleave/add-jwt-auth/
+ * Appends numeric suffix if collision: ~/.pi/cleave/add-jwt-auth-2/
  */
-export function generateWorkspaceName(directive: string, baseDir: string): string {
+export function generateWorkspacePath(directive: string): string {
+	mkdirSync(CLEAVE_HOME, { recursive: true });
+
 	let slug = directive
 		.toLowerCase()
 		.replace(/[^\w\s-]/g, "")
@@ -30,27 +35,26 @@ export function generateWorkspaceName(directive: string, baseDir: string): strin
 	if (slug.length > 40) slug = slug.slice(0, 40).replace(/-$/, "");
 	if (!slug) slug = "task";
 
-	const base = `.cleave-${slug}`;
-	let candidate = join(baseDir, base);
-	if (!existsSync(candidate)) return base;
+	let candidate = join(CLEAVE_HOME, slug);
+	if (!existsSync(candidate)) return candidate;
 
 	let counter = 2;
-	while (existsSync(join(baseDir, `${base}-${counter}`))) counter++;
-	return `${base}-${counter}`;
+	while (existsSync(join(CLEAVE_HOME, `${slug}-${counter}`))) counter++;
+	return join(CLEAVE_HOME, `${slug}-${counter}`);
 }
 
 /**
  * Initialize a cleave workspace directory.
  *
  * Creates the workspace directory, state.json, and child task files.
+ * Workspace lives under ~/.pi/cleave/, not inside the target repo.
  */
 export function initWorkspace(
 	state: CleaveState,
 	plan: SplitPlan,
-	repoPath: string,
+	_repoPath: string,
 ): string {
-	const wsName = generateWorkspaceName(state.directive, repoPath);
-	const wsPath = join(repoPath, wsName);
+	const wsPath = generateWorkspacePath(state.directive);
 	mkdirSync(wsPath, { recursive: true });
 
 	state.workspacePath = wsPath;

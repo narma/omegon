@@ -73,8 +73,8 @@ export interface ChildState {
 	startedAt?: string;
 	completedAt?: string;
 	error?: string;
-	/** Cost in USD (cloud children only) */
-	costUsd?: number;
+	/** Duration in seconds */
+	durationSec?: number;
 	/** "local" | "cloud" — which execution backend was used */
 	backend?: "local" | "cloud";
 }
@@ -100,7 +100,8 @@ export interface CleaveState {
 	plan: SplitPlan | null;
 	children: ChildState[];
 	workspacePath: string;
-	totalCostUsd: number;
+	/** Total wall-clock duration in seconds */
+	totalDurationSec: number;
 	createdAt: string;
 	completedAt?: string;
 	error?: string;

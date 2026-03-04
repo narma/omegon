@@ -77,7 +77,7 @@ interface ChildResult {
 /**
  * Spawn a `pi` process for a child task.
  *
- * Uses `pi -p --no-session --mode json` for non-interactive execution.
+ * Uses `pi -p --no-session` for non-interactive execution.
  * The prompt is passed via stdin.
  */
 async function spawnChild(
@@ -289,6 +289,11 @@ async function dispatchSingleChild(
 	);
 
 	child.completedAt = new Date().toISOString();
+	if (child.startedAt) {
+		child.durationSec = Math.round(
+			(new Date(child.completedAt).getTime() - new Date(child.startedAt).getTime()) / 1000,
+		);
+	}
 
 	if (result.exitCode === 0) {
 		child.status = "completed";

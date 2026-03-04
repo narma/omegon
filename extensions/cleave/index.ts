@@ -14,11 +14,13 @@
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { truncateHead, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 
 import { assessDirective, PATTERNS } from "./assessment.js";
 import { detectConflicts, parseTaskResult } from "./conflicts.js";
 import { dispatchChildren } from "./dispatcher.js";
+import { detectOpenSpec, findExecutableChanges, openspecChangeToSplitPlan } from "./openspec.js";
 import { buildPlannerPrompt, getRepoTree, parsePlanResponse } from "./planner.js";
 import type { CleaveState, ChildState, SplitPlan } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
@@ -164,8 +166,66 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			// Task needs cleaving — gather context and delegate to LLM
+			// Task needs cleaving — check for OpenSpec first, then fall back to LLM
 			const repoPath = ctx.cwd;
+
+			// ── OpenSpec fast path ─────────────────────────────────────
+			const openspecDir = detectOpenSpec(repoPath);
+			if (openspecDir) {
+				const executableChanges = findExecutableChanges(openspecDir);
+				if (executableChanges.length > 0) {
+					// Try to find a change whose name matches the directive
+					const directiveSlug = directive.toLowerCase().replace(/[^\w]+/g, "-");
+					const matched = executableChanges.find((c) =>
+						directiveSlug.includes(c.name) || c.name.includes(directiveSlug.slice(0, 20)),
+					);
+					const change = matched || executableChanges[0];
+					const plan = openspecChangeToSplitPlan(change.path);
+
+					if (plan) {
+						const planJson = JSON.stringify(plan, null, 2);
+						pi.sendMessage({
+							customType: "view",
+							content: [
+								assessmentText,
+								"",
+								`**→ OpenSpec plan detected** from \`${change.name}/tasks.md\``,
+								"",
+								`**Rationale:** ${plan.rationale}`,
+								`**Children:** ${plan.children.map((c) => c.label).join(", ")}`,
+								"",
+								"Review the plan and confirm to execute via `cleave_run`.",
+							].join("\n"),
+							display: true,
+						});
+
+						pi.sendUserMessage(
+							[
+								"## Cleave Decomposition (OpenSpec)",
+								"",
+								`OpenSpec change \`${change.name}\` provides a pre-built split plan.`,
+								"",
+								"### Split Plan",
+								"",
+								"```json",
+								planJson,
+								"```",
+								"",
+								"Present this plan to the user for review. After confirmation,",
+								"use the `cleave_run` tool with this plan_json and the original directive.",
+								"",
+								"### Original Directive",
+								"",
+								directive,
+							].join("\n"),
+							{ deliverAs: "followUp" },
+						);
+						return;
+					}
+				}
+			}
+
+			// ── LLM planning fallback ──────────────────────────────────
 			let repoTree: string;
 			try {
 				repoTree = await getRepoTree(pi, repoPath);
@@ -276,7 +336,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 					backend: preferLocal ? "local" as const : "cloud" as const,
 				})),
 				workspacePath: "",
-				totalCostUsd: 0,
+				totalDurationSec: 0,
 				createdAt: new Date().toISOString(),
 			};
 
@@ -358,15 +418,19 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 			saveState(state);
 
 			const completedChildren = state.children.filter((c) => c.status === "completed");
-			const mergeResults: Array<{ branch: string; success: boolean; conflicts: string[] }> = [];
+			const mergeResults: Array<{ label: string; branch: string; success: boolean; conflicts: string[] }> = [];
 
 			for (const child of completedChildren) {
 				const result = await mergeBranch(pi, repoPath, child.branch, baseBranch);
 				mergeResults.push({
+					label: child.label,
 					branch: child.branch,
 					success: result.success,
 					conflicts: result.conflictFiles,
 				});
+				// On merge failure, stop merging further children to avoid
+				// compounding a partially-merged state
+				if (!result.success) break;
 			}
 
 			// ── CLEANUP ────────────────────────────────────────────────
@@ -375,6 +439,9 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 			// ── REPORT ─────────────────────────────────────────────────
 			state.phase = "complete";
 			state.completedAt = new Date().toISOString();
+			state.totalDurationSec = Math.round(
+				(new Date(state.completedAt).getTime() - new Date(state.createdAt).getTime()) / 1000,
+			);
 
 			const allOk =
 				state.children.every((c) => c.status === "completed") &&
@@ -395,6 +462,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				`**Directive:** ${params.directive}`,
 				`**Status:** ${allOk ? "✓ SUCCESS" : "✗ ISSUES DETECTED"}`,
 				`**Children:** ${completedCount} completed, ${failedCount} failed of ${state.children.length}`,
+				`**Duration:** ${state.totalDurationSec}s`,
 				`**Workspace:** \`${wsPath}\``,
 				"",
 			];
@@ -402,7 +470,8 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 			// Child details
 			for (const child of state.children) {
 				const icon = child.status === "completed" ? "✓" : child.status === "failed" ? "✗" : "⏳";
-				reportLines.push(`  ${icon} **${child.label}** (${child.backend ?? "cloud"}): ${child.status}`);
+				const dur = child.durationSec ? ` (${child.durationSec}s)` : "";
+				reportLines.push(`  ${icon} **${child.label}** [${child.backend ?? "cloud"}]${dur}: ${child.status}`);
 				if (child.error) reportLines.push(`    Error: ${child.error}`);
 			}
 
@@ -411,15 +480,34 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				reportLines.push("", "### Conflicts", "", formatConflicts(conflicts));
 			}
 
-			// Merge results
-			if (mergeFailures.length > 0) {
-				reportLines.push("", "### Merge Failures");
+			// Merge results (always show — makes partial merge state explicit)
+			if (mergeResults.length > 0) {
+				reportLines.push("", "### Merge Results");
+				const mergeSuccesses = mergeResults.filter((m) => m.success);
+				const notAttempted = completedChildren
+					.filter((c) => !mergeResults.some((m) => m.label === c.label))
+					.map((c) => c.label);
+				for (const m of mergeSuccesses) {
+					reportLines.push(`  ✓ ${m.label} merged`);
+				}
 				for (const m of mergeFailures) {
-					reportLines.push(`  ✗ ${m.branch}: conflicts in ${m.conflicts.join(", ")}`);
+					reportLines.push(`  ✗ ${m.label}: conflicts in ${m.conflicts.join(", ")}`);
+				}
+				for (const label of notAttempted) {
+					reportLines.push(`  ⏭ ${label}: skipped (earlier merge failed)`);
 				}
 			}
 
-			const report = reportLines.join("\n");
+			const rawReport = reportLines.join("\n");
+			const truncation = truncateHead(rawReport, {
+				maxLines: DEFAULT_MAX_LINES,
+				maxBytes: DEFAULT_MAX_BYTES,
+			});
+			let report = truncation.content;
+			if (truncation.truncated) {
+				report += `\n\n[Report truncated: ${truncation.outputLines} of ${truncation.totalLines} lines` +
+					` (${formatSize(truncation.outputBytes)} of ${formatSize(truncation.totalBytes)})]`;
+			}
 
 			return {
 				content: [{ type: "text", text: report }],

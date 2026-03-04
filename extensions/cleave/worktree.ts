@@ -179,4 +179,20 @@ export async function cleanupWorktrees(
 		cwd: repoPath,
 		timeout: 5_000,
 	}).catch(() => {});
+
+	// Delete orphaned cleave/* branches
+	const branchResult = await pi.exec(
+		"git", ["branch", "--list", "cleave/*"],
+		{ cwd: repoPath, timeout: 5_000 },
+	);
+	const branches = branchResult.stdout
+		.split("\n")
+		.map((b) => b.trim().replace(/^\*\s*/, ""))
+		.filter(Boolean);
+	for (const branch of branches) {
+		await pi.exec("git", ["branch", "-D", branch], {
+			cwd: repoPath,
+			timeout: 5_000,
+		}).catch(() => {});
+	}
 }
