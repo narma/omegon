@@ -1,21 +1,21 @@
 ---
 name: visualize
-description: Read, understand, write, and visualize Mermaid diagrams, Excalidraw freeform diagrams, and AI-generated images. Renders data models, flowcharts, architectural diagrams, and visual arguments inline.
+description: Read, understand, write, and visualize D2 diagrams, Excalidraw freeform diagrams, and AI-generated images. Renders data models, flowcharts, architectural diagrams, and visual arguments inline.
 ---
 
 # Visualize Skill
 
-Unified skill for visual content: structured diagrams (Mermaid), freeform visual arguments (Excalidraw), and AI image generation (FLUX.1 via MLX).
+Unified skill for visual content: structured diagrams (D2), freeform visual arguments (Excalidraw), and AI image generation (FLUX.1 via MLX).
 
 ## When to Use What
 
 | Need | Tool | Speed | Strengths |
 |------|------|-------|-----------|
-| Quick structural diagram | `render_diagram` (Mermaid) | ~2s | ER, sequence, flowchart, Gantt, git graph |
+| Structural diagram | `render_diagram` (D2) | ~300ms | Flowcharts, ER, sequence, architecture, class diagrams |
 | Freeform visual argument | Write `.excalidraw` JSON + `render_excalidraw` | ~30s | Spatial reasoning, evidence artifacts, concept-shape isomorphism |
 | AI-generated image | `generate_image_local` (FLUX.1) | ~10-60s | Photorealistic, artistic, abstract concepts |
 
-**Use Mermaid** when the diagram has a well-defined type (ER, sequence, flowchart, state machine, Gantt) and you want speed.
+**Use D2** for any diagram with defined structure — flowcharts, ER, sequence, architecture, class, state. D2 has native dark theme support, inline styling, and renders to PNG directly.
 
 **Use Excalidraw** when you need to make a visual *argument* — architecture overviews, system explanations, educational diagrams where spatial layout, evidence artifacts (code snippets, JSON examples), and concept-to-shape mapping matter.
 
@@ -23,66 +23,135 @@ Unified skill for visual content: structured diagrams (Mermaid), freeform visual
 
 ---
 
-## Mermaid Diagrams
+## D2 Diagrams
 
-Use the `render_diagram` tool to render inline Mermaid code directly in the terminal:
+Use the `render_diagram` tool to render D2 source code to inline PNG:
 
 ```
-render_diagram(code="flowchart TB\n  A[Start] --> B[End]", title="My Diagram")
+render_diagram(code="direction: right\na: Start -> b: End", title="My Diagram")
 ```
 
-If `mmdc` (Mermaid CLI) is installed, diagrams render as inline PNG images. Otherwise they display as syntax-highlighted source.
+D2 renders natively to PNG via the `d2` CLI. No extra dependencies needed beyond the `d2` binary (installed via Nix).
 
-### Supported Diagram Types
+### D2 Quick Reference
 
-| Type | Syntax | Use Case |
-|------|--------|----------|
-| Flowchart | `flowchart TB/LR` | Process flows, decision trees |
-| Sequence | `sequenceDiagram` | API flows, message protocols |
-| Class | `classDiagram` | OOP designs, data models |
-| ER | `erDiagram` | Database schemas |
-| State | `stateDiagram-v2` | State machines |
-| Gantt | `gantt` | Project timelines |
-| Git Graph | `gitGraph` | Branch strategies |
-| Pie | `pie` | Distributions |
-| Timeline | `timeline` | Historical events, roadmaps |
+**Basic shapes and connections:**
+```d2
+# Shapes
+server: API Server
+db: Database {shape: cylinder}
+queue: Task Queue {shape: queue}
+user: User {shape: person}
 
-### Quick Syntax Reference
-
-**Flowchart:**
-```mermaid
-flowchart LR
-    A[Input] --> B{Decision}
-    B -->|yes| C[Action]
-    B -->|no| D[Skip]
-    C --> E[Output]
-    D --> E
+# Connections
+user -> server: HTTP request
+server -> db: query
+server -> queue: enqueue
 ```
 
-Node shapes: `[rect]` `(rounded)` `{diamond}` `((circle))` `[(cylinder)]`
-Arrows: `-->` `-.->` `==>` `--label-->`
+**Shape types:** `rectangle` (default), `cylinder`, `queue`, `person`, `diamond`, `oval`, `hexagon`, `cloud`, `package`, `page`, `parallelogram`, `class`, `sql_table`, `image`, `circle`, `stored_data`, `step`, `callout`, `text`
 
-**Sequence:**
-```mermaid
-sequenceDiagram
-    Client->>API: POST /login
-    API->>DB: query user
-    DB-->>API: user data
-    API-->>Client: JWT token
+**Connection styles:** `->` (directed), `--` (undirected), `<->` (bidirectional)
+**Labels:** `a -> b: label text`
+
+**Containers (groups):**
+```d2
+backend: Backend {
+  api: API Server
+  db: Database {shape: cylinder}
+  api -> db
+}
+
+frontend: Frontend {
+  app: React App
+  cdn: CDN
+}
+
+frontend.app -> backend.api: REST
 ```
 
-**ER:**
-```mermaid
-erDiagram
-    USER ||--o{ ORDER : places
-    ORDER ||--|{ ITEM : contains
+**Sequence diagrams:**
+```d2
+shape: sequence_diagram
+
+client: Client
+server: Server
+db: Database
+
+client -> server: POST /login
+server -> db: SELECT user
+db -> server: user row
+server -> client: 200 JWT
 ```
 
-### Install mmdc
+**Styling with Verdant colors:**
+```d2
+component: API Server {
+  style: {
+    fill: "#3b82f6"
+    stroke: "#1e3a5f"
+    font-color: "#ffffff"
+    border-radius: 8
+  }
+}
 
-```bash
-npm install -g @mermaid-js/mermaid-cli
+warning-box: Degraded {
+  style: {
+    fill: "#fee2e2"
+    stroke: "#dc2626"
+    font-color: "#374151"
+  }
+}
+
+component -> warning-box: health check {
+  style: {
+    stroke: "#3dc9b0"
+    font-color: "#d4e8e4"
+  }
+}
 ```
+
+**Layout direction:** `direction: right` | `direction: down` | `direction: left` | `direction: up`
+
+**SQL tables:**
+```d2
+users: {
+  shape: sql_table
+  id: int {constraint: primary_key}
+  name: varchar(255)
+  email: varchar(255) {constraint: unique}
+  created_at: timestamp
+}
+```
+
+**Classes:**
+```d2
+UserService: {
+  shape: class
+  +getUser(id): User
+  +createUser(data): User
+  -validateEmail(email): bool
+}
+```
+
+**Icons and images:**
+```d2
+server: API Server {
+  icon: https://icons.terrastruct.com/essentials%2F112-server.svg
+}
+```
+
+### Rendering Options
+
+| Parameter | Default | Options |
+|-----------|---------|---------|
+| `layout` | `elk` | `elk`, `dagre` |
+| `theme` | `200` (dark) | 0-299 (see d2 themes) |
+| `sketch` | `false` | `true` for hand-drawn style |
+
+### D2 Reference
+
+Full language reference: https://d2lang.com/tour/intro
 
 ---
 
@@ -214,19 +283,16 @@ Each Excalidraw element has 25+ required fields. Use this minimal template and f
 
 ### Semantic Color Palette
 
-Colors encode meaning. Pass `semantic` to shape factories:
+Colors encode meaning. See the style skill (`/style excalidraw`) for the full table. Key pairs:
 
-| Purpose | Fill | Stroke | Use For |
-|---------|------|--------|---------|
-| `primary` | `#3b82f6` | `#1e3a5f` | Default, neutral components |
-| `secondary` | `#60a5fa` | `#1e3a5f` | Supporting components |
-| `start` | `#fed7aa` | `#c2410c` | Entry points, triggers |
-| `end` | `#a7f3d0` | `#047857` | Outputs, completion |
-| `decision` | `#fef3c7` | `#b45309` | Conditionals, branches |
-| `ai` | `#ddd6fe` | `#6d28d9` | AI/LLM components |
-| `warning` | `#fee2e2` | `#dc2626` | Warnings, resets |
-| `error` | `#fecaca` | `#b91c1c` | Error states |
-| `evidence` | `#1e293b` | `#334155` | Code snippets, data examples |
+| Purpose | Fill | Stroke |
+|---------|------|--------|
+| `primary` | `#3b82f6` | `#1e3a5f` |
+| `start` | `#fed7aa` | `#c2410c` |
+| `end` | `#a7f3d0` | `#047857` |
+| `decision` | `#fef3c7` | `#b45309` |
+| `ai` | `#ddd6fe` | `#6d28d9` |
+| `evidence` | `#1e293b` | `#334155` |
 
 ### Design Methodology
 

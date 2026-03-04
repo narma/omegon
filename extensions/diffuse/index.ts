@@ -217,60 +217,93 @@ export default function diffuseExtension(pi: ExtensionAPI) {
 	});
 
 	// ------------------------------------------------------------------
-	// render_diagram — Mermaid code → inline image via mmdc
+	// render_diagram — D2 code → inline PNG via d2 CLI
 	// ------------------------------------------------------------------
 	pi.registerTool({
 		name: "render_diagram",
 		label: "Render Diagram",
 		description:
-			"Render inline Mermaid diagram source code as an image inline in the terminal. " +
+			"Render a D2 diagram as an inline PNG image in the terminal. " +
+			"D2 is a modern declarative diagramming language (https://d2lang.com). " +
 			"Use for architecture diagrams, flowcharts, ER diagrams, sequence diagrams, " +
-			"class diagrams, state machines, Gantt charts, and any other Mermaid diagram type. " +
-			"Output is saved to ~/.pi/visuals/ when rendered as PNG. " +
-			"Requires mmdc for PNG output (npm install -g @mermaid-js/mermaid-cli); " +
-			"falls back to syntax-highlighted source if mmdc is not installed.",
-		promptSnippet: "Render Mermaid diagrams as inline images (flowcharts, ER, sequence, etc.)",
+			"class diagrams, state machines, and any structural diagram. " +
+			"Output is saved to ~/.pi/visuals/ for persistence. " +
+			"Requires d2 CLI (installed via Nix or brew).",
+		promptSnippet: "Render D2 diagrams as inline images (flowcharts, ER, sequence, architecture, etc.)",
+		promptGuidelines: [
+			"Use D2 syntax, NOT Mermaid. D2 reference: https://d2lang.com/tour/intro",
+			"Use --theme 200 (dark) and --layout elk for best results",
+			"Apply Verdant semantic colors via style blocks: fill, stroke, font-color",
+		],
 		parameters: Type.Object({
-			code:  Type.String({ description: "Mermaid diagram source code (raw syntax, no backtick fences)" }),
-			title: Type.Optional(Type.String({ description: "Optional title for the diagram" })),
+			code:   Type.String({ description: "D2 diagram source code" }),
+			title:  Type.Optional(Type.String({ description: "Optional title for the diagram" })),
+			layout: Type.Optional(StringEnum(["dagre", "elk"] as const, { description: "Layout engine (default: elk)" })),
+			theme:  Type.Optional(Type.Number({ description: "D2 theme ID (default: 200 = dark)" })),
+			sketch: Type.Optional(Type.Boolean({ description: "Sketch/hand-drawn mode (default: false)" })),
 		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-			// Write source to a persistent .mmd file in visuals dir
-			const slug = (params.title || "diagram").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
-			const mmdPath  = visualsPath(`${timestamp()}_${slug}.mmd`);
-			writeFileSync(mmdPath, params.code, "utf-8");
-
-			const titlePrefix = params.title ? `# ${params.title}\n\n` : "";
-
-			if (hasCmd("mmdc")) {
-				const outPng = mmdPath.replace(/\.mmd$/, ".png");
-				try {
-					execSync(
-						`mmdc -i ${JSON.stringify(mmdPath)} -o ${JSON.stringify(outPng)} -b transparent -w 1200 2>/dev/null`,
-						{ timeout: 15_000 }
-					);
-					if (existsSync(outPng) && statSync(outPng).size > 0) {
-						const data = readFileSync(outPng).toString("base64");
-						return {
-							content: [
-								{ type: "text",  text: `${titlePrefix}📊 Mermaid  ·  Saved: ${outPng}` },
-								{ type: "image", data, mimeType: "image/png" },
-							],
-							details: { rendered: true, mmdPath, pngPath: outPng },
-						};
-					}
-				} catch { /* fall through to source display */ }
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
+			if (!hasCmd("d2")) {
+				throw new Error(
+					"d2 CLI not found. Install via Nix (nix profile install nixpkgs#d2) " +
+					"or brew (brew install d2)."
+				);
 			}
 
-			// Fallback: syntax-highlighted source
-			const hint = hasCmd("mmdc") ? "" : "\n> Install mmdc for PNG rendering: `npm install -g @mermaid-js/mermaid-cli`";
-			return {
-				content: [{
-					type: "text",
-					text: `${titlePrefix}📊 Mermaid source  ·  Saved: ${mmdPath}${hint}\n\n\`\`\`mermaid\n${params.code}\n\`\`\``,
-				}],
-				details: { rendered: false, mmdPath },
-			};
+			const slug = (params.title || "diagram").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
+			const d2Path  = visualsPath(`${timestamp()}_${slug}.d2`);
+			const outPng  = d2Path.replace(/\.d2$/, ".png");
+			writeFileSync(d2Path, params.code, "utf-8");
+
+			const titlePrefix = params.title ? `# ${params.title}\n\n` : "";
+			const layout = params.layout ?? "elk";
+			const theme = params.theme ?? 200; // dark theme
+
+			const args = [
+				"-l", layout,
+				"-t", String(theme),
+				"--pad", "40",
+			];
+			if (params.sketch) args.push("--sketch");
+			args.push(d2Path, outPng);
+
+			onUpdate?.({
+				content: [{ type: "text", text: `Rendering D2 diagram (${layout})…` }],
+				details: { d2Path, layout, theme },
+			});
+
+			const startTime = Date.now();
+			try {
+				const result = await pi.exec("d2", args, { signal, timeout: 30_000 });
+				const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+				if (result.code !== 0) {
+					const stderr = result.stderr || "";
+					throw new Error(`d2 failed (exit ${result.code}):\n${stderr.slice(-1500)}`);
+				}
+
+				if (!existsSync(outPng) || statSync(outPng).size === 0) {
+					throw new Error(`d2 produced no output at ${outPng}`);
+				}
+
+				const data = readFileSync(outPng).toString("base64");
+				return {
+					content: [
+						{ type: "text",  text: `${titlePrefix}📊 D2 (${layout}, ${elapsed}s)  ·  Saved: ${outPng}` },
+						{ type: "image", data, mimeType: "image/png" },
+					],
+					details: { rendered: true, d2Path, pngPath: outPng, layout, theme, elapsed: Number(elapsed) },
+				};
+			} catch (err: any) {
+				// Fallback: show source
+				return {
+					content: [{
+						type: "text",
+						text: `${titlePrefix}📊 D2 source (render failed: ${err.message})  ·  Saved: ${d2Path}\n\n\`\`\`d2\n${params.code}\n\`\`\``,
+					}],
+					details: { rendered: false, d2Path, error: err.message },
+				};
+			}
 		},
 	});
 
