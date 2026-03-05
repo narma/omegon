@@ -152,6 +152,38 @@ export async function mergeBranch(
 }
 
 /**
+ * Remove cleave worktree directories without deleting branches.
+ * Used on merge failure to free disk space while preserving branches
+ * for manual conflict resolution.
+ */
+export async function pruneWorktreeDirs(
+	pi: ExtensionAPI,
+	repoPath: string,
+): Promise<void> {
+	const result = await pi.exec("git", ["worktree", "list", "--porcelain"], {
+		cwd: repoPath,
+		timeout: 5_000,
+	});
+
+	for (const line of result.stdout.split("\n")) {
+		if (line.startsWith("worktree ")) {
+			const wtPath = line.replace("worktree ", "").trim();
+			if (wtPath.startsWith(WORKTREE_HOME) || wtPath.includes(".cleave-wt-")) {
+				await pi.exec("git", ["worktree", "remove", "--force", wtPath], {
+					cwd: repoPath,
+					timeout: 10_000,
+				}).catch(() => {});
+			}
+		}
+	}
+
+	await pi.exec("git", ["worktree", "prune"], {
+		cwd: repoPath,
+		timeout: 5_000,
+	}).catch(() => {});
+}
+
+/**
  * Clean up all cleave worktrees and their branches.
  */
 export async function cleanupWorktrees(
@@ -171,7 +203,7 @@ export async function cleanupWorktrees(
 		if (line.startsWith("worktree ")) {
 			const wtPath = line.replace("worktree ", "").trim();
 			// Match worktrees in the cleave wt directory or legacy .cleave-wt- locations
-			if (wtPath.includes(WORKTREE_HOME) || wtPath.includes(".cleave-wt-")) {
+			if (wtPath.startsWith(WORKTREE_HOME) || wtPath.includes(".cleave-wt-")) {
 				worktreePaths.push(wtPath);
 			}
 		}

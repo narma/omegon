@@ -118,20 +118,27 @@ export function detectConflicts(results: TaskResult[]): Conflict[] {
 	const conflicts: Conflict[] = [];
 
 	// ── Step 1: File Overlap ──────────────────────────────────────────────
-	const fileClaims = new Map<string, number>();
+	// Collect ALL claimants per file, then emit one conflict per file with
+	// all involved children (handles N-way overlaps, not just pairwise).
+	const fileClaims = new Map<string, number[]>();
 	for (let i = 0; i < results.length; i++) {
 		for (const file of results[i].fileClaims) {
-			const prev = fileClaims.get(file);
-			if (prev !== undefined) {
-				conflicts.push({
-					type: "file_overlap",
-					description: `Multiple children modified ${file}`,
-					involved: [prev, i],
-					resolution: "3way_merge",
-				});
+			const existing = fileClaims.get(file);
+			if (existing) {
+				existing.push(i);
 			} else {
-				fileClaims.set(file, i);
+				fileClaims.set(file, [i]);
 			}
+		}
+	}
+	for (const [file, claimants] of fileClaims) {
+		if (claimants.length > 1) {
+			conflicts.push({
+				type: "file_overlap",
+				description: `Multiple children modified ${file}`,
+				involved: claimants,
+				resolution: "3way_merge",
+			});
 		}
 	}
 

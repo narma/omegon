@@ -38,6 +38,7 @@ import {
 	ensureCleanWorktree,
 	getCurrentBranch,
 	mergeBranch,
+	pruneWorktreeDirs,
 } from "./worktree.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -777,35 +778,23 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				if (!result.success) break;
 			}
 
+			// ── CLEANUP ────────────────────────────────────────────────
+			// Only clean up worktrees if all merges succeeded. On merge
+			// failure, preserve branches so the user can manually resolve.
+			const mergeFailures = mergeResults.filter((m) => !m.success);
+
 			// ── SPEC VERIFICATION ──────────────────────────────────────
 			// If OpenSpec specs exist, check implementation against scenarios
 			let specVerification: string | null = null;
 			if (openspecCtx && openspecCtx.specScenarios.length > 0 && mergeFailures.length === 0) {
 				specVerification = formatSpecVerification(openspecCtx);
 			}
-
-			// ── CLEANUP ────────────────────────────────────────────────
-			// Only clean up worktrees if all merges succeeded. On merge
-			// failure, preserve branches so the user can manually resolve.
-			const mergeFailures = mergeResults.filter((m) => !m.success);
 			if (mergeFailures.length === 0) {
 				await cleanupWorktrees(pi, repoPath);
 			} else {
-				// Still prune worktree directories (they're copies), but keep the branches
-				const wtResult = await pi.exec("git", ["worktree", "list", "--porcelain"], {
-					cwd: repoPath, timeout: 5_000,
-				});
-				for (const line of wtResult.stdout.split("\n")) {
-					if (line.startsWith("worktree ")) {
-						const wtPath = line.replace("worktree ", "").trim();
-						if (wtPath.includes("cleave") || wtPath.includes(".cleave-wt-")) {
-							await pi.exec("git", ["worktree", "remove", "--force", wtPath], {
-								cwd: repoPath, timeout: 10_000,
-							}).catch(() => {});
-						}
-					}
-				}
-				await pi.exec("git", ["worktree", "prune"], { cwd: repoPath, timeout: 5_000 }).catch(() => {});
+				// Prune worktree directories (they're copies) but keep the branches
+				// for manual conflict resolution
+				await pruneWorktreeDirs(pi, repoPath);
 			}
 
 			// ── REPORT ─────────────────────────────────────────────────
