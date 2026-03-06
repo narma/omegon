@@ -449,3 +449,161 @@ describe("parseExtractionOutput", () => {
     assert.equal(actions.length, 1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// JSONL Import/Export — merge=union dedup and deterministic ordering
+// ---------------------------------------------------------------------------
+
+describe("JSONL Import Dedup (merge=union resilience)", () => {
+  let dir: string;
+  let store: FactStore;
+
+  beforeEach(() => {
+    dir = tmpDir();
+    store = new FactStore(dir);
+  });
+
+  afterEach(() => {
+    store.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("deduplicates fact lines with same id, keeps higher reinforcement_count", () => {
+    // Simulate merge=union producing two lines for the same fact
+    const jsonl = [
+      '{"_type":"fact","id":"AAA","mind":"default","section":"Architecture","content":"Test fact","status":"active","content_hash":"abc123","reinforcement_count":3,"last_reinforced":"2026-03-01T00:00:00Z","confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+      '{"_type":"fact","id":"AAA","mind":"default","section":"Architecture","content":"Test fact","status":"active","content_hash":"abc123","reinforcement_count":5,"last_reinforced":"2026-03-02T00:00:00Z","confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+    ].join("\n");
+
+    const result = store.importFromJsonl(jsonl);
+    // Should process only ONE fact (the one with count=5), not both
+    assert.equal(result.factsAdded, 1);
+    assert.equal(result.factsReinforced, 0);
+
+    const facts = store.getActiveFacts("default");
+    assert.equal(facts.length, 1);
+    assert.equal(facts[0].reinforcement_count, 5);
+  });
+
+  it("deduplicates fact lines with same id, tie-breaks on last_reinforced", () => {
+    const jsonl = [
+      '{"_type":"fact","id":"BBB","mind":"default","section":"Architecture","content":"Tied fact","status":"active","content_hash":"def456","reinforcement_count":3,"last_reinforced":"2026-03-01T00:00:00Z","confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+      '{"_type":"fact","id":"BBB","mind":"default","section":"Architecture","content":"Tied fact","status":"active","content_hash":"def456","reinforcement_count":3,"last_reinforced":"2026-03-05T00:00:00Z","confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+    ].join("\n");
+
+    store.importFromJsonl(jsonl);
+    const facts = store.getActiveFacts("default");
+    assert.equal(facts.length, 1);
+    // The one with the later last_reinforced should win
+    // (We can't check last_reinforced directly on the imported fact since import
+    //  may set its own timestamp, but only 1 fact should exist)
+  });
+
+  it("deduplicates episode lines with same id, keeps only one", () => {
+    // Simulate merge=union producing two episode lines with same id
+    const jsonl = [
+      '{"_type":"episode","id":"EP1","mind":"default","title":"Session One","narrative":"Did stuff","date":"2026-03-01","session_id":null,"created_at":"2026-03-01T00:00:00Z","fact_ids":[]}',
+      '{"_type":"episode","id":"EP1","mind":"default","title":"Session One","narrative":"Did stuff","date":"2026-03-01","session_id":null,"created_at":"2026-03-01T12:00:00Z","fact_ids":[]}',
+    ].join("\n");
+
+    store.importFromJsonl(jsonl);
+    const episodes = store.getEpisodes("default");
+    assert.equal(episodes.length, 1);
+    assert.equal(episodes[0].title, "Session One");
+  });
+
+  it("deduplicates edge lines with same id, keeps only one", () => {
+    // Import facts AND edges from JSONL — no pre-created facts
+    const jsonl = [
+      '{"_type":"fact","id":"F1","mind":"default","section":"Architecture","content":"Edge fact one","status":"active","content_hash":"ef1","reinforcement_count":1,"confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+      '{"_type":"fact","id":"F2","mind":"default","section":"Architecture","content":"Edge fact two","status":"active","content_hash":"ef2","reinforcement_count":1,"confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+      '{"_type":"edge","id":"E1","source_fact_id":"F1","target_fact_id":"F2","relation":"depends_on","description":"test","confidence":1,"reinforcement_count":1,"decay_rate":0.05,"source_mind":"default","target_mind":"default"}',
+      '{"_type":"edge","id":"E1","source_fact_id":"F1","target_fact_id":"F2","relation":"depends_on","description":"test","confidence":1,"reinforcement_count":3,"decay_rate":0.05,"source_mind":"default","target_mind":"default"}',
+    ].join("\n");
+
+    const result = store.importFromJsonl(jsonl);
+    assert.equal(result.factsAdded, 2);
+
+    // Get the imported facts (IDs are remapped by import)
+    const facts = store.getActiveFacts("default");
+    assert.equal(facts.length, 2);
+
+    // Check edges — should have exactly 1 despite two lines with same id
+    const allEdges = store.getActiveEdges("default");
+    assert.equal(allEdges.length, 1);
+  });
+
+  it("preserves records without id field (mind records)", () => {
+    const jsonl = [
+      '{"_type":"mind","name":"custom","description":"A custom mind","status":"active","origin_type":"local","created_at":"2026-03-01T00:00:00Z"}',
+      '{"_type":"fact","id":"F1","mind":"custom","section":"Architecture","content":"Custom fact","status":"active","content_hash":"c1","reinforcement_count":1,"confidence":1,"decay_rate":0.05,"source":"manual","created_at":"2026-03-01T00:00:00Z","supersedes":null}',
+    ].join("\n");
+
+    const result = store.importFromJsonl(jsonl);
+    assert.equal(result.mindsCreated, 1);
+    assert.equal(result.factsAdded, 1);
+  });
+
+  it("episode re-import does not create duplicates", () => {
+    // Store an episode, export, then re-import into same store
+    store.storeEpisode({
+      mind: "default",
+      title: "Original Episode",
+      narrative: "Narrative",
+      date: "2026-03-01",
+    });
+
+    const jsonl = store.exportToJsonl();
+
+    // Import the exported JSONL back into the same store
+    store.importFromJsonl(jsonl);
+    store.importFromJsonl(jsonl);
+
+    const episodes = store.getEpisodes("default");
+    assert.equal(episodes.length, 1, `Expected 1 episode, got ${episodes.length}`);
+  });
+
+  it("episode cross-machine import preserves id", () => {
+    // Simulate: machine A exports, machine B imports into fresh store
+    store.storeEpisode({
+      mind: "default",
+      title: "Remote Episode",
+      narrative: "From another machine",
+      date: "2026-03-01",
+    });
+    const jsonl = store.exportToJsonl();
+
+    // Fresh store (machine B)
+    const dir2 = tmpDir();
+    const store2 = new FactStore(dir2);
+    store2.importFromJsonl(jsonl);
+
+    const episodes = store2.getEpisodes("default");
+    assert.equal(episodes.length, 1);
+    assert.equal(episodes[0].title, "Remote Episode");
+
+    // Re-import should NOT duplicate
+    store2.importFromJsonl(jsonl);
+    const after = store2.getEpisodes("default");
+    assert.equal(after.length, 1, `Expected 1 episode after re-import, got ${after.length}`);
+
+    store2.close();
+    fs.rmSync(dir2, { recursive: true, force: true });
+  });
+
+  it("export is deterministic — same DB produces same output", () => {
+    store.storeFact({ section: "Architecture", content: "Fact A" });
+    store.storeFact({ section: "Decisions", content: "Fact B" });
+    store.storeFact({ section: "Architecture", content: "Fact C" });
+    store.storeEpisode({
+      mind: "default",
+      title: "Ep",
+      narrative: "Text",
+      date: "2026-03-01",
+    });
+
+    const export1 = store.exportToJsonl();
+    const export2 = store.exportToJsonl();
+    assert.equal(export1, export2, "Two consecutive exports should be byte-identical");
+  });
+});

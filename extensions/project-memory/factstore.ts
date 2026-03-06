@@ -1224,9 +1224,9 @@ export class FactStore {
       }));
     }
 
-    // Export all active facts (all minds)
+    // Export all active facts — deterministic: chronological with id tie-break
     const allFacts = this.db.prepare(
-      `SELECT * FROM facts WHERE status = 'active' ORDER BY mind, section, created_at`
+      `SELECT * FROM facts WHERE status = 'active' ORDER BY mind, section, created_at, id`
     ).all() as Fact[];
 
     for (const fact of allFacts) {
@@ -1248,9 +1248,9 @@ export class FactStore {
       }));
     }
 
-    // Export active edges
+    // Export active edges — deterministic: chronological with id tie-break
     const allEdges = this.db.prepare(
-      `SELECT * FROM edges WHERE status = 'active' ORDER BY created_at`
+      `SELECT * FROM edges WHERE status = 'active' ORDER BY created_at, id`
     ).all() as Edge[];
 
     for (const edge of allEdges) {
@@ -1270,9 +1270,9 @@ export class FactStore {
       }));
     }
 
-    // Export episodes
+    // Export episodes — deterministic: chronological with id tie-break
     const allEpisodes = this.db.prepare(
-      `SELECT * FROM episodes ORDER BY date DESC`
+      `SELECT * FROM episodes ORDER BY date, created_at, id`
     ).all() as Episode[];
 
     for (const ep of allEpisodes) {
@@ -1309,17 +1309,38 @@ export class FactStore {
     // Map from imported fact ID → local fact ID (for edge remapping)
     const factIdMap = new Map<string, string>();
 
-    const tx = this.db.transaction(() => {
-      for (const line of jsonl.split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        let record: any;
-        try {
-          record = JSON.parse(trimmed);
-        } catch {
-          continue;
+    // Pre-dedup: merge=union in git can produce multiple lines with the same id
+    // but different metadata (reinforcement_count, last_reinforced). Keep only the
+    // line with the highest reinforcement_count per id to prevent churn.
+    const dedupedRecords: any[] = [];
+    const seenById = new Map<string, number>(); // id → index in dedupedRecords
+    for (const line of jsonl.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let record: any;
+      try {
+        record = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      const id = record.id;
+      if (id && seenById.has(id)) {
+        const idx = seenById.get(id)!;
+        const existing = dedupedRecords[idx];
+        // Keep higher reinforcement_count; tie-break on last_reinforced
+        if ((record.reinforcement_count ?? 0) > (existing.reinforcement_count ?? 0) ||
+            ((record.reinforcement_count ?? 0) === (existing.reinforcement_count ?? 0) &&
+             (record.last_reinforced ?? "") > (existing.last_reinforced ?? ""))) {
+          dedupedRecords[idx] = record;
         }
+      } else {
+        if (id) seenById.set(id, dedupedRecords.length);
+        dedupedRecords.push(record);
+      }
+    }
+
+    const tx = this.db.transaction(() => {
+      for (const record of dedupedRecords) {
 
         switch (record._type) {
           case "mind": {
@@ -1410,7 +1431,8 @@ export class FactStore {
             break;
           }
           case "episode": {
-            // Import episode if not already present
+            // Import episode — preserve original ID for cross-machine dedup.
+            // getEpisode checks by ID, so using record.id ensures re-import is idempotent.
             const existing = this.getEpisode(record.id);
             if (!existing) {
               const mind = record.mind ?? "default";
@@ -1423,13 +1445,14 @@ export class FactStore {
                 .map((id: string) => factIdMap.get(id) ?? id)
                 .filter((id: string) => !!this.getFact(id));
 
-              this.storeEpisode({
+              this._storeEpisodeInner(record.id, {
                 mind,
                 title: record.title,
                 narrative: record.narrative,
                 date: record.date,
-                sessionId: record.session_id ?? undefined,
+                sessionId: record.session_id ?? null,
                 factIds,
+                createdAt: record.created_at,
               });
             }
             break;
@@ -1644,25 +1667,40 @@ export class FactStore {
     factIds?: string[];
   }): string {
     const id = nanoid();
-    const now = new Date().toISOString();
-
     const tx = this.db.transaction(() => {
-      this.db.prepare(`
-        INSERT INTO episodes (id, mind, title, narrative, date, session_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, opts.mind, opts.title, opts.narrative, opts.date, opts.sessionId ?? null, now);
-
-      if (opts.factIds?.length) {
-        const stmt = this.db.prepare(
-          `INSERT OR IGNORE INTO episode_facts (episode_id, fact_id) VALUES (?, ?)`
-        );
-        for (const factId of opts.factIds) {
-          stmt.run(id, factId);
-        }
-      }
+      this._storeEpisodeInner(id, opts);
     });
     tx();
     return id;
+  }
+
+  /**
+   * Inner episode insert — no transaction wrapper.
+   * Safe to call inside an existing transaction (e.g. importFromJsonl).
+   */
+  private _storeEpisodeInner(id: string, opts: {
+    mind: string;
+    title: string;
+    narrative: string;
+    date: string;
+    sessionId?: string | null;
+    factIds?: string[];
+    createdAt?: string;
+  }): void {
+    const now = opts.createdAt ?? new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO episodes (id, mind, title, narrative, date, session_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, opts.mind, opts.title, opts.narrative, opts.date, opts.sessionId ?? null, now);
+
+    if (opts.factIds?.length) {
+      const stmt = this.db.prepare(
+        `INSERT OR IGNORE INTO episode_facts (episode_id, fact_id) VALUES (?, ?)`
+      );
+      for (const factId of opts.factIds) {
+        stmt.run(id, factId);
+      }
+    }
   }
 
   /** Get episodes for a mind, ordered by date descending */

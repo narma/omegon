@@ -595,9 +595,8 @@ describe("JSONL Episode Export/Import", () => {
     });
 
     const jsonl = store.exportToJsonl();
-    store.close();
 
-    // Import into fresh store
+    // Import into fresh store (close original later in afterEach)
     const dir2 = tmpDir();
     const store2 = new FactStore(dir2);
     const result = store2.importFromJsonl(jsonl);
@@ -621,16 +620,12 @@ describe("JSONL Episode Export/Import", () => {
 
     const jsonl = store.exportToJsonl();
 
-    // Import twice
+    // Import twice — should be idempotent (import preserves original episode ID)
     store.importFromJsonl(jsonl);
     store.importFromJsonl(jsonl);
 
-    // Episode IDs differ between export/import since storeEpisode generates new IDs.
-    // But the import checks by ID, and the exported ID won't match the newly generated one.
-    // This means re-import creates duplicates — document this as expected behavior.
     const episodes = store.getEpisodes("default");
-    // At least the original episode should exist
-    assert.ok(episodes.length >= 1);
+    assert.equal(episodes.length, 1, `Expected 1 episode, got ${episodes.length}`);
   });
 });
 
