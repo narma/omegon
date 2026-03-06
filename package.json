@@ -14,6 +14,7 @@
     "extensions": [
       "./extensions/auto-compact.ts",
       "./extensions/00-secrets",
+      "./extensions/01-auth",
       "./extensions/chronos",
       "./extensions/cleave",
       "./extensions/defaults.ts",
@@ -31,7 +32,6 @@
       "./extensions/terminal-title.ts",
       "./extensions/view",
       "./extensions/web-search",
-      "./extensions/whoami.ts",
       "./extensions/design-tree"
     ],
     "skills": [
