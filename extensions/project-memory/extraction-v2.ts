@@ -26,6 +26,9 @@ let activeProc: ChildProcess | null = null;
 /** Track all spawned processes for cleanup on module unload */
 const allProcs = new Set<ChildProcess>();
 
+/** Track the active direct-HTTP extraction AbortController for cancellation */
+let activeDirectAbort: AbortController | null = null;
+
 function killProc(proc: ChildProcess): void {
   try {
     if (proc.pid) process.kill(-proc.pid, "SIGTERM");
@@ -35,21 +38,27 @@ function killProc(proc: ChildProcess): void {
 }
 
 /**
- * Kill the active extraction process if one is running.
- * Returns true if a process was killed.
+ * Kill the active extraction — subprocess OR direct HTTP fetch.
+ * Returns true if something was killed/aborted.
  */
 export function killActiveExtraction(): boolean {
+  let killed = false;
   if (activeProc) {
     killProc(activeProc);
     activeProc = null;
-    return true;
+    killed = true;
   }
-  return false;
+  if (activeDirectAbort) {
+    activeDirectAbort.abort();
+    activeDirectAbort = null;
+    killed = true;
+  }
+  return killed;
 }
 
 /**
- * Kill ALL tracked subprocesses (extraction + episode generation).
- * Use during shutdown/reload to prevent orphaned processes.
+ * Kill ALL tracked subprocesses AND abort any direct HTTP extraction.
+ * Use during shutdown/reload to prevent orphaned processes and hanging fetches.
  */
 export function killAllSubprocesses(): void {
   for (const proc of allProcs) {
@@ -57,11 +66,15 @@ export function killAllSubprocesses(): void {
   }
   allProcs.clear();
   activeProc = null;
+  if (activeDirectAbort) {
+    activeDirectAbort.abort();
+    activeDirectAbort = null;
+  }
 }
 
 /** Check if an extraction is currently in progress */
 export function isExtractionRunning(): boolean {
-  return activeProc !== null;
+  return activeProc !== null || activeDirectAbort !== null;
 }
 
 /**
@@ -235,15 +248,37 @@ export function formatFactsForExtraction(facts: Fact[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Check if extraction model looks like a local Ollama model name.
- * Ollama models use the format "name:tag" (e.g., "devstral-small-2:24b")
- * or bare names without the "claude-" prefix.
+ * Known cloud model prefixes. If a model starts with any of these, it's cloud.
+ * Everything else is assumed local (Ollama).
+ *
+ * This is an allowlist approach — new cloud providers must be added here.
+ * The alternative (detecting local by "name:tag" pattern) is too fragile
+ * since Ollama accepts bare names without tags.
+ */
+const CLOUD_MODEL_PREFIXES = [
+  "claude-",      // Anthropic
+  "gpt-",         // OpenAI
+  "o1-", "o3-", "o4-",  // OpenAI reasoning
+  "gemini-",      // Google
+  "mistral-",     // Mistral cloud (not devstral which is local)
+  "command-",     // Cohere
+];
+
+/**
+ * Check if extraction model is a local Ollama model.
+ * Uses an explicit cloud-prefix allowlist. Models with a "/" are assumed
+ * to be provider-qualified cloud models (e.g., "openai/gpt-4").
  */
 function isLocalModel(model: string): boolean {
-  // Cloud model names start with "claude-" or contain a "/" (provider/model)
-  if (model.startsWith("claude-") || model.includes("/")) return false;
+  if (model.includes("/")) return false;
+  for (const prefix of CLOUD_MODEL_PREFIXES) {
+    if (model.startsWith(prefix)) return false;
+  }
   return true;
 }
+
+/** Fallback cloud model when local extraction fails and Ollama is unreachable. */
+const CLOUD_FALLBACK_MODEL = "claude-sonnet-4-6";
 
 /**
  * Run extraction directly via Ollama HTTP API.
@@ -258,6 +293,11 @@ async function runExtractionDirect(
 ): Promise<string | null> {
   const baseUrl = opts?.ollamaUrl ?? process.env.LOCAL_INFERENCE_URL ?? "http://localhost:11434";
   const timeout = config.extractionTimeout;
+
+  // Create an AbortController that can be killed externally via killActiveExtraction().
+  // Combines our controller with a timeout signal so either trigger aborts the fetch.
+  const controller = new AbortController();
+  activeDirectAbort = controller;
 
   try {
     const resp = await fetch(`${baseUrl}/api/chat`, {
@@ -276,7 +316,7 @@ async function runExtractionDirect(
           { role: "user", content: userMessage },
         ],
       }),
-      signal: AbortSignal.timeout(timeout),
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(timeout)]),
     });
 
     if (!resp.ok) return null;
@@ -293,6 +333,10 @@ async function runExtractionDirect(
       .trim();
   } catch {
     return null;
+  } finally {
+    if (activeDirectAbort === controller) {
+      activeDirectAbort = null;
+    }
   }
 }
 
@@ -330,7 +374,7 @@ export async function runExtractionV2(
 
   return spawnExtraction({
     cwd,
-    model: isLocalModel(config.extractionModel) ? "claude-sonnet-4-6" : config.extractionModel,
+    model: isLocalModel(config.extractionModel) ? CLOUD_FALLBACK_MODEL : config.extractionModel,
     systemPrompt: prompt,
     userMessage,
     timeout: config.extractionTimeout,
@@ -463,7 +507,7 @@ export async function runGlobalExtraction(
 
   return spawnExtraction({
     cwd,
-    model: isLocalModel(config.extractionModel) ? "claude-sonnet-4-6" : config.extractionModel,
+    model: isLocalModel(config.extractionModel) ? CLOUD_FALLBACK_MODEL : config.extractionModel,
     systemPrompt,
     userMessage,
     timeout: config.extractionTimeout,

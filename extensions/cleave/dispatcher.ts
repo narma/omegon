@@ -62,16 +62,6 @@ const LOCAL_SCOPE_THRESHOLD = 3;      // ≤ this many files → local
 const SONNET_SCOPE_THRESHOLD = 8;     // ≤ this many files → sonnet, > → opus
 
 /**
- * File extensions that signal complex reasoning (prefer cloud models).
- * These are patterns where subtle bugs are expensive and local models
- * are more likely to produce incorrect results.
- */
-const COMPLEX_FILE_PATTERNS = [
-	/\.test\.(ts|tsx|js|jsx)$/,     // Test files often need cross-file understanding
-	// Note: tests removed from complex — local models handle single-file tests fine
-];
-
-/**
  * Classify a child's execution tier based on scope analysis.
  *
  * Returns a tier suggestion or undefined if scope doesn't give a clear signal.

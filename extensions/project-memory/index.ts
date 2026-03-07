@@ -1065,12 +1065,14 @@ export default function (pi: ExtensionAPI) {
     const usage = ctx.getContextUsage();
     if (!usage) return;
 
-    // --- Context Pressure: Auto-compact with local fallback ---
+    // --- Context Pressure: Auto-compact ---
     // Pi's built-in auto-compaction triggers at ~92% (contextWindow - reserveTokens).
     // We trigger earlier at compactionAutoPercent (default 85%) as a safety net.
-    // On first attempt, we let the cloud try (no useLocalCompaction flag).
-    // If that fails, autoCompacted stays false (reset in onError) and on the next
-    // tool_execution_end we retry with useLocalCompaction=true.
+    //
+    // With compactionLocalFirst=true (default): session_before_compact intercepts
+    // all attempts and tries local first. Cloud is fallback if Ollama unavailable.
+    // With compactionLocalFirst=false: first attempt uses cloud. On failure,
+    // useLocalCompaction flag is set for the retry to route through local.
     const pct = usage.percent ?? 0;
     if (pct >= config.compactionAutoPercent && !autoCompacted && compactionRetryCount < config.compactionRetryLimit) {
       autoCompacted = true;

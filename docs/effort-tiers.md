@@ -3,10 +3,7 @@ id: effort-tiers
 title: Effort Tiers — Global Inference Cost Control (Low → Omnissiah)
 status: exploring
 tags: [cost, local-inference, architecture, cross-cutting]
-open_questions:
-  - "Should effort tier be a hard ceiling (agent can't upgrade past it via set_model_tier) or a starting position (agent can self-serve but effort sets the default)?"
-  - Should effort absorb model-budget.ts entirely, or coexist (effort = session default, model-budget = agent self-service tools)?
-  - "Fix C1/C2/C3 bugs from the adversarial review as a prerequisite, or bundle them into the effort tier implementation?"
+open_questions: []
 ---
 
 # Effort Tiers — Global Inference Cost Control (Low → Omnissiah)
@@ -142,8 +139,23 @@ interface EffortConfig {
 
 **Total: ~8 files touched, ~500 lines new, ~100 lines modified. Good /cleave candidate with 3-4 children.**
 
+## Decisions
+
+### Decision: /effort cap: locks current tier, agent downgrades only
+
+**Status:** decided
+**Rationale:** /effort sets a starting position. /effort cap locks it — agent can downgrade via set_model_tier but cannot upgrade past the cap. Operator is notified. /effort uncap releases the lock. This gives the operator a hard cost ceiling while letting the agent be efficient within it.
+
+### Decision: Coexist with model-budget, clean interface boundary
+
+**Status:** decided
+**Rationale:** effort owns tier state + /effort command + session-start defaults. model-budget owns set_model_tier + set_thinking_level tools for agent self-service. Interface: model-budget reads sharedState.effort.cap to enforce ceiling on upgrades. Clean separation supports future providers — effort defines abstract tiers, model-budget maps them to concrete provider models.
+
+### Decision: Fix C1/C2/C3 bugs before implementing effort tiers
+
+**Status:** decided
+**Rationale:** Bugs are in code paths effort routes through. Fixing first prevents compounding risk. C1 (fetch abort), C2 (dead code), C3 (isLocalModel heuristic) are all small, targeted fixes.
+
 ## Open Questions
 
-- Should effort tier be a hard ceiling (agent can't upgrade past it via set_model_tier) or a starting position (agent can self-serve but effort sets the default)?
-- Should effort absorb model-budget.ts entirely, or coexist (effort = session default, model-budget = agent self-service tools)?
-- Fix C1/C2/C3 bugs from the adversarial review as a prerequisite, or bundle them into the effort tier implementation?
+*No open questions.*
