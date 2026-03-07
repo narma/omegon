@@ -1,9 +1,11 @@
 ---
 id: effort-tiers
 title: Effort Tiers — Global Inference Cost Control (Low → Omnissiah)
-status: exploring
+status: implementing
 tags: [cost, local-inference, architecture, cross-cutting]
 open_questions: []
+branches: ["feature/effort-tiers"]
+openspec_change: effort-tiers
 ---
 
 # Effort Tiers — Global Inference Cost Control (Low → Omnissiah)
