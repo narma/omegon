@@ -92,10 +92,14 @@ export class DashboardFooter implements Component {
     // Line 1: Dashboard summary + context gauge
     const dashParts: string[] = [];
 
-    // Design tree summary
+    // Design tree summary: D:decided I:implementing /total
     const dt = sharedState.designTree;
     if (dt && dt.nodeCount > 0) {
-      dashParts.push(theme.fg("accent", `◈ D:${dt.decidedCount}/${dt.nodeCount}`));
+      let dtSummary = `◈ D:${dt.decidedCount}`;
+      if (dt.implementingCount > 0) dtSummary += ` I:${dt.implementingCount}`;
+      if (dt.implementedCount > 0) dtSummary += ` ✔:${dt.implementedCount}`;
+      dtSummary += ` /${dt.nodeCount}`;
+      dashParts.push(theme.fg("accent", dtSummary));
     }
 
     // OpenSpec summary
@@ -141,6 +145,8 @@ export class DashboardFooter implements Component {
     if (dt && dt.nodeCount > 0) {
       const statusParts: string[] = [];
       if (dt.decidedCount > 0) statusParts.push(theme.fg("success", `${dt.decidedCount} decided`));
+      if (dt.implementingCount > 0) statusParts.push(theme.fg("warning", `${dt.implementingCount} implementing`));
+      if (dt.implementedCount > 0) statusParts.push(theme.fg("success", `${dt.implementedCount} implemented`));
       if (dt.exploringCount > 0) statusParts.push(theme.fg("accent", `${dt.exploringCount} exploring`));
       if (dt.blockedCount > 0) statusParts.push(theme.fg("error", `${dt.blockedCount} blocked`));
       if (dt.openQuestionCount > 0) statusParts.push(theme.fg("dim", `${dt.openQuestionCount}?`));
@@ -149,13 +155,30 @@ export class DashboardFooter implements Component {
 
       if (dt.focusedNode) {
         const statusIcon = dt.focusedNode.status === "decided" ? theme.fg("success", "●")
+          : dt.focusedNode.status === "implementing" ? theme.fg("warning", "⚙")
+          : dt.focusedNode.status === "implemented" ? theme.fg("success", "✔")
           : dt.focusedNode.status === "exploring" ? theme.fg("accent", "◐")
           : dt.focusedNode.status === "blocked" ? theme.fg("error", "✕")
           : theme.fg("dim", "○");
         const qCount = dt.focusedNode.questions.length > 0
           ? theme.fg("dim", ` — ${dt.focusedNode.questions.length} open questions`)
           : "";
-        lines.push(`  ${statusIcon} ${dt.focusedNode.title}${qCount}`);
+        // Show branch association for implementing nodes
+        const branchExtra = (dt.focusedNode.branchCount ?? 0) > 1
+          ? theme.fg("dim", ` +${dt.focusedNode.branchCount! - 1}`)
+          : "";
+        const branchInfo = dt.focusedNode.status === "implementing" && dt.focusedNode.branch
+          ? theme.fg("dim", ` → ${dt.focusedNode.branch}`) + branchExtra
+          : "";
+        lines.push(`  ${statusIcon} ${dt.focusedNode.title}${branchInfo}${qCount}`);
+      }
+
+      // Show implementing nodes with their branches (when not focused)
+      if (dt.implementingNodes && dt.implementingNodes.length > 0 && !dt.focusedNode) {
+        for (const n of dt.implementingNodes.slice(0, 3)) {
+          const branchSuffix = n.branch ? theme.fg("dim", ` → ${n.branch}`) : "";
+          lines.push(`  ${theme.fg("warning", "⚙")} ${n.title}${branchSuffix}`);
+        }
       }
     }
 

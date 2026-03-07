@@ -40,6 +40,7 @@ import {
 	generateSpecFile,
 } from "./spec.js";
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.js";
+import { transitionDesignNodesOnArchive } from "./archive-gate.js";
 
 // ─── Dashboard State Emitter ─────────────────────────────────────────────────
 
@@ -464,6 +465,14 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 						};
 					}
 
+					// Archive gate: transition implementing → implemented in design tree
+					const transitioned = transitionDesignNodesOnArchive(cwd, params.change_name);
+					if (transitioned.length > 0) {
+						result.operations.push(
+							`Transitioned design node${transitioned.length > 1 ? "s" : ""} to implemented: ${transitioned.join(", ")}`,
+						);
+					}
+
 					emitOpenSpecState(cwd, pi);
 					return {
 						content: [{
@@ -472,7 +481,7 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 								result.operations.map((op) => `  - ${op}`).join("\n") +
 								"\n\nSpecs have been merged to baseline. Change is complete.",
 						}],
-						details: { operations: result.operations },
+						details: { operations: result.operations, transitionedNodes: transitioned },
 					};
 				}
 			}
@@ -681,6 +690,13 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 
 			const result = archiveChange(ctx.cwd, changeName);
 			if (result.archived) {
+				// Archive gate: transition implementing → implemented
+				const transitioned = transitionDesignNodesOnArchive(ctx.cwd, changeName);
+				if (transitioned.length > 0) {
+					result.operations.push(
+						`Transitioned design node${transitioned.length > 1 ? "s" : ""} to implemented: ${transitioned.join(", ")}`,
+					);
+				}
 				ctx.ui.notify(
 					`Archived '${changeName}':\n${result.operations.map((op) => `  - ${op}`).join("\n")}`,
 					"success",
