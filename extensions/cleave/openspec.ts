@@ -469,10 +469,13 @@ export function buildOpenSpecContext(changePath: string): OpenSpecContext {
 	// Specs
 	ctx.specScenarios = readSpecScenarios(changePath);
 
-	// API contract (OpenAPI / AsyncAPI)
-	const apiPath = join(changePath, "api.yaml");
-	if (existsSync(apiPath)) {
-		ctx.apiContract = readFileSync(apiPath, "utf-8");
+	// API contract (OpenAPI / AsyncAPI) — check common extensions
+	for (const name of ["api.yaml", "api.yml", "api.json"]) {
+		const apiPath = join(changePath, name);
+		if (existsSync(apiPath)) {
+			ctx.apiContract = readFileSync(apiPath, "utf-8");
+			break;
+		}
 	}
 
 	return ctx;

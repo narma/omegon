@@ -582,7 +582,29 @@ describe("buildOpenSpecContext", () => {
 		assert.equal(ctx.apiContract, contract);
 	});
 
-	it("sets apiContract to null when api.yaml absent", () => {
+	it("reads api.yml as fallback", () => {
+		const contract = "openapi: '3.1.0'\ninfo:\n  title: Test\n";
+		fs.writeFileSync(path.join(dir, "api.yml"), contract);
+		const ctx = buildOpenSpecContext(dir);
+		assert.equal(ctx.apiContract, contract);
+	});
+
+	it("reads api.json as fallback", () => {
+		const contract = '{"openapi":"3.1.0"}';
+		fs.writeFileSync(path.join(dir, "api.json"), contract);
+		const ctx = buildOpenSpecContext(dir);
+		assert.equal(ctx.apiContract, contract);
+	});
+
+	it("prefers api.yaml over api.yml and api.json", () => {
+		fs.writeFileSync(path.join(dir, "api.yaml"), "yaml-version");
+		fs.writeFileSync(path.join(dir, "api.yml"), "yml-version");
+		fs.writeFileSync(path.join(dir, "api.json"), "json-version");
+		const ctx = buildOpenSpecContext(dir);
+		assert.equal(ctx.apiContract, "yaml-version");
+	});
+
+	it("sets apiContract to null when no contract file exists", () => {
 		const ctx = buildOpenSpecContext(dir);
 		assert.equal(ctx.apiContract, null);
 	});
