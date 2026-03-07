@@ -258,17 +258,24 @@ When the theme changes, `invalidate()` is called. If your component caches theme
 ```typescript
 class MyComponent extends Container {
   private message: string;
+  private theme: Theme;
 
-  constructor(message: string) {
+  constructor(message: string, theme: Theme) {
     super();
     this.message = message;
+    this.theme = theme;
+    this.rebuild();
+  }
+
+  setTheme(theme: Theme): void {
+    this.theme = theme;
     this.rebuild();
   }
 
   private rebuild(): void {
     this.clear();
     // Use current theme colors — will be re-called on theme change
-    this.addChild(new Text(theme.fg("accent", this.message), 1, 0));
+    this.addChild(new Text(this.theme.fg("accent", this.message), 1, 0));
   }
 
   override invalidate(): void {

@@ -150,4 +150,10 @@ describe("PROFILES", () => {
       assert.ok(tool.match(/^[a-z_]+$/), `Invalid tool name: ${tool}`);
     }
   });
+
+  it("manage_tools is in the core profile so it cannot disable itself", () => {
+    const core = PROFILES.find((p) => p.id === "core")!;
+    assert.ok(core.tools.includes("manage_tools"),
+      "manage_tools must be in core profile or it gets disabled on non-pi-dev projects");
+  });
 });

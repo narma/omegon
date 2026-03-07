@@ -6,7 +6,9 @@
  * which profiles apply.
  */
 
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 // ── Profile Definitions ─────────────────────────────────────────
@@ -29,7 +31,6 @@ export interface Profile {
 /** Check if a command exists on PATH */
 function hasCmd(name: string): boolean {
   try {
-    const { execSync } = require("node:child_process");
     execSync(`command -v ${name}`, { stdio: "ignore" });
     return true;
   } catch {
@@ -41,13 +42,20 @@ function fileExists(cwd: string, ...paths: string[]): boolean {
   return paths.some((p) => existsSync(join(cwd, p)));
 }
 
+/** Check if any file with the given extension exists in common content directories (shallow). */
 function dirHasExt(cwd: string, ext: string): boolean {
-  try {
-    const entries = readdirSync(cwd, { recursive: true, withFileTypes: false }) as string[];
-    return entries.some((e) => typeof e === "string" && e.endsWith(ext));
-  } catch {
-    return false;
+  // Only check top-level and common content dirs — never walk node_modules/.git/etc.
+  const SCAN_DIRS = [".", "docs", "assets", "images", "diagrams", "design", "src", "lib"];
+  for (const dir of SCAN_DIRS) {
+    try {
+      const fullDir = join(cwd, dir);
+      const entries = readdirSync(fullDir);
+      if (entries.some((e) => e.endsWith(ext))) return true;
+    } catch {
+      // Directory doesn't exist, skip
+    }
   }
+  return false;
 }
 
 function readJsonField(cwd: string, file: string, field: string): unknown {
@@ -72,6 +80,7 @@ export const PROFILES: Profile[] = [
       "memory_connect", "memory_archive", "memory_compact",
       "chronos", "whoami",
       "set_model_tier", "set_thinking_level", "switch_to_offline_driver",
+      "manage_tools",
     ],
     detect: () => true,
   },
@@ -123,7 +132,7 @@ export const PROFILES: Profile[] = [
     detect: (cwd) => {
       // Detect if scribe MCP is configured — check for .pi/mcp.json or similar
       return fileExists(cwd, ".pi/mcp.json") ||
-        existsSync(join(require("node:os").homedir(), ".pi", "mcp.json"));
+        existsSync(join(homedir(), ".pi", "mcp.json"));
     },
   },
   {
