@@ -19,6 +19,7 @@ import { truncateTail, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "
 import { Type } from "@sinclair/typebox";
 
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
+import { debug } from "../debug.ts";
 import { assessDirective, PATTERNS } from "./assessment.ts";
 import { detectConflicts, parseTaskResult } from "./conflicts.ts";
 import { dispatchChildren, resolveExecuteModel } from "./dispatcher.ts";
@@ -82,6 +83,7 @@ function emitCleaveState(
 			elapsed: c.durationSec,
 		})),
 	};
+	debug("cleave", "emitState", { status, runId, childCount: children?.length });
 	pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "cleave" });
 }
 

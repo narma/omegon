@@ -12,7 +12,7 @@ import {
   redactString,
   MIN_REDACT_LENGTH,
   SENSITIVE_PATH_PATTERNS,
-} from "./index.js";
+} from "./index.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // matchSensitivePath

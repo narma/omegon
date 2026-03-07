@@ -15,7 +15,7 @@ import {
 	detectFlags,
 	PATTERNS,
 	MODIFIERS,
-} from "./assessment.js";
+} from "./assessment.ts";
 
 // ─── Pattern Library ────────────────────────────────────────────────────────
 

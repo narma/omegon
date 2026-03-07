@@ -22,7 +22,7 @@ import {
 	buildOpenSpecContext,
 	writeBackTaskCompletion,
 	getActiveChangesStatus,
-} from "./openspec.js";
+} from "./openspec.ts";
 
 function tmpDir(): string {
 	const dir = path.join(os.tmpdir(), `cleave-openspec-test-${crypto.randomBytes(6).toString("hex")}`);

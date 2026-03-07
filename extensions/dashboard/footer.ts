@@ -18,6 +18,7 @@ import type { TUI } from "@mariozechner/pi-tui";
 import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { DashboardState } from "./types.ts";
 import { sharedState } from "../shared-state.ts";
+import { debug } from "../debug.ts";
 
 /**
  * Format token counts to compact display (e.g. 1.2k, 45k, 1.3M)
@@ -77,6 +78,13 @@ export class DashboardFooter implements Component {
   }
 
   render(width: number): string[] {
+    debug("dashboard", "render", {
+      mode: this.dashState.mode,
+      hasDT: !!sharedState.designTree,
+      hasOS: !!sharedState.openspec,
+      hasCL: !!sharedState.cleave,
+      osChanges: (sharedState.openspec as any)?.changes?.length ?? 0,
+    });
     if (this.dashState.mode === "raised") {
       return this.renderRaised(width);
     }

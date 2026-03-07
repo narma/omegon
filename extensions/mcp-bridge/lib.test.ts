@@ -22,7 +22,7 @@ import {
   buildStdioConfig,
   parseCommand,
   extractSecretRefs,
-} from "./lib.js";
+} from "./lib.ts";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

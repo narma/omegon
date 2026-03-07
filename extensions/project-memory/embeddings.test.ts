@@ -10,7 +10,7 @@ import {
   vectorToBlob,
   blobToVector,
   MODEL_DIMS,
-} from "./embeddings.js";
+} from "./embeddings.ts";
 
 describe("cosineSimilarity", () => {
   it("returns 1.0 for identical vectors", () => {

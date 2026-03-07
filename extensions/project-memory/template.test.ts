@@ -6,7 +6,7 @@ import {
   SECTIONS,
   DEFAULT_TEMPLATE,
   type SectionName,
-} from "./template.js";
+} from "./template.ts";
 
 describe("SECTIONS and DEFAULT_TEMPLATE", () => {
   it("exports 5 sections", () => {

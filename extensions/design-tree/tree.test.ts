@@ -40,9 +40,9 @@ import {
 	sanitizeBranchName,
 	writeNodeDocument,
 	getNodeSections,
-} from "./tree.js";
+} from "./tree.ts";
 
-import { VALID_STATUSES, STATUS_ICONS, STATUS_COLORS } from "./types.js";
+import { VALID_STATUSES, STATUS_ICONS, STATUS_COLORS } from "./types.ts";
 
 // ─── Test Helpers ────────────────────────────────────────────────────────────
 
@@ -1405,7 +1405,7 @@ describe("sanitizeBranchName", () => {
 
 // ─── transitionDesignNodesOnArchive ──────────────────────────────────────────
 
-import { transitionDesignNodesOnArchive } from "../openspec/archive-gate.js";
+import { transitionDesignNodesOnArchive } from "../openspec/archive-gate.ts";
 
 describe("transitionDesignNodesOnArchive", () => {
 	let tmpDir: string;

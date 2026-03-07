@@ -5,11 +5,11 @@
 
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
-import { matchScenariosToChildren, generateTaskFile, buildSkillSection } from "./workspace.js";
-import type { SkillDirective } from "./workspace.js";
-import { buildChildPrompt, resolveExecuteModel, mapModelTierToFlag } from "./dispatcher.js";
-import type { ChildPlan, ModelTier } from "./types.js";
-import type { OpenSpecContext } from "./openspec.js";
+import { matchScenariosToChildren, generateTaskFile, buildSkillSection } from "./workspace.ts";
+import type { SkillDirective } from "./workspace.ts";
+import { buildChildPrompt, resolveExecuteModel, mapModelTierToFlag } from "./dispatcher.ts";
+import type { ChildPlan, ModelTier } from "./types.ts";
+import type { OpenSpecContext } from "./openspec.ts";
 
 function makeCtx(scenarios: OpenSpecContext["specScenarios"]): OpenSpecContext {
 	return {

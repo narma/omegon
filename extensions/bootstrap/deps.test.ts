@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
-import { DEPS, checkAll, formatReport, bestInstallCmd, sortByRequires, type DepStatus } from "./deps.js";
+import { DEPS, checkAll, formatReport, bestInstallCmd, sortByRequires, type DepStatus } from "./deps.ts";
 
 describe("bootstrap/deps", () => {
 	it("has unique dep IDs", () => {

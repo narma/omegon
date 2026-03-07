@@ -27,7 +27,7 @@ import {
 	summarizeSpecs,
 	validateChangeName,
 	validateDomain,
-} from "./spec.js";
+} from "./spec.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

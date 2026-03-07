@@ -22,6 +22,7 @@ import { DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 import { DashboardFooter } from "./footer.ts";
 import { showDashboardOverlay } from "./overlay.ts";
 import type { DashboardState, DashboardMode } from "./types.ts";
+import { debug } from "../debug.ts";
 
 export default function (pi: ExtensionAPI) {
   const state: DashboardState = {
@@ -96,6 +97,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
 
+    debug("dashboard", "session_start", { hasUI: ctx.hasUI, cwd: ctx.cwd });
+
     state.turns = 0;
     restoreMode(ctx);
 
@@ -104,6 +107,7 @@ export default function (pi: ExtensionAPI) {
       tui = tuiRef;
       footer = new DashboardFooter(tuiRef, theme, footerData, state);
       footer.setContext(ctx);
+      debug("dashboard", "footer:factory", { tuiSet: !!tui });
       return footer;
     });
 
@@ -112,7 +116,8 @@ export default function (pi: ExtensionAPI) {
     // the fresher ctx set by turn_end/message_end. The footer reads
     // sharedState directly at render time; ctx is only needed for
     // token stats which the per-turn handlers keep current.
-    unsubscribeEvents = pi.events.on(DASHBOARD_UPDATE_EVENT, () => {
+    unsubscribeEvents = pi.events.on(DASHBOARD_UPDATE_EVENT, (_data) => {
+      debug("dashboard", "update-event", _data as Record<string, unknown>);
       tui?.requestRender();
     });
 
@@ -124,6 +129,7 @@ export default function (pi: ExtensionAPI) {
     // completes (all sync session_start work is done) but before any
     // setTimeout-based async work.
     queueMicrotask(() => {
+      debug("dashboard", "microtask:render", { tuiSet: !!tui });
       tui?.requestRender();
     });
   });

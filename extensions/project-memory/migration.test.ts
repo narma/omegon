@@ -8,8 +8,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as crypto from "node:crypto";
-import { FactStore } from "./factstore.js";
-import { migrateToFactStore, needsMigration, markMigrated } from "./migration.js";
+import { FactStore } from "./factstore.ts";
+import { migrateToFactStore, needsMigration, markMigrated } from "./migration.ts";
 
 function tmpDir(): string {
   const dir = path.join(os.tmpdir(), `migration-test-${crypto.randomBytes(8).toString("hex")}`);

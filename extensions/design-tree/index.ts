@@ -27,6 +27,7 @@ import { execFileSync } from "node:child_process";
 
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 import type { DesignTreeDashboardState } from "../shared-state.ts";
+import { debug } from "../debug.ts";
 
 import type { DesignNode, DesignTree, NodeStatus } from "./types.ts";
 import { VALID_STATUSES, STATUS_ICONS, STATUS_COLORS } from "./types.ts";
@@ -105,6 +106,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 		};
 
 		sharedState.designTree = state;
+		debug("design-tree", "emitState", { nodeCount: nodes.length, decided: state.decidedCount, exploring: state.exploringCount });
 
 		// Notify dashboard for immediate re-render
 		pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "design-tree" });

@@ -17,8 +17,8 @@ import {
 	getPreferredTier,
 	globMatches,
 	type SkillMapping,
-} from "./skills.js";
-import type { ChildPlan } from "./types.js";
+} from "./skills.ts";
+import type { ChildPlan } from "./types.ts";
 
 function tmpDir(): string {
 	const dir = path.join(os.tmpdir(), `cleave-skills-test-${crypto.randomBytes(6).toString("hex")}`);

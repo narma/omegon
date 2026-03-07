@@ -10,8 +10,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import * as crypto from "node:crypto";
-import { FactStore } from "./factstore.js";
-import { cosineSimilarity, vectorToBlob, blobToVector } from "./embeddings.js";
+import { FactStore } from "./factstore.ts";
+import { cosineSimilarity, vectorToBlob, blobToVector } from "./embeddings.ts";
 
 function tmpDir(): string {
   const dir = path.join(os.tmpdir(), `vec-test-${crypto.randomBytes(8).toString("hex")}`);

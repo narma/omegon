@@ -7,7 +7,7 @@
 
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
-import { AsyncSemaphore, extractResultSection } from "./dispatcher.js";
+import { AsyncSemaphore, extractResultSection } from "./dispatcher.ts";
 
 // ─── AsyncSemaphore ─────────────────────────────────────────────────────────
 

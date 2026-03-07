@@ -41,6 +41,7 @@ import {
 } from "./spec.ts";
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 import { transitionDesignNodesOnArchive } from "./archive-gate.ts";
+import { debug } from "../debug.ts";
 
 // ─── Dashboard State Emitter ─────────────────────────────────────────────────
 
@@ -59,8 +60,10 @@ function emitOpenSpecState(cwd: string, pi: ExtensionAPI): void {
 			tasksTotal: c.totalTasks,
 		}));
 		(sharedState as any).openspec = { changes: mapped };
+		debug("openspec", "emitState", { count: mapped.length, cwd });
 		pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "openspec" });
-	} catch {
+	} catch (err) {
+		debug("openspec", "emitState:error", { error: err instanceof Error ? err.message : String(err), cwd });
 		// Non-fatal — don't break the extension if openspec dir is missing
 	}
 }

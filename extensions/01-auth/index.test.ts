@@ -13,7 +13,7 @@ import {
 	findProvider,
 	checkAllProviders,
 	type AuthResult,
-} from "./auth.js";
+} from "./auth.ts";
 
 // ─── Mock pi.exec ───────────────────────────────────────────────
 

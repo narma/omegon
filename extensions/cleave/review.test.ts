@@ -16,7 +16,7 @@ import {
 	type ReviewIssue,
 	type ReviewVerdict,
 	type ReviewExecutor,
-} from "./review.js";
+} from "./review.ts";
 
 // ─── buildReviewPrompt ─────────────────────────────────────────────────────
 

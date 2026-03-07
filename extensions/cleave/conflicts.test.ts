@@ -4,8 +4,8 @@
 
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
-import { parseTaskResult, detectConflicts } from "./conflicts.js";
-import type { TaskResult } from "./types.js";
+import { parseTaskResult, detectConflicts } from "./conflicts.ts";
+import type { TaskResult } from "./types.ts";
 
 // ─── parseTaskResult ────────────────────────────────────────────────────────
 

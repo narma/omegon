@@ -4,7 +4,7 @@
 
 import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
-import { parsePlanResponse, computeDispatchWaves, buildPlannerPrompt } from "./planner.js";
+import { parsePlanResponse, computeDispatchWaves, buildPlannerPrompt } from "./planner.ts";
 
 // ─── parsePlanResponse ──────────────────────────────────────────────────────
 
