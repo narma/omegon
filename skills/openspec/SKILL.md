@@ -108,6 +108,67 @@ When a user authenticates
 Then it works correctly
 ```
 
+### Deriving API Contracts from Scenarios
+
+When a change introduces or modifies a network API (HTTP, gRPC, WebSocket), **derive an OpenAPI 3.1 spec** (or AsyncAPI for event-driven APIs) from the scenarios during the Plan phase. Place it at `openspec/changes/<id>/api.yaml`.
+
+**Mapping rules:**
+
+| Scenario element | OpenAPI element |
+|------------------|-----------------|
+| `Given` preconditions (auth, existing data) | Security schemes, parameter constraints, `x-setup` |
+| `When ... request to <path>` | `paths.<path>.<method>`, request body schema |
+| `Then status is <code>` | `responses.<code>` |
+| `Then body contains {...}` | Response schema (`application/json`) |
+| `And header <name> is <value>` | Response headers |
+| Error scenarios (`401`, `404`, `422`) | Error response schemas, problem detail types |
+
+**Example — from scenario to contract:**
+
+Scenario:
+```
+Given a user has a valid API key
+When they POST to /api/widgets with {"name": "foo", "color": "blue"}
+Then the response status is 201
+And the body contains {"id": "<uuid>", "name": "foo", "color": "blue"}
+And the Location header contains /api/widgets/<uuid>
+```
+
+Derived OpenAPI fragment:
+```yaml
+paths:
+  /api/widgets:
+    post:
+      security:
+        - apiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, color]
+              properties:
+                name: { type: string }
+                color: { type: string }
+      responses:
+        '201':
+          description: Widget created
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  color: { type: string }
+```
+
+The contract is the **source of truth for API shape** — code implements the contract. If implementation diverges, fix the code or amend the spec with rationale.
+
 ## Commands
 
 | Command | Description |

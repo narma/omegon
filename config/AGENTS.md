@@ -40,6 +40,19 @@ The development loop is: **spec → test → code → verify**. OpenSpec codifie
 - Formatting, renaming, or other mechanical changes
 - Urgent hotfixes (document retroactively)
 
+### API contract requirement
+
+When a change introduces or modifies an HTTP, gRPC, WebSocket, or other network API:
+
+1. **Derive a formal contract from the spec scenarios.** Given/When/Then scenarios define endpoints, methods, request/response shapes, status codes, and error cases. Translate these into an OpenAPI 3.1 spec (or AsyncAPI for event-driven APIs) during the Plan phase (`/opsx:ff`).
+2. **The contract is a deliverable.** Place it at `openspec/changes/<id>/api.yaml`. It is reviewed alongside the design and tasks before implementation begins.
+3. **Code implements the contract, not the reverse.** The OpenAPI spec is the source of truth for API shape. If implementation diverges from the contract, the implementation is wrong — update code to match the spec, or amend the spec with a rationale.
+4. **Scenarios map to contract elements:**
+   - Each `Given` establishes preconditions (auth state, existing resources) → security schemes, parameter constraints
+   - Each `When` is an API call → endpoint path, method, request body schema
+   - Each `Then` is a response assertion → status code, response schema, headers
+   - Error scenarios → 4xx/5xx response schemas, problem detail types
+
 ### Key principle
 
 Specs define **what must be true** — they are the source of truth for correctness. Code is an implementation detail. When specs and code disagree, the spec is right and the code is wrong.
