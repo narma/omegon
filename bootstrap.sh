@@ -624,9 +624,17 @@ else
     cap_status "Offline Mode" "missing"
 fi
 
+# OpenSpec
+cap_status "OpenSpec (Spec-Driven Dev)" "ready"
+
 # Cleave
 if has_cmd git && has_cmd node; then
-    cap_status "Cleave (Task Decomposition)" "ready"
+    # Cleave includes skill-aware dispatch and optional adversarial review loop
+    if [ -n "$OLLAMA_CHAT_MODELS" ] && echo "$OLLAMA_CHAT_MODELS" | grep -qiE "nemotron|devstral|qwen3"; then
+        cap_status "Cleave (Decomposition + Review)" "ready"
+    else
+        cap_status "Cleave (Decomposition, no local)" "partial"
+    fi
 else
     cap_status "Cleave (Task Decomposition)" "missing"
 fi
