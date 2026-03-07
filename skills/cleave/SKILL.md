@@ -159,8 +159,8 @@ Annotations override auto-matching for that child.
 ### Model Tier Routing
 
 Skills can hint at the model complexity needed. The resolution order is:
-1. Local override (if `prefer_local: true` and Ollama available)
-2. Explicit annotation on the child plan
+1. Explicit annotation on the child plan (always respected)
+2. Local override (if `prefer_local: true` and Ollama available)
 3. Skill-based tier hint (highest `preferredTier` wins)
 4. Default: sonnet
 
