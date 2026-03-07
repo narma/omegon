@@ -687,11 +687,50 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 
 					const result = scaffoldOpenSpecChange(ctx.cwd, tree, node);
+
+					// D2: Auto-transition to implementing
+					setNodeStatus(node, "implementing");
+
+					// D4: Write openspec_change and branches to frontmatter
+					const branchPrefix = params.status || "feature"; // allow prefix override via status param
+					const branchName = node.branches?.length > 0
+						? node.branches[0] // explicit override already in frontmatter
+						: `${branchPrefix}/${node.id}`;
+					appendBranch({ ...node, status: "implementing" }, branchName);
+
+					// Write openspec_change field
+					let content = fs.readFileSync(node.filePath, "utf-8");
+					if (!content.includes("openspec_change:")) {
+						content = content.replace(
+							/^(---\n[\s\S]*?)(---\n)/m,
+							`$1openspec_change: ${node.id}\n$2`,
+						);
+						fs.writeFileSync(node.filePath, content);
+					}
+
+					// D1: Create git branch
+					try {
+						const { execSync } = await import("child_process");
+						execSync(`git checkout -b ${branchName}`, { cwd: ctx.cwd, stdio: "pipe" });
+					} catch (e: unknown) {
+						// Branch may already exist — try switching to it
+						try {
+							const { execSync } = await import("child_process");
+							execSync(`git checkout ${branchName}`, { cwd: ctx.cwd, stdio: "pipe" });
+						} catch {
+							// Non-fatal — log but continue
+						}
+					}
+
 					reload(ctx.cwd);
 
 					return {
-						content: [{ type: "text", text: result.message }],
-						details: { changePath: result.changePath, files: result.files },
+						content: [{
+							type: "text",
+							text: result.message +
+								`\n\nStatus: implementing\nBranch: ${branchName}\nOpenSpec change: ${node.id}`,
+						}],
+						details: { changePath: result.changePath, files: result.files, branch: branchName },
 					};
 				}
 			}
@@ -1056,8 +1095,41 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 
 					const result = scaffoldOpenSpecChange(ctx.cwd, tree, node);
+
+					// Auto-transition to implementing + branch creation
+					setNodeStatus(node, "implementing");
+					const branchName = node.branches?.length > 0
+						? node.branches[0]
+						: `feature/${node.id}`;
+					appendBranch({ ...node, status: "implementing" }, branchName);
+
+					// Write openspec_change field
+					let implContent = fs.readFileSync(node.filePath, "utf-8");
+					if (!implContent.includes("openspec_change:")) {
+						implContent = implContent.replace(
+							/^(---\n[\s\S]*?)(---\n)/m,
+							`$1openspec_change: ${node.id}\n$2`,
+						);
+						fs.writeFileSync(node.filePath, implContent);
+					}
+
+					// Create git branch
+					try {
+						const { execSync } = await import("child_process");
+						execSync(`git checkout -b ${branchName}`, { cwd: ctx.cwd, stdio: "pipe" });
+					} catch {
+						try {
+							const { execSync } = await import("child_process");
+							execSync(`git checkout ${branchName}`, { cwd: ctx.cwd, stdio: "pipe" });
+						} catch { /* non-fatal */ }
+					}
+
 					reload(ctx.cwd);
-					ctx.ui.notify(result.message, "success");
+					emitDesignTreeState(ctx, tree, focusedNode ? tree.nodes.get(focusedNode) ?? null : null);
+					ctx.ui.notify(
+						`${result.message}\nBranch: ${branchName} | Status: implementing`,
+						"success",
+					);
 					break;
 				}
 

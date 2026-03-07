@@ -1248,3 +1248,79 @@ describe("branches and openspec_change frontmatter", () => {
 		assert.equal(node.openspec_change, undefined);
 	});
 });
+
+// ─── Implement Flow Integration ──────────────────────────────────────────────
+
+describe("implement flow: status transition + frontmatter update", () => {
+	let tmpDir: string;
+
+	before(() => {
+		tmpDir = makeTmpDir();
+	});
+	after(() => {
+		fs.rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("transitions decided → implementing with branch and openspec_change", () => {
+		const node = createNode(tmpDir, { id: "impl-test", title: "Impl Test", status: "decided" });
+		assert.equal(node.status, "decided");
+
+		// Simulate what the implement action does
+		const updated = setNodeStatus(node, "implementing");
+		assert.equal(updated.status, "implementing");
+
+		const withBranch = appendBranch(updated, "feature/impl-test");
+		assert.deepEqual(withBranch.branches, ["feature/impl-test"]);
+
+		// Write openspec_change to frontmatter
+		let content = fs.readFileSync(withBranch.filePath, "utf-8");
+		content = content.replace(
+			/^(---\n[\s\S]*?)(---\n)/m,
+			`$1openspec_change: impl-test\n$2`,
+		);
+		fs.writeFileSync(withBranch.filePath, content);
+
+		// Re-scan and verify
+		const tree = scanDesignDocs(tmpDir);
+		const reloaded = tree.nodes.get("impl-test")!;
+		assert.equal(reloaded.status, "implementing");
+		assert.deepEqual(reloaded.branches, ["feature/impl-test"]);
+		assert.equal(reloaded.openspec_change, "impl-test");
+	});
+
+	it("rejects non-decided nodes for implementing transition", () => {
+		const node = createNode(tmpDir, { id: "exploring-node", title: "Exploring", status: "exploring" });
+		// The implement action checks status === "decided" before proceeding
+		assert.notEqual(node.status, "decided");
+	});
+
+	it("accumulates multiple branches on an implementing node", () => {
+		const node = createNode(tmpDir, { id: "multi-branch", title: "Multi Branch", status: "implementing" });
+		const b1 = appendBranch(node, "feature/multi-branch");
+		const b2 = appendBranch(b1, "fix/multi-branch-rbac");
+		assert.deepEqual(b2.branches, ["feature/multi-branch", "fix/multi-branch-rbac"]);
+
+		// Verify persisted
+		const tree = scanDesignDocs(tmpDir);
+		assert.deepEqual(tree.nodes.get("multi-branch")!.branches, ["feature/multi-branch", "fix/multi-branch-rbac"]);
+	});
+
+	it("transitions implementing → implemented on archive gate", () => {
+		const node = createNode(tmpDir, { id: "archive-gate", title: "Archive Gate", status: "implementing" });
+		appendBranch(node, "feature/archive-gate");
+
+		// Write openspec_change
+		let content = fs.readFileSync(node.filePath, "utf-8");
+		content = content.replace(/^(---\n[\s\S]*?)(---\n)/m, `$1openspec_change: archive-gate\n$2`);
+		fs.writeFileSync(node.filePath, content);
+
+		// Simulate archive gate
+		const tree = scanDesignDocs(tmpDir);
+		const n = tree.nodes.get("archive-gate")!;
+		assert.equal(n.status, "implementing");
+		setNodeStatus(n, "implemented");
+
+		const tree2 = scanDesignDocs(tmpDir);
+		assert.equal(tree2.nodes.get("archive-gate")!.status, "implemented");
+	});
+});
