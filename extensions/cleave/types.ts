@@ -47,6 +47,8 @@ export interface ChildPlan {
 	description: string;
 	scope: string[];
 	dependsOn: string[];
+	/** Spec domains this child owns (from <!-- specs: ... --> annotation) */
+	specDomains?: string[];
 }
 
 export interface SplitPlan {

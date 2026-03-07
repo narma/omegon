@@ -64,10 +64,14 @@ export function initWorkspace(
 	// Write initial state
 	saveState(state);
 
+	// Pre-compute scenario assignments across all children (orphan detection)
+	const scenarioAssignments = matchScenariosToChildren(plan.children, openspecContext);
+
 	// Generate child task files
 	for (let i = 0; i < plan.children.length; i++) {
 		const child = plan.children[i];
-		const taskContent = generateTaskFile(i, child, plan.children, state.directive, openspecContext);
+		const childScenarios = scenarioAssignments.get(i) ?? [];
+		const taskContent = generateTaskFile(i, child, plan.children, state.directive, openspecContext, childScenarios);
 		writeFileSync(join(wsPath, `${i}-task.md`), taskContent, "utf-8");
 	}
 
@@ -101,6 +105,7 @@ function generateTaskFile(
 	allChildren: ChildPlan[],
 	rootDirective: string,
 	openspecContext?: OpenSpecContext | null,
+	assignedScenarios?: AssignedScenario[],
 ): string {
 	const siblingRefs = allChildren
 		.filter((_, i) => i !== taskId)
@@ -116,7 +121,7 @@ function generateTaskFile(
 		: "**Depends on:** none (independent)";
 
 	// Build optional OpenSpec design context section
-	const designSection = buildDesignSection(child, openspecContext);
+	const designSection = buildDesignSection(child, openspecContext, assignedScenarios);
 
 	return `---
 task_id: ${taskId}
@@ -168,18 +173,177 @@ ${designSection}
 `;
 }
 
+// ─── Scenario Matching ──────────────────────────────────────────────────────
+
+export interface AssignedScenario {
+	domain: string;
+	requirement: string;
+	scenarios: string[];
+	/** Whether this was auto-injected as an orphan */
+	crossCutting: boolean;
+}
+
 /**
- * Build the optional "Design Context" section for a child task file
- * when OpenSpec design.md and specs are available.
+ * Match spec scenarios to children using 3-tier priority:
+ * 1. Annotation match — child's specDomains (from <!-- specs: ... -->) includes the scenario domain
+ * 2. Scope match — child's file scope includes files referenced in the scenario
+ * 3. Word-overlap fallback — shared words between child description and scenario text
  *
- * Includes:
- * - Architecture decisions the child should follow
- * - File changes relevant to this child's scope
- * - Spec scenarios relevant to this child (acceptance criteria)
+ * Any scenario matching zero children is auto-injected into the best candidate
+ * with a cross-cutting marker.
+ *
+ * Returns a Map from child index to its assigned scenarios.
+ */
+export function matchScenariosToChildren(
+	children: ChildPlan[],
+	ctx?: OpenSpecContext | null,
+): Map<number, AssignedScenario[]> {
+	const result = new Map<number, AssignedScenario[]>();
+	for (let i = 0; i < children.length; i++) result.set(i, []);
+
+	if (!ctx || ctx.specScenarios.length === 0) return result;
+
+	for (const ss of ctx.specScenarios) {
+		const assigned = assignScenario(ss, children);
+
+		if (assigned.length > 0) {
+			// Matched via annotation, scope, or word overlap
+			for (const idx of assigned) {
+				result.get(idx)!.push({
+					domain: ss.domain,
+					requirement: ss.requirement,
+					scenarios: ss.scenarios,
+					crossCutting: false,
+				});
+			}
+		} else {
+			// Orphan — auto-inject into best candidate
+			const target = findOrphanTarget(ss, children);
+			result.get(target)!.push({
+				domain: ss.domain,
+				requirement: ss.requirement,
+				scenarios: ss.scenarios,
+				crossCutting: true,
+			});
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Assign a scenario to children using 3-tier priority.
+ * Returns array of child indices (may be multiple for annotation matches).
+ */
+function assignScenario(
+	ss: { domain: string; requirement: string; scenarios: string[] },
+	children: ChildPlan[],
+): number[] {
+	// Tier 1: Annotation match — child declared this spec domain
+	const annotationMatches = children
+		.map((c, i) => ({ idx: i, child: c }))
+		.filter(({ child }) =>
+			child.specDomains?.some((d) =>
+				ss.domain === d || ss.domain.startsWith(d + "/") || d.startsWith(ss.domain + "/"),
+			),
+		)
+		.map(({ idx }) => idx);
+
+	if (annotationMatches.length > 0) return annotationMatches;
+
+	// Tier 2: Scope match — scenario text references files in child's scope
+	const scenarioText = `${ss.requirement} ${ss.scenarios.join(" ")}`.toLowerCase();
+	const scopeMatches: number[] = [];
+	for (let i = 0; i < children.length; i++) {
+		const child = children[i];
+		if (child.scope.length === 0) continue;
+		const hasMatch = child.scope.some((s) => {
+			const scopeClean = s.replace(/\*+/g, "").replace(/\/$/, "").toLowerCase();
+			const scopeParts = scopeClean.split("/");
+			const filename = scopeParts[scopeParts.length - 1];
+			// Check if the scenario text mentions this file or path
+			return filename.length > 3 && scenarioText.includes(filename);
+		});
+		if (hasMatch) scopeMatches.push(i);
+	}
+
+	if (scopeMatches.length > 0) return scopeMatches;
+
+	// Tier 3: Word-overlap fallback
+	const specText = `${ss.domain} ${ss.requirement}`.toLowerCase();
+	const specWords = specText.split(/\s+/).filter((w) => w.length > 3);
+
+	let bestIdx = -1;
+	let bestScore = 0;
+	for (let i = 0; i < children.length; i++) {
+		const childText = `${children[i].label} ${children[i].description}`.toLowerCase();
+		const score = specWords.filter((w) => childText.includes(w)).length;
+		if (score > bestScore) {
+			bestScore = score;
+			bestIdx = i;
+		}
+	}
+
+	return bestIdx >= 0 && bestScore > 0 ? [bestIdx] : [];
+}
+
+/**
+ * Find the best injection target for an orphan scenario.
+ * Priority: scope match on When clause → word overlap → last child.
+ */
+function findOrphanTarget(
+	ss: { domain: string; requirement: string; scenarios: string[] },
+	children: ChildPlan[],
+): number {
+	// Try to extract function/file references from When clauses
+	const whenText = ss.scenarios
+		.join("\n")
+		.split("\n")
+		.filter((l) => /^\s*when\s/i.test(l))
+		.join(" ")
+		.toLowerCase();
+
+	// Check which child's scope contains referenced files/functions
+	for (let i = 0; i < children.length; i++) {
+		const child = children[i];
+		if (child.scope.length === 0) continue;
+		const hasMatch = child.scope.some((s) => {
+			const filename = s.replace(/\*+/g, "").split("/").pop()?.toLowerCase() ?? "";
+			return filename.length > 3 && whenText.includes(filename);
+		});
+		if (hasMatch) return i;
+	}
+
+	// Word overlap fallback
+	const scenarioText = `${ss.domain} ${ss.requirement}`.toLowerCase();
+	const words = scenarioText.split(/\s+/).filter((w) => w.length > 3);
+
+	let bestIdx = children.length - 1; // default: last child
+	let bestScore = 0;
+	for (let i = 0; i < children.length; i++) {
+		const childText = `${children[i].label} ${children[i].description}`.toLowerCase();
+		const score = words.filter((w) => childText.includes(w)).length;
+		if (score > bestScore) {
+			bestScore = score;
+			bestIdx = i;
+		}
+	}
+
+	return bestIdx;
+}
+
+// ─── Design Section Builder ─────────────────────────────────────────────────
+
+/**
+ * Build the optional "Design Context" section for a child task file.
+ *
+ * Uses pre-computed scenario assignments (from matchScenariosToChildren)
+ * instead of per-child heuristic matching.
  */
 function buildDesignSection(
 	child: ChildPlan,
 	ctx?: OpenSpecContext | null,
+	assignedScenarios?: AssignedScenario[],
 ): string {
 	if (!ctx) return "";
 
@@ -222,30 +386,39 @@ function buildDesignSection(
 		}
 	}
 
-	// Spec scenarios as acceptance criteria
-	if (ctx.specScenarios.length > 0) {
-		// Filter scenarios relevant to this child by matching domain/requirement
-		// against the child's label and description
-		const childText = `${child.label} ${child.description}`.toLowerCase();
-		const relevant = ctx.specScenarios.filter((ss) => {
-			const specText = `${ss.domain} ${ss.requirement}`.toLowerCase();
-			return (
-				childText.split(/\s+/).some((w) => w.length > 3 && specText.includes(w)) ||
-				specText.split(/\s+/).some((w) => w.length > 3 && childText.includes(w))
-			);
-		});
+	// Spec scenarios from pre-computed assignments
+	if (assignedScenarios && assignedScenarios.length > 0) {
+		const regular = assignedScenarios.filter((s) => !s.crossCutting);
+		const crossCutting = assignedScenarios.filter((s) => s.crossCutting);
 
-		if (relevant.length > 0) {
+		if (regular.length > 0) {
 			sections.push(
 				"### Acceptance Criteria (from specs)",
 				"",
 				"Your implementation should satisfy these spec scenarios:",
 				"",
 			);
-			for (const ss of relevant) {
+			for (const ss of regular) {
 				sections.push(`**${ss.domain} → ${ss.requirement}**`);
 				for (const scenario of ss.scenarios) {
-					// Indent scenario content for readability
+					const scenarioLines = scenario.split("\n").map((l) => `  ${l}`);
+					sections.push(...scenarioLines);
+				}
+				sections.push("");
+			}
+		}
+
+		if (crossCutting.length > 0) {
+			sections.push(
+				"### ⚠️ CROSS-CUTTING Acceptance Criteria",
+				"",
+				"These scenarios were not directly assigned to any task group but affect your scope.",
+				"Ensure your implementation does not break them, and wire any enforcement logic they require:",
+				"",
+			);
+			for (const ss of crossCutting) {
+				sections.push(`**⚠️ ${ss.domain} → ${ss.requirement}**`);
+				for (const scenario of ss.scenarios) {
 					const scenarioLines = scenario.split("\n").map((l) => `  ${l}`);
 					sections.push(...scenarioLines);
 				}

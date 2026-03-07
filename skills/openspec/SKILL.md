@@ -211,9 +211,48 @@ OpenSpec and cleave work together:
 3. **`cleave_run`** with `openspec_change_path` updates task checkboxes on completion
 4. **`/assess spec`** verifies implementation against spec scenarios
 
-The tasks.md format that cleave parses:
+### Scenario-First Task Grouping
+
+When generating `tasks.md`, group tasks by **spec domain** — not by file layer. Each group should own the end-to-end implementation of one or more spec files, including all file changes needed to satisfy those scenarios, even if that means multiple groups touch the same file.
+
+**Do:**
+```markdown
+## 1. RBAC Enforcement
+<!-- specs: relay/rbac -->
+- [ ] Add relay.request and relay.accept capabilities to rbac.py
+- [ ] Wire has_capability() check into create_session() in relay_service.py
+- [ ] Return 403 when capability missing
+```
+
+**Don't** (splits enforcement across layers):
+```markdown
+## 1. Models
+- [ ] Add capabilities to rbac.py
+
+## 2. Service Logic
+- [ ] Add session limits to relay_service.py
+(RBAC enforcement falls between chairs — nobody wires has_capability)
+```
+
+### Spec-Domain Annotations
+
+Each task group header should include a `<!-- specs: domain/name -->` comment declaring which spec files the group owns. Multiple domains are comma-separated:
+
+```markdown
+## 2. Auth and Sessions
+<!-- specs: relay/rbac, relay/session -->
+- [ ] Implement auth checks
+- [ ] Add session lifecycle
+```
+
+Cleave uses these annotations to deterministically map spec scenarios to child tasks as acceptance criteria. Groups without annotations fall back to heuristic matching.
+
+### tasks.md Format
+
+The full format that cleave parses:
 ```markdown
 ## 1. Group Title
+<!-- specs: domain/name -->
 
 - [ ] 1.1 Task description
 - [ ] 1.2 Another task

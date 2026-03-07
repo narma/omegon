@@ -43,6 +43,29 @@ split plan instead of invoking the LLM planner:
 This makes OpenSpec the upstream planning layer and cleave the downstream
 execution engine. OpenSpec is optional — cleave works standalone.
 
+### Spec-Domain Annotations
+
+Task groups in `tasks.md` can declare which spec files they own via HTML comments:
+
+```markdown
+## 2. RBAC Enforcement
+<!-- specs: relay/rbac -->
+- [ ] Wire has_capability() into create_session()
+```
+
+Cleave uses these annotations for deterministic scenario-to-child matching (3-tier priority):
+
+1. **Annotation match** — child's `specDomains` includes the scenario's domain
+2. **Scope match** — child's file scope includes files referenced in the scenario
+3. **Word-overlap fallback** — shared words between child description and scenario text
+
+### Orphan Scenario Safety Net
+
+Any spec scenario matching zero children is auto-injected into the closest child
+with a `⚠️ CROSS-CUTTING` marker. This prevents enforcement scenarios from falling
+between children when task groups are split by layer instead of by spec domain.
+The markers provide observability — if many orphans appear, task grouping needs improvement.
+
 ### Full Lifecycle
 
 When OpenSpec is present, the complete lifecycle is:

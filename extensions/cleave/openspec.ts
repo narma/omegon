@@ -47,6 +47,8 @@ export interface TaskGroup {
 		text: string;    // e.g., "Create ThemeContext with light/dark state"
 		done: boolean;   // checkbox state
 	}>;
+	/** Spec domains declared via <!-- specs: domain/name, ... --> annotation */
+	specDomains: string[];
 }
 
 /**
@@ -142,7 +144,18 @@ export function parseTasksFile(content: string): TaskGroup[] {
 				number: groupMatch[1] ? parseInt(groupMatch[1], 10) : groups.length + 1,
 				title: groupMatch[2].trim(),
 				tasks: [],
+				specDomains: [],
 			};
+			continue;
+		}
+
+		// Match spec-domain annotation: <!-- specs: domain/name, domain2/name2 -->
+		const specMatch = line.match(/^\s*<!--\s*specs:\s*(.+?)\s*-->\s*$/);
+		if (specMatch && currentGroup && currentGroup.tasks.length === 0) {
+			currentGroup.specDomains = specMatch[1]
+				.split(",")
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
 			continue;
 		}
 
@@ -221,6 +234,7 @@ export function taskGroupsToChildPlans(groups: TaskGroup[]): ChildPlan[] | null 
 			description,
 			scope,
 			dependsOn: [] as string[],
+			specDomains: group.specDomains?.length > 0 ? [...group.specDomains] : undefined,
 		};
 	});
 
@@ -578,6 +592,10 @@ function mergeSmallGroups(groups: TaskGroup[], maxGroups: number): TaskGroup[] {
 			number: result[smallestIdx].number,
 			title: `${result[smallestIdx].title} + ${result[smallestIdx + 1].title}`,
 			tasks: [...result[smallestIdx].tasks, ...result[smallestIdx + 1].tasks],
+			specDomains: [
+				...(result[smallestIdx].specDomains ?? []),
+				...(result[smallestIdx + 1].specDomains ?? []),
+			],
 		};
 		result.splice(smallestIdx, 2, merged);
 	}

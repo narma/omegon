@@ -110,6 +110,44 @@ describe("parseTasksFile", () => {
 		assert.equal(groups[0].tasks[0].done, true);
 		assert.equal(groups[0].tasks[1].done, false);
 	});
+
+	it("parses spec-domain annotation from group header", () => {
+		const content = `## 2. RBAC Enforcement
+<!-- specs: relay/rbac -->
+- [ ] Wire has_capability() into create_session()
+`;
+		const groups = parseTasksFile(content);
+		assert.equal(groups.length, 1);
+		assert.deepEqual(groups[0].specDomains, ["relay/rbac"]);
+	});
+
+	it("parses multiple spec domains from annotation", () => {
+		const content = `## 1. Auth and Sessions
+<!-- specs: relay/rbac, relay/session -->
+- [ ] Implement auth checks
+`;
+		const groups = parseTasksFile(content);
+		assert.deepEqual(groups[0].specDomains, ["relay/rbac", "relay/session"]);
+	});
+
+	it("sets empty specDomains when no annotation present", () => {
+		const content = `## 1. Database Layer
+- [ ] Create migration
+`;
+		const groups = parseTasksFile(content);
+		assert.deepEqual(groups[0].specDomains, []);
+	});
+
+	it("ignores spec annotation after tasks have started", () => {
+		const content = `## 1. Models
+- [ ] Add field
+<!-- specs: relay/rbac -->
+- [ ] Another task
+`;
+		const groups = parseTasksFile(content);
+		assert.deepEqual(groups[0].specDomains, []);
+		assert.equal(groups[0].tasks.length, 2);
+	});
 });
 
 // ─── taskGroupsToChildPlans ─────────────────────────────────────────────────
