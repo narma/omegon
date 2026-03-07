@@ -9,6 +9,9 @@ import {
 } from "./profiles.ts";
 
 const ALL_TOOLS = [
+  // pi built-in tools
+  "read", "write", "edit", "bash",
+  // Core extension tools
   "memory_query", "memory_recall", "memory_store", "chronos", "whoami",
   "set_model_tier", "set_thinking_level", "switch_to_offline_driver",
   "cleave_assess", "cleave_run", "openspec_manage", "design_tree", "design_tree_update",
@@ -37,12 +40,19 @@ describe("matchTool", () => {
 });
 
 describe("resolveActiveTools", () => {
-  it("core + web profiles enable expected tools", () => {
+  it("core + web profiles enable expected tools including built-ins", () => {
     const active = resolveActiveTools(ALL_TOOLS, ["core", "web"], {});
+    // pi built-in tools must be active
+    assert.ok(active.includes("read"), "read (pi built-in) should be active");
+    assert.ok(active.includes("write"), "write (pi built-in) should be active");
+    assert.ok(active.includes("edit"), "edit (pi built-in) should be active");
+    assert.ok(active.includes("bash"), "bash (pi built-in) should be active");
+    // Extension tools
     assert.ok(active.includes("memory_query"));
     assert.ok(active.includes("chronos"));
     assert.ok(active.includes("web_search"));
     assert.ok(active.includes("view"));
+    // Coding tools should NOT be active without coding profile
     assert.ok(!active.includes("cleave_assess"));
     assert.ok(!active.includes("generate_image_local"));
     assert.ok(!active.includes("mcp_scribe_list_partnerships"));
@@ -149,6 +159,14 @@ describe("PROFILES", () => {
     for (const tool of core.tools) {
       assert.ok(tool.match(/^[a-z_]+$/), `Invalid tool name: ${tool}`);
     }
+  });
+
+  it("core profile includes pi built-in tools", () => {
+    const core = PROFILES.find((p) => p.id === "core")!;
+    assert.ok(core.tools.includes("read"), "read must be in core profile");
+    assert.ok(core.tools.includes("write"), "write must be in core profile");
+    assert.ok(core.tools.includes("edit"), "edit must be in core profile");
+    assert.ok(core.tools.includes("bash"), "bash must be in core profile");
   });
 
   it("manage_tools is in the core profile so it cannot disable itself", () => {

@@ -72,14 +72,21 @@ export const PROFILES: Profile[] = [
   {
     id: "core",
     label: "Core",
-    description: "Essential tools: memory, chronos, auth, model control",
+    description: "Essential tools: built-in file/shell ops, memory, chronos, auth, model control",
     alwaysOn: true,
     tools: [
+      // pi built-in tools (lowercase — these are pi's native tools, not Claude Code's
+      // PascalCase variants). Must be included or setActiveTools() deactivates them.
+      "read", "write", "edit", "bash",
+      // Memory
       "memory_query", "memory_recall", "memory_episodes", "memory_focus",
       "memory_release", "memory_store", "memory_supersede", "memory_search_archive",
       "memory_connect", "memory_archive", "memory_compact",
+      // Utilities
       "chronos", "whoami",
+      // Model control
       "set_model_tier", "set_thinking_level", "switch_to_offline_driver",
+      // Tool management
       "manage_tools",
     ],
     detect: () => true,
