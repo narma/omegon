@@ -315,7 +315,17 @@ export default function (pi: ExtensionAPI) {
             }
             pending--;
             if (pending === 0 && failures.length > 0) {
-              ctx.ui.notify(`Guardrails: ${failures.join(", ")}`, "info");
+              const summary = failures.join(", ");
+              ctx.ui.notify(`Guardrails: ${summary}`, "info");
+              // Inject context the agent can see — notify() is TUI-only chrome
+              pi.sendMessage({
+                customType: "guardrail-health-check",
+                content: `[pi-kit startup health check] Guardrail failures detected: ${summary}. `
+                  + `These are static analysis checks auto-discovered by pi-kit's guardrail system `
+                  + `(see extensions/cleave/guardrails.ts). Checks ran: ${checks.map(c => `\`${c.cmd}\``).join(", ")}. `
+                  + `This is informational — the project may have pre-existing lint/type issues unrelated to current work.`,
+                display: true,
+              });
             }
           });
         }
