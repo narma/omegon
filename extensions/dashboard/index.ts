@@ -5,6 +5,8 @@
  *   Layer 0 (compact): Dashboard summary + context gauge + original footer data
  *   Layer 1 (raised):  Section details for design tree, openspec, cleave + footer data
  *
+ * Layer 2 (interactive overlay) opened via /dashboard open or Ctrl+Shift+B from raised.
+ *
  * Reads sharedState written by producer extensions (design-tree, openspec, cleave).
  * Subscribes to "dashboard:update" events for live re-rendering.
  *
@@ -75,6 +77,20 @@ export default function (pi: ExtensionAPI) {
     tui?.requestRender();
   }
 
+  /**
+   * Open overlay with error handling.
+   */
+  function openOverlay(ctx: ExtensionContext): void {
+    if (!ctx.isIdle()) {
+      ctx.ui.notify("Dashboard overlay unavailable while agent is streaming", "warning");
+      return;
+    }
+    showDashboardOverlay(ctx, pi).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[dashboard] overlay error: ${msg}`);
+    });
+  }
+
   // ── Session start: set up the custom footer ──────────────────
 
   pi.on("session_start", async (_event, ctx) => {
@@ -131,8 +147,7 @@ export default function (pi: ExtensionAPI) {
     description: "Toggle dashboard (compact → raised → overlay)",
     handler: (ctx) => {
       if (state.mode === "raised") {
-        // Already raised — open the interactive overlay
-        showDashboardOverlay(ctx).catch(() => {});
+        openOverlay(ctx);
       } else {
         toggle(ctx);
       }
@@ -147,11 +162,10 @@ export default function (pi: ExtensionAPI) {
       const arg = (args ?? "").trim().toLowerCase();
 
       if (arg === "open") {
-        // Explicit overlay open
         state.mode = "raised";
         persistMode(ctx);
         tui?.requestRender();
-        await showDashboardOverlay(ctx);
+        await showDashboardOverlay(ctx, pi);
         return;
       }
 

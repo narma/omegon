@@ -11,10 +11,11 @@
  */
 
 import type { Component } from "@mariozechner/pi-tui";
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { Theme, ThemeColor } from "@mariozechner/pi-coding-agent";
 import type { ReadonlyFooterDataProvider } from "@mariozechner/pi-coding-agent";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { TUI } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { DashboardState } from "./types.ts";
 import { sharedState } from "../shared-state.ts";
 
@@ -27,18 +28,6 @@ function formatTokens(count: number): string {
   if (count < 1000000) return `${Math.round(count / 1000)}k`;
   if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
   return `${Math.round(count / 1000000)}M`;
-}
-
-/**
- * Truncate a string to fit within a given visible width.
- * Simple implementation that respects ANSI escape codes.
- */
-function truncatePlain(text: string, maxWidth: number, suffix = "..."): string {
-  // Strip ANSI for width measurement
-  const stripped = text.replace(/\x1b\[[0-9;]*m/g, "");
-  if (stripped.length <= maxWidth) return text;
-  // Naive truncation — works for non-styled strings
-  return stripped.slice(0, maxWidth - suffix.length) + suffix;
 }
 
 /**
@@ -57,6 +46,10 @@ export class DashboardFooter implements Component {
   private footerData: ReadonlyFooterDataProvider;
   private dashState: DashboardState;
   private ctxRef: ExtensionContext | null = null;
+
+  /** Cached cumulative token stats — updated incrementally. */
+  private cachedTokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+  private lastEntryCount = 0;
 
   constructor(
     tui: TUI,
@@ -127,7 +120,7 @@ export class DashboardFooter implements Component {
     }
 
     if (dashParts.length > 0) {
-      lines.push(truncatePlain(dashParts.join("  "), width));
+      lines.push(truncateToWidth(dashParts.join("  "), width, "…"));
     }
 
     // Line 2-3: Original footer data (pwd + stats)
@@ -183,10 +176,10 @@ export class DashboardFooter implements Component {
     // Cleave section
     const cl = sharedState.cleave;
     if (cl && cl.status !== "idle") {
-      const statusColor = cl.status === "done" ? "success"
+      const statusColor: ThemeColor = cl.status === "done" ? "success"
         : cl.status === "failed" ? "error"
         : "warning";
-      lines.push(theme.fg("accent", "⚡ Cleave") + "  " + theme.fg(statusColor as any, cl.status));
+      lines.push(theme.fg("accent", "⚡ Cleave") + "  " + theme.fg(statusColor, cl.status));
 
       if (cl.children && cl.children.length > 0) {
         const doneCount = cl.children.filter(c => c.status === "done").length;
@@ -225,18 +218,19 @@ export class DashboardFooter implements Component {
     const memPct = contextWindow > 0 ? (memTokens / contextWindow) * 100 : 0;
     const convPct = Math.max(0, pct - memPct);
 
-    // Convert to block counts
-    const memBlocks = memPct > 0 ? Math.max(1, Math.round((memPct / 100) * barWidth)) : 0;
-    const convBlocks = convPct > 0 ? Math.max(1, Math.round((convPct / 100) * barWidth)) : 0;
+    // Convert to block counts (ceil ensures tiny values don't round to 0,
+    // but the floor on totalFilled prevents overcount)
+    const memBlocks = memPct > 0 ? Math.ceil((memPct / 100) * barWidth) : 0;
+    const convBlocks = convPct > 0 ? Math.ceil((convPct / 100) * barWidth) : 0;
     const totalFilled = Math.min(memBlocks + convBlocks, barWidth);
     const freeBlocks = barWidth - totalFilled;
 
     // Severity color
-    const convColor = pct > 70 ? "error" : pct > 45 ? "warning" : "muted";
+    const convColor: ThemeColor = pct > 70 ? "error" : pct > 45 ? "warning" : "muted";
 
     let bar = "";
     if (memBlocks > 0) bar += theme.fg("accent", "▓".repeat(memBlocks));
-    if (convBlocks > 0) bar += theme.fg(convColor as any, "█".repeat(convBlocks));
+    if (convBlocks > 0) bar += theme.fg(convColor, "█".repeat(convBlocks));
     if (freeBlocks > 0) bar += theme.fg("dim", "░".repeat(freeBlocks));
 
     const turns = this.dashState.turns;
@@ -268,41 +262,39 @@ export class DashboardFooter implements Component {
     const sessionName = ctx?.sessionManager?.getSessionName?.();
     if (sessionName) pwd = `${pwd} • ${sessionName}`;
 
-    lines.push(truncatePlain(theme.fg("dim", pwd), width));
+    lines.push(truncateToWidth(theme.fg("dim", pwd), width, "…"));
 
     // Stats line: tokens + cost + context% + model
     if (ctx) {
       const statsParts: string[] = [];
 
-      // Cumulative tokens from all entries
-      let totalInput = 0;
-      let totalOutput = 0;
-      let totalCacheRead = 0;
-      let totalCacheWrite = 0;
-      let totalCost = 0;
-
+      // Incrementally update cached token stats (only scan new entries)
       try {
-        for (const entry of ctx.sessionManager.getEntries()) {
-          if (entry.type === "message" && (entry as any).message?.role === "assistant") {
-            const usage = (entry as any).message.usage;
+        const entries = ctx.sessionManager.getEntries();
+        for (let i = this.lastEntryCount; i < entries.length; i++) {
+          const entry = entries[i] as any;
+          if (entry.type === "message" && entry.message?.role === "assistant") {
+            const usage = entry.message.usage;
             if (usage) {
-              totalInput += usage.input || 0;
-              totalOutput += usage.output || 0;
-              totalCacheRead += usage.cacheRead || 0;
-              totalCacheWrite += usage.cacheWrite || 0;
-              totalCost += usage.cost?.total || 0;
+              this.cachedTokens.input += usage.input || 0;
+              this.cachedTokens.output += usage.output || 0;
+              this.cachedTokens.cacheRead += usage.cacheRead || 0;
+              this.cachedTokens.cacheWrite += usage.cacheWrite || 0;
+              this.cachedTokens.cost += usage.cost?.total || 0;
             }
           }
         }
+        this.lastEntryCount = entries.length;
       } catch { /* session may not be ready */ }
 
-      if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-      if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-      if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-      if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+      const t = this.cachedTokens;
+      if (t.input) statsParts.push(`↑${formatTokens(t.input)}`);
+      if (t.output) statsParts.push(`↓${formatTokens(t.output)}`);
+      if (t.cacheRead) statsParts.push(`R${formatTokens(t.cacheRead)}`);
+      if (t.cacheWrite) statsParts.push(`W${formatTokens(t.cacheWrite)}`);
 
-      if (totalCost) {
-        statsParts.push(`$${totalCost.toFixed(3)}`);
+      if (t.cost) {
+        statsParts.push(`$${t.cost.toFixed(3)}`);
       }
 
       // Context %
@@ -372,7 +364,7 @@ export class DashboardFooter implements Component {
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([, text]) => sanitizeStatusText(text));
       const statusLine = sortedStatuses.join(" ");
-      lines.push(truncatePlain(statusLine, width));
+      lines.push(truncateToWidth(statusLine, width, "…"));
     }
 
     return lines;

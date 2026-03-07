@@ -2,7 +2,7 @@
  * Dashboard interactive overlay (Layer 2).
  *
  * Right-anchored sidepanel with three tabs:
- *   [1] Design Tree — node list with status icons, expand to show questions/decisions
+ *   [1] Design Tree — node list with status icons, expand to show questions
  *   [2] OpenSpec    — change list with stage/progress
  *   [3] Cleave      — dispatch children with status/elapsed
  *
@@ -10,23 +10,17 @@
  *   Tab / 1-3    — switch tabs
  *   ↑/↓          — navigate items
  *   Enter/→      — expand/collapse item
+ *   ←            — collapse expanded item
  *   Esc          — close overlay
  *
- * Reads sharedState for all data. No direct filesystem access.
+ * Reads sharedState for all data. Subscribes to dashboard:update for live refresh.
  */
 
-import type { ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Theme, ThemeColor } from "@mariozechner/pi-coding-agent";
 import type { TUI } from "@mariozechner/pi-tui";
 import { matchesKey, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { sharedState } from "../shared-state.ts";
-import type {
-  DesignTreeDashboardState,
-  DesignTreeFocusedNode,
-  OpenSpecDashboardState,
-  OpenSpecChangeEntry,
-  CleaveState,
-  CleaveChildState,
-} from "./types.ts";
+import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 
 // ── Tab definitions ─────────────────────────────────────────────
 
@@ -50,10 +44,11 @@ interface ListItem {
   key: string;
   depth: number;
   expandable: boolean;
-  expanded: boolean;
   lines: (theme: Theme, width: number) => string[];
-  children?: ListItem[];
 }
+
+/** Maximum content lines before the footer hint row (prevents maxHeight truncation). */
+const MAX_CONTENT_LINES = 30;
 
 // ── Overlay Component ───────────────────────────────────────────
 
@@ -67,11 +62,22 @@ export class DashboardOverlay {
   private flatItems: ListItem[] = [];
   private expandedKeys = new Set<string>();
 
+  /** Event unsubscribe handle for live refresh. */
+  private unsubscribe: (() => void) | null = null;
+
   constructor(tui: TUI, theme: Theme, done: (result: void) => void) {
     this.tui = tui;
     this.theme = theme;
     this.done = done;
     this.rebuildItems();
+  }
+
+  /** Attach to the pi event bus for live data refresh while overlay is open. */
+  setEventBus(events: { on(event: string, handler: (data: unknown) => void): () => void }): void {
+    this.unsubscribe = events.on(DASHBOARD_UPDATE_EVENT, () => {
+      this.rebuildItems();
+      this.tui.requestRender();
+    });
   }
 
   // ── Keyboard handling ───────────────────────────────────────────
@@ -102,7 +108,9 @@ export class DashboardOverlay {
       }
     }
 
-    // Navigation
+    // Navigation — guard empty list
+    if (this.flatItems.length === 0) return;
+
     if (matchesKey(data, "up")) {
       this.selectedIndex = Math.max(0, this.selectedIndex - 1);
       this.tui.requestRender();
@@ -168,8 +176,8 @@ export class DashboardOverlay {
     lines.push(border("│") + pad(" " + tabParts.join("  ")) + border("│"));
     lines.push(border("├" + "─".repeat(innerW) + "┤"));
 
-    // Content area
-    const contentLines = this.renderContent(innerW);
+    // Content area (capped to prevent maxHeight from eating the footer)
+    const contentLines = this.renderContent(innerW).slice(0, MAX_CONTENT_LINES);
     if (contentLines.length === 0) {
       lines.push(border("│") + pad(th.fg("dim", " (no data)")) + border("│"));
     } else {
@@ -206,9 +214,7 @@ export class DashboardOverlay {
 
       const itemLines = item.lines(th, innerW - 4 - item.depth * 2);
       if (itemLines.length > 0) {
-        // First line gets cursor + expand icon
         lines.push(`${cursor}${indent}${expandIcon}${itemLines[0]}`);
-        // Additional lines are indented further
         for (let j = 1; j < itemLines.length; j++) {
           lines.push(`  ${indent}  ${itemLines[j]}`);
         }
@@ -233,9 +239,11 @@ export class DashboardOverlay {
         break;
     }
 
-    // Clamp selection
-    if (this.selectedIndex >= this.flatItems.length) {
-      this.selectedIndex = Math.max(0, this.flatItems.length - 1);
+    // Clamp selection to valid range (handles empty lists correctly)
+    if (this.flatItems.length === 0) {
+      this.selectedIndex = 0;
+    } else if (this.selectedIndex >= this.flatItems.length) {
+      this.selectedIndex = this.flatItems.length - 1;
     }
   }
 
@@ -252,7 +260,6 @@ export class DashboardOverlay {
       key: "dt-summary",
       depth: 0,
       expandable: false,
-      expanded: false,
       lines: (th) => {
         const parts: string[] = [];
         if (dt.decidedCount > 0) parts.push(th.fg("success", `${dt.decidedCount} decided`));
@@ -267,11 +274,11 @@ export class DashboardOverlay {
     const focused = dt.focusedNode;
     if (focused) {
       const hasQuestions = focused.questions.length > 0;
+      const focusedKey = `dt-focused-${focused.id}`;
       items.push({
-        key: `dt-focused-${focused.id}`,
+        key: focusedKey,
         depth: 0,
         expandable: hasQuestions,
-        expanded: this.expandedKeys.has(`dt-focused-${focused.id}`),
         lines: (th) => {
           const statusIcon = this.statusIcon(focused.status, th);
           const focusLabel = th.fg("accent", " (focused)");
@@ -280,16 +287,28 @@ export class DashboardOverlay {
       });
 
       // Show questions if expanded
-      if (hasQuestions && this.expandedKeys.has(`dt-focused-${focused.id}`)) {
+      if (hasQuestions && this.expandedKeys.has(focusedKey)) {
         for (let qi = 0; qi < focused.questions.length; qi++) {
           items.push({
             key: `dt-q-${focused.id}-${qi}`,
             depth: 1,
             expandable: false,
-            expanded: false,
             lines: (th) => [th.fg("warning", `? ${focused.questions[qi]}`)],
           });
         }
+      }
+    }
+
+    // Node-count breakdown when no focused node (give the tab more content)
+    if (!focused) {
+      const seedCount = dt.nodeCount - dt.decidedCount - dt.exploringCount - dt.blockedCount;
+      if (seedCount > 0) {
+        items.push({
+          key: "dt-seeds",
+          depth: 0,
+          expandable: false,
+          lines: (th) => [th.fg("muted", `${seedCount} seed${seedCount > 1 ? "s" : ""} — use /design focus to explore`)],
+        });
       }
     }
 
@@ -297,14 +316,23 @@ export class DashboardOverlay {
   }
 
   private statusIcon(status: string, th: Theme): string {
-    switch (status) {
-      case "decided": return th.fg("success", "●");
-      case "exploring": return th.fg("accent", "◐");
-      case "seed": return th.fg("muted", "◌");
-      case "blocked": return th.fg("error", "✕");
-      case "deferred": return th.fg("warning", "◑");
-      default: return th.fg("dim", "○");
-    }
+    const colorMap: Record<string, ThemeColor> = {
+      decided: "success",
+      exploring: "accent",
+      seed: "muted",
+      blocked: "error",
+      deferred: "warning",
+    };
+    const iconMap: Record<string, string> = {
+      decided: "●",
+      exploring: "◐",
+      seed: "◌",
+      blocked: "✕",
+      deferred: "◑",
+    };
+    const color = colorMap[status] ?? "dim";
+    const icon = iconMap[status] ?? "○";
+    return th.fg(color, icon);
   }
 
   // ── OpenSpec tab ──────────────────────────────────────────────
@@ -320,7 +348,6 @@ export class DashboardOverlay {
       key: "os-summary",
       depth: 0,
       expandable: false,
-      expanded: false,
       lines: (th) => [th.fg("dim", `${os.changes.length} active change${os.changes.length > 1 ? "s" : ""}`)],
     });
 
@@ -334,7 +361,6 @@ export class DashboardOverlay {
         key,
         depth: 0,
         expandable: hasDetails,
-        expanded: this.expandedKeys.has(key),
         lines: (th) => {
           const icon = done ? th.fg("success", "✓") : th.fg("dim", "◦");
           const progress = change.tasksTotal > 0
@@ -351,7 +377,6 @@ export class DashboardOverlay {
             key: `os-stage-${change.name}`,
             depth: 1,
             expandable: false,
-            expanded: false,
             lines: (th) => [th.fg("dim", `stage: ${change.stage}`)],
           });
         }
@@ -361,7 +386,6 @@ export class DashboardOverlay {
             key: `os-progress-${change.name}`,
             depth: 1,
             expandable: false,
-            expanded: false,
             lines: (th) => {
               const barW = 20;
               const filled = Math.round((change.tasksDone / change.tasksTotal) * barW);
@@ -385,18 +409,18 @@ export class DashboardOverlay {
     const items: ListItem[] = [];
 
     // Status header
+    const statusColor: ThemeColor = cl.status === "done" ? "success"
+      : cl.status === "failed" ? "error"
+      : cl.status === "idle" ? "dim"
+      : "warning";
+
     items.push({
       key: "cl-status",
       depth: 0,
       expandable: false,
-      expanded: false,
       lines: (th) => {
-        const color = cl.status === "done" ? "success"
-          : cl.status === "failed" ? "error"
-          : cl.status === "idle" ? "dim"
-          : "warning";
         const runLabel = cl.runId ? th.fg("dim", ` (${cl.runId})`) : "";
-        return [th.fg(color as any, cl.status) + runLabel];
+        return [th.fg(statusColor, cl.status) + runLabel];
       },
     });
 
@@ -410,7 +434,6 @@ export class DashboardOverlay {
         key: "cl-summary",
         depth: 0,
         expandable: false,
-        expanded: false,
         lines: (th) => {
           const parts: string[] = [];
           parts.push(`${cl.children!.length} children`);
@@ -429,7 +452,6 @@ export class DashboardOverlay {
           key,
           depth: 0,
           expandable: hasElapsed,
-          expanded: this.expandedKeys.has(key),
           lines: (th) => {
             const icon = child.status === "done" ? th.fg("success", "✓")
               : child.status === "failed" ? th.fg("error", "✕")
@@ -444,7 +466,6 @@ export class DashboardOverlay {
             key: `cl-elapsed-${child.label}`,
             depth: 1,
             expandable: false,
-            expanded: false,
             lines: (th) => {
               const secs = child.elapsed ?? 0;
               const m = Math.floor(secs / 60);
@@ -463,7 +484,13 @@ export class DashboardOverlay {
   // ── Component lifecycle ───────────────────────────────────────
 
   invalidate(): void {}
-  dispose(): void {}
+
+  dispose(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+  }
 }
 
 // ── Public API ──────────────────────────────────────────────────
@@ -472,9 +499,15 @@ export class DashboardOverlay {
  * Show the dashboard overlay as a right-anchored sidepanel.
  * Blocks until the user presses Esc.
  */
-export async function showDashboardOverlay(ctx: ExtensionContext): Promise<void> {
+export async function showDashboardOverlay(ctx: ExtensionContext, pi?: { events: { on(e: string, h: () => void): () => void } }): Promise<void> {
   await ctx.ui.custom<void>(
-    (tui, theme, _kb, done) => new DashboardOverlay(tui, theme, done),
+    (tui, theme, _kb, done) => {
+      const overlay = new DashboardOverlay(tui, theme, done);
+      if (pi?.events) {
+        overlay.setEventBus(pi.events);
+      }
+      return overlay;
+    },
     {
       overlay: true,
       overlayOptions: {
