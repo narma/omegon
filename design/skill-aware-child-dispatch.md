@@ -1,16 +1,16 @@
 ---
-status: exploring
+status: decided
 tags: [cleave, skills, dispatch, agent-specialization]
 dependencies: [scenario-first-task-generation]
 open_questions:
   - Q1: Should skill matching be automatic (scope heuristic) or explicit (annotation)?
   - Q2: Should the child prompt inject skill content inline, or instruct the child to read it?
-  - Q3: Can a child request additional skills mid-execution (self-select)?
-  - Q4: Should skills be composable (child gets multiple skills) or singular?
-  - Q5: How do project-local skills vs pi-kit skills interact?
+  - Q3: (decided) Deferred — children already can self-select via <available_skills>. No change needed.
+  - Q4: (decided) Composable — children can receive multiple skill directives.
+  - Q5: (decided) Deferred — path resolution is an implementation detail.
   - Q6: (decided) Severity-gated escalation + diminishing returns guardrail. See D4a/D4b.
-  - Q7: Should the review agent run in the same worktree (seeing full state) or get only the diff?
-  - Q8: Can the review phase be parallelized across children, or must it be sequential?
+  - Q7: (decided) Same worktree — review agent needs to read files for context, not just scan diffs.
+  - Q8: (decided) Yes, reviews parallelize across children like execution does.
 ---
 
 # Skill-Aware Child Dispatch
