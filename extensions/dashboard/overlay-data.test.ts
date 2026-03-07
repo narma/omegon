@@ -75,11 +75,13 @@ describe("buildDesignItems", () => {
     assert.deepEqual(buildDesignItems(undefined, new Set()), []);
   });
 
-  it("returns empty for zero nodes", () => {
-    assert.deepEqual(buildDesignItems({
+  it("shows empty hint for zero nodes", () => {
+    const items = buildDesignItems({
       nodeCount: 0, decidedCount: 0, exploringCount: 0, blockedCount: 0,
       openQuestionCount: 0, focusedNode: null,
-    }, new Set()), []);
+    }, new Set());
+    // Summary + empty hint
+    assert.ok(items.find(i => i.key === "dt-empty"), "should show empty hint");
   });
 
   it("builds summary item", () => {
@@ -146,25 +148,30 @@ describe("buildDesignItems", () => {
     assert.ok(focused?.expandable);
   });
 
-  it("shows seed hint when no focused node", () => {
+  it("shows node list when nodes provided", () => {
     const items = buildDesignItems({
-      nodeCount: 3, decidedCount: 1, exploringCount: 0, blockedCount: 0,
+      nodeCount: 3, decidedCount: 1, exploringCount: 2, blockedCount: 0,
       openQuestionCount: 0, focusedNode: null,
+      nodes: [
+        { id: "a", title: "Alpha", status: "decided", questionCount: 0 },
+        { id: "b", title: "Beta", status: "exploring", questionCount: 2 },
+        { id: "c", title: "Gamma", status: "seed", questionCount: 0 },
+      ],
     }, new Set());
 
-    const seedItem = items.find(i => i.key === "dt-seeds");
-    assert.ok(seedItem, "should have seed hint");
-    assert.ok(renderItem(seedItem).includes("seed"));
+    const nodeItems = items.filter(i => i.key.startsWith("dt-node-"));
+    assert.equal(nodeItems.length, 3, "should list all nodes");
+    assert.ok(renderItem(nodeItems[1]!).includes("Beta"), "should include node title");
   });
 
-  it("omits seed hint when all nodes are decided/exploring/blocked", () => {
+  it("shows empty hint when no nodes array", () => {
     const items = buildDesignItems({
-      nodeCount: 3, decidedCount: 2, exploringCount: 1, blockedCount: 0,
+      nodeCount: 0, decidedCount: 0, exploringCount: 0, blockedCount: 0,
       openQuestionCount: 0, focusedNode: null,
     }, new Set());
 
-    const seedItem = items.find(i => i.key === "dt-seeds");
-    assert.ok(!seedItem, "should not have seed hint when all classified");
+    const emptyItem = items.find(i => i.key === "dt-empty");
+    assert.ok(emptyItem, "should show empty hint");
   });
 });
 

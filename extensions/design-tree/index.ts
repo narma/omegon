@@ -93,6 +93,12 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 						branchCount: focused.branches?.length ?? 0,
 					}
 				: null,
+			nodes: nodes.map((n) => ({
+				id: n.id,
+				title: n.title,
+				status: n.status,
+				questionCount: n.open_questions.length,
+			})),
 			implementingNodes: nodes
 				.filter((n) => n.status === "implementing")
 				.map((n) => ({ id: n.id, title: n.title, branch: n.branches?.[0] })),

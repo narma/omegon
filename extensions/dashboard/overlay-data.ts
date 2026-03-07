@@ -61,7 +61,7 @@ export function buildDesignItems(
   dt: DesignTreeDashboardState | undefined,
   expandedKeys: Set<string>,
 ): ListItem[] {
-  if (!dt || dt.nodeCount === 0) return [];
+  if (!dt) return [];
 
   const items: ListItem[] = [];
 
@@ -108,17 +108,33 @@ export function buildDesignItems(
     }
   }
 
-  // Seed hint when no focused node
-  if (!focused) {
-    const seedCount = dt.nodeCount - dt.decidedCount - dt.exploringCount - dt.blockedCount;
-    if (seedCount > 0) {
+  // All nodes list
+  if (dt.nodes && dt.nodes.length > 0) {
+    for (const node of dt.nodes) {
+      // Skip focused node — already shown above
+      if (focused && node.id === focused.id) continue;
+
       items.push({
-        key: "dt-seeds",
+        key: `dt-node-${node.id}`,
         depth: 0,
         expandable: false,
-        lines: (th) => [th("muted", `${seedCount} seed${seedCount > 1 ? "s" : ""} — use /design focus to explore`)],
+        lines: (th) => {
+          const icon = statusIcon(node.status, th);
+          const qLabel = node.questionCount > 0
+            ? th("warning", ` (${node.questionCount}?)`)
+            : "";
+          return [`${icon} ${node.title}${qLabel}`];
+        },
       });
     }
+  } else if (!focused) {
+    // Seed hint when no nodes at all
+    items.push({
+      key: "dt-empty",
+      depth: 0,
+      expandable: false,
+      lines: (th) => [th("muted", "No design nodes — use /design new <id> <title>")],
+    });
   }
 
   return items;
