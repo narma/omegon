@@ -40,7 +40,7 @@ export function buildGuardrailSection(cwd: string): string {
 	];
 
 	for (let i = 0; i < checks.length; i++) {
-		lines.push(`${i + 1}. **${checks[i].name}**: \`${checks[i].command}\``);
+		lines.push(`${i + 1}. **${checks[i].name}**: \`${checks[i].cmd}\``);
 	}
 
 	lines.push("");
