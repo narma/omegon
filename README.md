@@ -1,6 +1,6 @@
 # pi-kit
 
-A batteries-included extension package for the [pi coding agent](https://github.com/nicolecomputer/pi-coding-agent). Adds persistent project memory, local LLM inference, image generation, web search, task decomposition, and quality-of-life tools — all loadable with a single install.
+A batteries-included extension package for the [pi coding agent](https://github.com/nicolecomputer/pi-coding-agent). Adds persistent project memory, spec-driven development, local LLM inference, image generation, web search, task decomposition, and quality-of-life tools — all loadable with a single install.
 
 ```bash
 pi install https://github.com/cwilson613/pi-kit
@@ -10,9 +10,49 @@ pi install https://github.com/cwilson613/pi-kit
 
 ![pi-kit Architecture](docs/img/architecture.png)
 
-pi-kit extends the pi agent with **20 extensions**, **6 skills**, and **4 prompt templates** — loaded automatically on session start.
+pi-kit extends the pi agent with **23 extensions**, **7 skills**, and **2 prompt templates** — loaded automatically on session start.
+
+### Development Methodology
+
+pi-kit enforces **spec-first development** for non-trivial changes. The pipeline:
+
+```
+propose → spec → design → [api contract] → implement → verify → archive
+```
+
+When a change involves an API, Given/When/Then scenarios are translated into an **OpenAPI 3.1 contract** (`api.yaml`) before implementation begins. The contract is the source of truth for API shape — code implements the contract, not the reverse.
 
 ## Extensions
+
+### 📋 OpenSpec
+
+Spec-driven development lifecycle — proposal → specs → design → tasks workflow with delta-spec merge on archive.
+
+- **Tool**: `openspec_manage`
+- **Commands**: `/opsx:propose`, `/opsx:spec`, `/opsx:ff`, `/opsx:status`, `/opsx:verify`, `/opsx:archive`, `/opsx:sync`
+- **API contracts**: When a change involves a network API, derives an OpenAPI 3.1 spec from Given/When/Then scenarios
+- **Lifecycle stages**: proposed → specified → planned → implementing → verifying → archived
+- Integrates with [OpenSpec CLI](https://github.com/Fission-AI/OpenSpec) profiles
+
+### 🪓 Cleave
+
+Recursive task decomposition, code assessment, and OpenSpec lifecycle integration.
+
+- **Tools**: `cleave_assess` (complexity evaluation), `cleave_run` (parallel dispatch in git worktrees)
+- **Commands**: `/cleave <directive>`, `/assess cleave`, `/assess diff`, `/assess spec`, `/assess complexity`
+- **OpenSpec integration**: When `openspec/` exists, uses `tasks.md` as the split plan, enriches child tasks with design.md decisions and spec acceptance criteria, writes back task completion, and guides through verify → archive
+- **API contract validation**: `/assess spec` reads `api.yaml` and verifies endpoint paths, request/response schemas, status codes, and security schemes against the implementation
+- **Session awareness**: Surfaces active OpenSpec changes with task progress on session start
+
+### 🌲 Design Tree
+
+Structured design exploration with persistent markdown documents.
+
+- **Tools**: `design_tree` (query), `design_tree_update` (create/mutate nodes)
+- **Commands**: `/design list`, `/design new`, `/design update`, `/design branch`, `/design decide`, `/design implement`
+- **Document structure**: Frontmatter (status, tags, dependencies, open questions) + sections (Overview, Research, Decisions, Open Questions, Implementation Notes)
+- **OpenSpec bridge**: `/design implement` scaffolds `openspec/changes/<node-id>/` from a decided node, then `/cleave` executes it
+- **Full pipeline**: design → decide → implement → /cleave → verify
 
 ### 🧠 Project Memory
 
@@ -56,20 +96,12 @@ Multi-provider web search with deduplication.
 - Modes: `quick` (single provider), `deep` (more results), `compare` (fan out to all)
 - Tool: `web_search`
 
-### 🪓 Cleave
-
-Recursive task decomposition, code assessment, and OpenSpec lifecycle integration.
-
-- **Tools**: `cleave_assess` (complexity evaluation), `cleave_run` (parallel dispatch in git worktrees)
-- **Commands**: `/cleave <directive>`, `/assess cleave`, `/assess diff`, `/assess spec`, `/assess complexity`
-- **OpenSpec integration**: When `openspec/` exists, uses `tasks.md` as the split plan, enriches child tasks with design.md decisions and spec acceptance criteria, writes back task completion, and guides through verify → archive
-- **Session awareness**: Surfaces active OpenSpec changes with task progress on session start
-
 ### 💰 Model Budget
 
 Switch model tiers to match task complexity and conserve API spend.
 
 - Tool: `set_model_tier` — opus / sonnet / haiku
+- Tool: `set_thinking_level` — off / minimal / low / medium / high
 - Downgrade for routine edits, upgrade for architecture decisions
 
 ### 🔐 Secrets
@@ -95,11 +127,13 @@ Connect external MCP (Model Context Protocol) servers as pi tools.
 | `view` | Inline file viewer — images, PDFs, docs, syntax-highlighted code |
 | `distill` | Context distillation for session handoff (`/distill`) |
 | `session-log` | Append-only structured session tracking |
+| `auto-compact` | Context pressure monitoring with automatic compaction |
+| `defaults` | Auto-configures AGENTS.md and theme on first install (content-hash guard prevents overwrites) |
+| `shared-state` | Cross-extension state sharing |
 | `status-bar` | Severity-colored context gauge with memory usage and turn counter |
 | `terminal-title` | Dynamic tab titles for multi-session workflows |
 | `spinner-verbs` | Warhammer 40K-themed loading messages |
 | `style` | Verdant design system reference (`/style`) |
-| `defaults` | Auto-configures theme on first install |
 
 ## Skills
 
@@ -107,6 +141,7 @@ Skills provide specialized instructions the agent loads on-demand when a task ma
 
 | Skill | Description |
 |-------|-------------|
+| `openspec` | OpenSpec lifecycle — writing specs, deriving API contracts, generating tasks, verifying implementations |
 | `cleave` | Task decomposition, code assessment, OpenSpec lifecycle integration |
 | `git` | Conventional commits, semantic versioning, branch naming, changelogs |
 | `oci` | Container and artifact best practices |
@@ -118,8 +153,6 @@ Skills provide specialized instructions the agent loads on-demand when a task ma
 
 Pre-built prompts for common workflows:
 
-- **assess** — Adversarial assessment of session work (see also `/assess` command)
-- **cleave** — Task decomposition, assessment, and OpenSpec lifecycle
 - **new-repo** — Scaffold a new repository
 - **oci-login** — OCI registry authentication
 
