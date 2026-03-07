@@ -1176,6 +1176,11 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 	});
 
 	// ─── Branch Auto-Association ─────────────────────────────────────────
+	// Note: pi's onBranchChange callback (ReadonlyFooterDataProvider) is only
+	// accessible inside setFooter(), which conflicts with the dashboard extension.
+	// We use before_agent_start polling with a dedup guard instead — readGitBranch
+	// reads .git/HEAD which is a trivial stat+read, and the lastAssociatedBranch
+	// guard ensures we only process actual changes.
 
 	let lastAssociatedBranch: string | null = null;
 

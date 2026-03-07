@@ -818,7 +818,8 @@ export function toSlug(text: string, maxLen: number = 40): string {
  *      when both are split on hyphens (segment-aware prefix match)
  *   3. Longest matching node ID wins (prevents "auth" matching when "auth-strategy" exists)
  *
- * Only matches nodes with status "implementing".
+ * Matches nodes with status "implementing" or "implemented" (a branch may still
+ * reference a node after it transitions to implemented).
  *
  * @returns The matched DesignNode, or null if no match.
  */
@@ -832,7 +833,7 @@ export function matchBranchToNode(tree: DesignTree, branchName: string): DesignN
 	let bestMatchLength = 0;
 
 	for (const node of tree.nodes.values()) {
-		if (node.status !== "implementing") continue;
+		if (node.status !== "implementing" && node.status !== "implemented") continue;
 
 		const nodeIdParts = node.id.split("-");
 

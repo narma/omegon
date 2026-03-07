@@ -901,11 +901,19 @@ describe("matchBranchToNode", () => {
 		assert.equal(match.id, "auth-strategy");
 	});
 
-	it("returns null for non-implementing nodes", () => {
+	it("returns null for non-implementing/non-implemented nodes", () => {
 		createNode(docsDir, { id: "decided-node", title: "Decided Node", status: "decided" });
 		const tree = scanDesignDocs(docsDir);
 		const match = matchBranchToNode(tree, "feature/decided-node");
 		assert.equal(match, null);
+	});
+
+	it("matches implemented nodes (branch created after status transition)", () => {
+		createNode(docsDir, { id: "done-feature", title: "Done Feature", status: "implemented" });
+		const tree = scanDesignDocs(docsDir);
+		const match = matchBranchToNode(tree, "feature/done-feature");
+		assert.ok(match);
+		assert.equal(match.id, "done-feature");
 	});
 
 	it("returns null for main branch", () => {
