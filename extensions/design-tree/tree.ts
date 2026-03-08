@@ -1050,6 +1050,7 @@ export function scaffoldOpenSpecChange(
 	const taskLines = [`# ${node.title} — Tasks`, ""];
 
 	if (children.length > 0) {
+		// ── Child-node-driven groups ───────────────────────────────
 		let groupNum = 1;
 		for (const child of children) {
 			taskLines.push(`## ${groupNum}. ${child.title}`, "");
@@ -1073,7 +1074,66 @@ export function scaffoldOpenSpecChange(
 			taskLines.push("");
 			groupNum++;
 		}
+	} else if (sections.implementationNotes.fileScope.length > 0) {
+		// ── File-scope-driven groups (preferred over bare decisions) ─
+		// Each file in impl_notes becomes a task group.  Constraints that
+		// mention the file's basename are attached to that group; any
+		// remaining constraints land in a final "Cross-cutting" group.
+		const constraints = sections.implementationNotes.constraints;
+		const usedConstraints = new Set<number>();
+
+		let groupNum = 1;
+		for (const f of sections.implementationNotes.fileScope) {
+			const baseName = f.path.split("/").pop() ?? f.path;
+			const actionTag = f.action ? ` (${f.action})` : "";
+			taskLines.push(`## ${groupNum}. ${f.path}${actionTag}`, "");
+			taskLines.push(`- [ ] ${groupNum}.1 ${f.description}`);
+
+			// Attach constraints that reference this file by basename or path
+			let taskNum = 2;
+			for (let i = 0; i < constraints.length; i++) {
+				if (
+					!usedConstraints.has(i) &&
+					(constraints[i].toLowerCase().includes(baseName.toLowerCase()) ||
+						constraints[i].toLowerCase().includes(f.path.toLowerCase()))
+				) {
+					taskLines.push(`- [ ] ${groupNum}.${taskNum} ${constraints[i]}`);
+					usedConstraints.add(i);
+					taskNum++;
+				}
+			}
+
+			// Attach research entries whose heading references this file
+			for (const r of sections.research) {
+				if (
+					r.heading.toLowerCase().includes(baseName.toLowerCase()) ||
+					r.heading.toLowerCase().includes(f.path.toLowerCase())
+				) {
+					const firstLine = r.content.split("\n").find((l) => l.trim()) ?? "";
+					if (firstLine) {
+						taskLines.push(`- [ ] ${groupNum}.${taskNum} ${firstLine.replace(/^[-*]\s*/, "")}`);
+						taskNum++;
+					}
+				}
+			}
+
+			taskLines.push("");
+			groupNum++;
+		}
+
+		// Emit any constraints not matched to a specific file
+		const orphanConstraints = constraints.filter((_, i) => !usedConstraints.has(i));
+		if (orphanConstraints.length > 0) {
+			taskLines.push(`## ${groupNum}. Cross-cutting constraints`, "");
+			let taskNum = 1;
+			for (const c of orphanConstraints) {
+				taskLines.push(`- [ ] ${groupNum}.${taskNum} ${c}`);
+				taskNum++;
+			}
+			taskLines.push("");
+		}
 	} else if (sections.decisions.length > 0) {
+		// ── Decision-driven groups (fallback when no file scope) ──────
 		let groupNum = 1;
 		for (const d of sections.decisions) {
 			taskLines.push(`## ${groupNum}. ${d.title}`, "");
@@ -1087,17 +1147,28 @@ export function scaffoldOpenSpecChange(
 		taskLines.push("");
 	}
 
+	const tasksContent = taskLines.join("\n");
 	const tasksPath = path.join(changePath, "tasks.md");
-	fs.writeFileSync(tasksPath, taskLines.join("\n"));
+	fs.writeFileSync(tasksPath, tasksContent);
 	files.push("tasks.md");
 
+	// Surface the generated tasks.md content so the agent is forced to read
+	// and refine it before proceeding — do not skip this review.
 	const message =
 		`Scaffolded OpenSpec change at ${changePath}\n\n` +
 		`Files created:\n${files.map((f) => `  - ${f}`).join("\n")}\n\n` +
-		`Next steps:\n` +
-		`  1. Review and refine tasks.md (add specific subtasks, adjust grouping)\n` +
-		`  2. Run \`/cleave\` to parallelize execution via git worktrees\n` +
-		`  3. After implementation, run \`/assess spec ${node.id}\` to verify against specs`;
+		`⚠️  REVIEW REQUIRED — tasks.md draft (read before proceeding):\n` +
+		`${"─".repeat(60)}\n` +
+		`${tasksContent}\n` +
+		`${"─".repeat(60)}\n\n` +
+		`The tasks above are a scaffold, not a final plan. Before running /cleave:\n` +
+		`  1. Verify every file in impl_notes has at least one concrete subtask\n` +
+		`  2. Check that each constraint appears in at least one task\n` +
+		`  3. Expand any one-liner tasks that need numbered subtasks\n` +
+		`  4. Add spec domain annotations if specs exist (<!-- specs: domain/name -->)\n\n` +
+		`When satisfied:\n` +
+		`  - Run \`/cleave\` to parallelize execution via git worktrees\n` +
+		`  - After implementation, run \`/assess spec ${node.id}\` to verify against specs`;
 
 	return { message, changePath, files };
 }

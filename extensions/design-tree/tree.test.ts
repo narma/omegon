@@ -814,11 +814,12 @@ describe("scaffoldOpenSpecChange", () => {
 
 		assert.deepStrictEqual(result.files, ["proposal.md", "design.md", "tasks.md"]);
 
-		// Check tasks.md format — decisions become task groups
+		// Check tasks.md format — fileScope drives task groups (takes priority over decisions)
 		const tasks = fs.readFileSync(path.join(result.changePath, "tasks.md"), "utf-8");
-		assert.ok(tasks.includes("## 1. Use JWT"));
-		assert.ok(tasks.includes("- [ ] 1.1 Implement Use JWT"));
-		assert.ok(tasks.includes("## 2. Use refresh tokens"));
+		assert.ok(tasks.includes("## 1. src/auth.ts (new)"));
+		assert.ok(tasks.includes("- [ ] 1.1 Auth module"));
+		// Constraint mentioning "auth" should attach to the auth.ts group
+		assert.ok(tasks.includes("Must support OIDC"));
 
 		// Check design.md has decisions, file changes, and constraints
 		const design = fs.readFileSync(path.join(result.changePath, "design.md"), "utf-8");
