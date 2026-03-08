@@ -267,7 +267,33 @@ The design-tree `implement` action scaffolds OpenSpec change directories from de
 - Design node **decisions** → additional task groups
 - Design node **open questions** → noted in tasks
 
-After `implement`, refine the scaffolded specs before proceeding.
+### ⚠️ The scaffolder produces a draft — always rewrite tasks.md immediately
+
+The scaffolder reads **decisions only**. It does NOT read research sections, impl_notes file scope, or constraints. The generated `tasks.md` will contain one vague one-liner per decision title. This is expected scaffolding behaviour — it is not a usable task list.
+
+**Immediately after every `implement` call**, you must:
+
+1. Read the generated `tasks.md`
+2. Read the design node's `impl_notes` (file scope + constraints) and research sections
+3. Rewrite `tasks.md` completely — treat the generated file as a placeholder, not a draft to polish
+
+**What a correct rewrite looks like:**
+
+- One task group per file or coherent feature area (derived from impl_notes file scope)
+- Each constraint maps to at least one concrete task item
+- Research code examples (method signatures, class names) translate into numbered implementation tasks
+- Rejected decisions are omitted entirely — never "implement" a rejected decision
+- Dependencies between groups are stated explicitly at the top of the file
+- If a scaffolded OpenSpec was created before a design decision was superseded, the tasks must reflect the current decision, not the old one
+
+**Detecting a bad tasks.md:**
+
+- Any task item whose text is a verbatim copy of a decision title → rewrite required
+- Any task group labelled "Implement [rejected decision]" → immediately rewrite
+- Fewer than 3 concrete numbered subtasks per group → likely too shallow
+- No mention of specific method names, file paths, or test assertions → too abstract
+
+This rewrite step is not optional polish — it is the primary authoring step for task content. The scaffolder provides structure; the agent provides substance.
 
 ## When to Use OpenSpec
 
