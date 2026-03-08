@@ -24,6 +24,13 @@ import type { EffortLevel, EffortState, EffortModelTier } from "./types.ts";
 import { EFFORT_NAMES } from "./types.ts";
 import { tierConfig, parseTierName, DEFAULT_EFFORT_LEVEL, TIER_NAMES } from "./tiers.ts";
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
+import {
+  resolveTier,
+  getTierDisplayLabel,
+  getDefaultPolicy,
+  type ModelTier,
+  type RegistryModel,
+} from "../lib/model-routing.ts";
 
 // ─── Constants ───────────────────────────────────────────────
 
@@ -38,91 +45,11 @@ const TIER_ICONS: Record<EffortLevel, string> = {
   7: "⚙️",
 };
 
-/** Anthropic model prefix for each cloud driver tier. */
-const MODEL_PREFIX: Record<string, string> = {
-  sonnet: "claude-sonnet",
-  opus: "claude-opus",
-};
-
-/** Ollama inference server URL. */
-const OLLAMA_URL = process.env.LOCAL_INFERENCE_URL || "http://localhost:11434";
-
-// Canonical list from shared registry — edit extensions/lib/local-models.ts to update.
-import { PREFERRED_ORDER as PREFERRED_LOCAL_IMPORTED } from "../lib/local-models.ts";
-const PREFERRED_LOCAL = PREFERRED_LOCAL_IMPORTED;
-
 // ─── Model Switching ─────────────────────────────────────────
-
-interface RegistryModel {
-  id: string;
-  provider: string;
-  [key: string]: unknown;
-}
-
-/**
- * Find the best Anthropic model for a tier prefix.
- * Uses the same strategy as model-budget.ts: lexicographic descending picks
- * the short alias (e.g. claude-opus-4-6) over dated versions.
- */
-function findAnthropicModel(ctx: any, prefix: string): RegistryModel | undefined {
-  const all: RegistryModel[] = ctx.modelRegistry.getAll();
-  const candidates = all
-    .filter((m) => m.provider === "anthropic" && m.id.startsWith(prefix))
-    .sort((a, b) => b.id.localeCompare(a.id));
-  return candidates[0] ?? undefined;
-}
-
-/**
- * Discover available Ollama chat models.
- */
-async function discoverOllamaModels(): Promise<string[]> {
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, {
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { models?: { name: string }[] };
-    return (data.models || [])
-      .map((m) => m.name.replace(/:latest$/, ""))
-      .filter((id) => !id.includes("embed"));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Find a local model from the registry (already registered by offline-driver).
- * Falls back to discovering Ollama and picking from PREFERRED_LOCAL.
- */
-async function findLocalModel(ctx: any): Promise<RegistryModel | undefined> {
-  // Check if offline-driver already registered local models
-  const all: RegistryModel[] = ctx.modelRegistry.getAll();
-  const localModels = all.filter((m) => m.provider === "local");
-
-  if (localModels.length > 0) {
-    // Pick preferred order first, then any available
-    for (const preferred of PREFERRED_LOCAL) {
-      const match = localModels.find((m) => m.id === preferred);
-      if (match) return match;
-    }
-    return localModels[0];
-  }
-
-  // No local models registered — Ollama may be available but offline-driver
-  // hasn't loaded yet. Check if models are discoverable.
-  const ollamaModels = await discoverOllamaModels();
-  if (ollamaModels.length === 0) return undefined;
-
-  // Pick best available from preferred list
-  const targetId =
-    PREFERRED_LOCAL.find((id) => ollamaModels.includes(id)) || ollamaModels[0];
-
-  // Check registry again (offline-driver may have loaded between checks)
-  return ctx.modelRegistry.find("local", targetId) ?? undefined;
-}
 
 /**
  * Switch the driver model to match the effort tier's driver setting.
+ * Uses the shared resolveTier() resolver with the current session policy.
  * Returns true if the switch succeeded.
  */
 async function switchDriverModel(
@@ -130,18 +57,49 @@ async function switchDriverModel(
   ctx: any,
   driver: EffortModelTier,
 ): Promise<boolean> {
-  if (driver === "local") {
-    const model = await findLocalModel(ctx);
-    if (!model) return false;
-    return pi.setModel(model as any);
-  }
-
-  const prefix = MODEL_PREFIX[driver];
-  if (!prefix) return false;
-
-  const model = findAnthropicModel(ctx, prefix);
+  // "local" is always resolved locally — policy cannot redirect to cloud
+  const tier = driver as ModelTier;
+  const all: RegistryModel[] = ctx.modelRegistry.getAll();
+  const policy = sharedState.routingPolicy ?? getDefaultPolicy();
+  const resolved = resolveTier(tier, all, policy);
+  if (!resolved) return false;
+  const model = all.find((m) => m.id === resolved.modelId && m.provider === resolved.provider);
   if (!model) return false;
   return pi.setModel(model as any);
+}
+
+/**
+ * Resolve the effective extraction tier, honoring the session routing policy.
+ *
+ * When cheapCloudPreferredOverLocal is true and the effort tier's extraction
+ * setting is "local", we upgrade to "haiku" (cheapest cloud tier) so that
+ * background extraction work uses a cost-effective cloud model when available.
+ * If no cloud model satisfies haiku, falls back to "local" transparently.
+ *
+ * Spec: "Extraction prefers cheap cloud when configured"
+ *       "Offline or unavailable cloud falls back safely"
+ */
+function resolveExtractionTier(
+  extraction: EffortModelTier,
+  ctx: any,
+): { displayTier: string; resolvedModelId?: string } {
+  const policy = sharedState.routingPolicy ?? getDefaultPolicy();
+  const all: RegistryModel[] = ctx.modelRegistry.getAll();
+
+  // Determine effective tier: upgrade local→haiku when policy prefers cheap cloud
+  const effectiveTier: ModelTier =
+    policy.cheapCloudPreferredOverLocal && extraction === "local" ? "haiku" : (extraction as ModelTier);
+
+  const resolved = resolveTier(effectiveTier, all, policy);
+
+  // If cloud preferred but nothing resolved, fall back to local explicitly
+  const final =
+    resolved ?? (effectiveTier !== "local" ? resolveTier("local", all, policy) : undefined);
+
+  return {
+    displayTier: final ? getTierDisplayLabel(final.tier) : getTierDisplayLabel(effectiveTier),
+    resolvedModelId: final?.modelId,
+  };
 }
 
 // ─── Config Resolution ───────────────────────────────────────
@@ -211,12 +169,17 @@ function formatTierInfo(state: EffortState): string {
   const capIndicator = state.capped && state.capLevel
     ? ` [CAPPED at ${EFFORT_NAMES[state.capLevel]}]`
     : "";
+  const driverLabel = getTierDisplayLabel(state.driver as ModelTier);
+  const extractionLabel = getTierDisplayLabel(state.extraction as ModelTier);
+  const compactionLabel = getTierDisplayLabel(state.compaction as ModelTier);
+  const reviewLabel = getTierDisplayLabel(state.reviewModel as ModelTier);
+  const floorLabel = getTierDisplayLabel(state.cleaveFloor as ModelTier);
   const lines = [
     `${icon} **${state.name}** (level ${state.level}/7)${capIndicator}`,
-    `  Driver: ${state.driver} | Thinking: ${state.thinking}`,
-    `  Extraction: ${state.extraction} | Compaction: ${state.compaction}`,
-    `  Cleave: preferLocal=${state.cleavePreferLocal}, floor=${state.cleaveFloor}`,
-    `  Review: ${state.reviewModel}`,
+    `  Driver: ${driverLabel} (${state.driver}) | Thinking: ${state.thinking}`,
+    `  Extraction: ${extractionLabel} (${state.extraction}) | Compaction: ${compactionLabel} (${state.compaction})`,
+    `  Cleave: preferLocal=${state.cleavePreferLocal}, floor=${floorLabel} (${state.cleaveFloor})`,
+    `  Review: ${reviewLabel} (${state.reviewModel})`,
   ];
   return lines.join("\n");
 }
