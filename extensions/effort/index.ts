@@ -159,6 +159,9 @@ function resolveInitialLevel(cwd: string): EffortLevel {
 /**
  * Build an EffortState from a tier level.
  * Preserves existing cap state if provided.
+ * resolvedExtractionModelId is always initialized to undefined here;
+ * callers must invoke resolveExtractionTier() and populate it before
+ * writing to sharedState.effort (W2).
  */
 function buildEffortState(
   level: EffortLevel,
@@ -170,6 +173,7 @@ function buildEffortState(
     ...config,
     capped,
     capLevel,
+    resolvedExtractionModelId: undefined,
   };
 }
 
@@ -264,7 +268,11 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const icon = TIER_ICONS[state.level];
-        sharedState.effort = buildEffortState(state.level, true, state.level);
+        const newState = buildEffortState(state.level, true, state.level);
+        // Resolve extraction tier and populate before writing to sharedState (W1)
+        const extractionResolution = resolveExtractionTier(newState.extraction, ctx);
+        newState.resolvedExtractionModelId = extractionResolution.resolvedModelId;
+        sharedState.effort = newState;
         pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "effort" });
         ctx.ui.notify(
           `${icon} Effort capped at ${state.name} (level ${state.level}) — agent cannot upgrade past this tier`,
@@ -281,7 +289,11 @@ export default function (pi: ExtensionAPI) {
           return;
         }
         const icon = TIER_ICONS[state.level];
-        sharedState.effort = buildEffortState(state.level, false);
+        const newState = buildEffortState(state.level, false);
+        // Resolve extraction tier and populate before writing to sharedState (W1)
+        const extractionResolution = resolveExtractionTier(newState.extraction, ctx);
+        newState.resolvedExtractionModelId = extractionResolution.resolvedModelId;
+        sharedState.effort = newState;
         pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "effort" });
         ctx.ui.notify(
           `${icon} Effort cap removed — agent can freely upgrade`,
@@ -309,13 +321,13 @@ export default function (pi: ExtensionAPI) {
       const capLevel = prev?.capLevel;
       const state = buildEffortState(level, capped, capLevel);
 
-      // Write to shared state
-      sharedState.effort = state;
-      pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "effort" });
-
-      // Resolve extraction tier under current routing policy (C1: spec compliance)
+      // Resolve extraction tier before writing to sharedState (C1, C2)
       const extractionResolution = resolveExtractionTier(state.extraction, ctx);
       state.resolvedExtractionModelId = extractionResolution.resolvedModelId;
+
+      // Write to shared state only after all fields are populated
+      sharedState.effort = state;
+      pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "effort" });
 
       // Switch driver model
       const modelSwitched = await switchDriverModel(pi, ctx, state.driver);
