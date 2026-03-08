@@ -310,7 +310,7 @@ export default function (pi: ExtensionAPI) {
             if (err) {
               const code = (err as any).code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ? "output overflow" :
                 (err as any).killed ? `timeout after ${check.timeout}s` :
-                `${(err as any).status ?? "?"}`;
+                `exit ${(err as any).code ?? "?"}`;
               failures.push(`${check.name}: ${code}`);
             }
             pending--;
