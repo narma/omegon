@@ -88,6 +88,10 @@ This is the core “implemented once, rendered twice” contract.
 
 For lifecycle-aware assess flows, structured data must be sufficient for the agent to decide whether to call `openspec_manage.reconcile_after_assess` and with which outcome.
 
+### OpenSpec lifecycle integration emphasis
+
+The bridge should not stop at making `/assess` invokable. OpenSpec and cleave workflows depend on assessment as a state transition mechanism: spec verification, diff review, cleave review, and reconciliation after reopened work. That means bridged assessment results should remain first-class inputs to OpenSpec lifecycle handlers, and lifecycle-oriented slash commands should be designed to compose cleanly with assessment outcomes instead of treating `/assess` as an external/manual checkpoint.
+
 ## Decisions
 
 ### Decision: Build a general harness bridge for slash commands, not a one-off `/assess` shim
@@ -115,6 +119,11 @@ For lifecycle-aware assess flows, structured data must be sufficient for the age
 **Status:** decided
 **Rationale:** The platform should be generic, but the first commands onboarded to the allowlist should be the ones blocking autonomous workflows today: `/assess spec`, `/assess diff`, `/assess cleave`, and other lifecycle-critical commands that already participate in OpenSpec/design-tree reconciliation. This keeps scope controlled while avoiding a dead-end `/assess`-only solution.
 
+### Decision: OpenSpec and cleave commands should compose around structured assessment results
+
+**Status:** decided
+**Rationale:** Assessment is not just a convenience command; it is part of the lifecycle state machine for spec-driven work. Commands such as `/opsx:verify`, `/opsx:archive`, reconciliation flows, and future cleave lifecycle helpers should consume structured assess outcomes directly so the implementation workflow remains autonomous, machine-readable, and internally consistent.
+
 ## Open Questions
 
 *No open questions.*
@@ -132,15 +141,6 @@ For lifecycle-aware assess flows, structured data must be sufficient for the age
 - `extensions/lib/slash-command-bridge.test.ts` (new) — regression coverage for allowlist refusal, confirmation gating, tool wrapper metadata, and shared executor parity
 - `docs/agent-assess-tooling-access.md` (modified) — documents bridge architecture, safety boundaries, result envelope, and rollout constraints
 
-### Validation focus
-
-Regression coverage for this change should prove four things:
-
-1. allowlisted commands execute through the bridge and preserve structured data
-2. blocked commands fail closed with explicit refusal messaging
-3. confirmation-required commands do not execute until confirmed
-4. interactive and bridged entrypoints use the same structured executor output rather than diverging implementations
-
 ### Constraints
 
 - Assessment entrypoints exposed to the agent must return structured machine-readable results, not require scraping terminal-only output.
@@ -152,3 +152,12 @@ Regression coverage for this change should prove four things:
 - The bridge must refuse commands that are not explicitly allowlisted as agent-callable.
 - Commands with destructive or external side effects must surface confirmation requirements through structured metadata rather than silently executing.
 - Arbitrary slash-command execution remains disallowed in v1 even though the bridge primitive is generic.
+- Assessment entrypoints exposed to the agent must return structured machine-readable results, not require scraping terminal-only output.
+- Do not expose arbitrary slash-command execution unless explicit safety boundaries, allowlists, and side-effect semantics are defined.
+- The v1 solution should cover the OpenSpec lifecycle gap first: spec assessment and cleave/diff review paths used by the agent workflow.
+- Assessment access should preserve existing operator-visible UX while enabling autonomous execution inside the harness.
+- Bridged commands must be implemented once and rendered twice: structured result for agents, human text for interactive users.
+- Every bridged command must declare an explicit result schema or typed data shape; opaque string-only success responses are insufficient.
+- The bridge must refuse commands that are not explicitly allowlisted as agent-callable.
+- Commands with destructive or external side effects must surface confirmation requirements through structured metadata rather than silently executing.
+- OpenSpec and cleave lifecycle commands should consume structured assess outputs directly instead of reparsing human-readable assessment text.
