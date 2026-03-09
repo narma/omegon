@@ -204,7 +204,7 @@ group: Infrastructure {
 - `fontFamily: 3` — Cascadia (monospace)
 - `viewBackgroundColor: "#ffffff"` — white canvas (prints well; dark theme elements still pop)
 - Prefer Excalidraw for layout-sensitive capability maps, trust boundaries, phased flows, and other diagrams where local spacing and connector routing matter more than pure graph regularity
-- When generating Excalidraw programmatically, prefer constrained composition tooling over hand-authoring raw scene JSON
+- When generating Excalidraw programmatically, keep it minimal and hand-crafted; prefer the native SVG backend for repeatable canonical document diagrams
 - Use canonical layouts (`pipeline`, `fanout`, `converge`, `grid`) as the starting grammar for repeated architecture diagrams
 
 ### FLUX.1 (Image Generation)

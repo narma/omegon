@@ -2,7 +2,6 @@
 id: native-diagram-backend-mvp
 title: Native SVG diagram backend MVP
 status: implementing
-parent: typescript-diagramming-frameworks
 tags: [render, svg, native-diagrams, mvp]
 open_questions: []
 branches: ["feature/native-diagram-backend-mvp"]

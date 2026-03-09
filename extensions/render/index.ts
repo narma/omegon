@@ -6,11 +6,10 @@
 /**
  * render — Visual rendering extension for pi
  *
- * Provides five tools:
+ * Provides four tools:
  *   - generate_image_local: AI image generation via FLUX.1 (mflux, Apple Silicon MLX)
  *   - render_diagram: D2 diagram rendering via d2 CLI
  *   - render_native_diagram: constrained motif-based JSON → native SVG (optionally PNG)
- *   - compose_excalidraw: constrained JSON composition → .excalidraw (optionally render to PNG)
  *   - render_excalidraw: Excalidraw JSON → PNG via Playwright + headless Chromium
  *
  * All tools save output to ~/.pi/visuals/ for persistence across sessions.
@@ -26,19 +25,17 @@
  *   render_native_diagram:
  *     - Uses in-process SVG serialization and Node-native PNG rasterization via resvg-js
  *     - No browser or Playwright runtime required
- *   compose_excalidraw / render_excalidraw:
- *     - uv + playwright + chromium for optional PNG rendering
+ *   render_excalidraw:
+ *     - uv + playwright + chromium for PNG rendering of existing .excalidraw files
  *     - First-time setup: cd <EXCALIDRAW_RENDER_DIR> && uv sync && uv run playwright install chromium
  */
 
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join, basename } from "node:path";
-import { mkdtempSync } from "node:fs";
 import { StringEnum } from "../lib/typebox-helpers";
-import { composeExcalidraw, parseCompositionSpec } from "./excalidraw/index.ts";
 import {
 	NATIVE_DIAGRAM_DIRECTIONS,
 	NATIVE_DIAGRAM_MOTIFS,
@@ -444,72 +441,6 @@ export default function renderExtension(pi: ExtensionAPI) {
 	});
 
 	// ------------------------------------------------------------------
-	// compose_excalidraw — constrained composition JSON → .excalidraw
-	// ------------------------------------------------------------------
-	pi.registerTool({
-		name: "compose_excalidraw",
-		label: "Compose Excalidraw",
-		description:
-			"Compose an Excalidraw diagram from constrained JSON rather than raw scene elements. " +
-			"Accepts a composition spec with layout, nodes, edges, and optional panels, writes a .excalidraw file, " +
-			"and can optionally render the result to PNG.",
-		promptSnippet: "Compose Excalidraw diagrams from constrained JSON specs instead of raw scene JSON",
-		promptGuidelines: [
-			"Prefer this tool over hand-authoring raw Excalidraw scene JSON when layout-sensitive diagrams need repeatable generation.",
-			"Provide a constrained JSON object with layout, nodes, edges, and optional panels.",
-			"Use canonical layouts: pipeline, fanout, converge, or grid.",
-			"Let the composition layer place nodes, route edges, and reserve whitespace for edge labels.",
-		],
-		parameters: Type.Object({
-			spec_json: Type.String({ description: "Constrained composition JSON describing the diagram" }),
-			title: Type.Optional(Type.String({ description: "Optional file title override" })),
-			render: Type.Optional(Type.Boolean({ description: "Render the generated .excalidraw file to PNG (default: true)" })),
-			scale: Type.Optional(Type.Number({ description: "Render scale when render=true (default: 2)" })),
-		}),
-		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(params.spec_json);
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				throw new Error(`Invalid spec_json: ${message}`);
-			}
-
-			const spec = parseCompositionSpec(parsed);
-			const doc = composeExcalidraw(spec);
-			const slugSource = params.title || spec.title || "diagram";
-			const slug = slugSource.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 40);
-			const excalidrawPath = visualsPath(`${timestamp()}_${slug}.excalidraw`);
-			writeFileSync(excalidrawPath, `${JSON.stringify(doc, null, 2)}\n`, "utf-8");
-
-			if (params.render === false) {
-				return {
-					content: [{ type: "text", text: `Composed Excalidraw diagram. Saved: ${excalidrawPath}` }],
-					details: { excalidrawPath, rendered: false },
-				};
-			}
-
-			const scale = params.scale ?? 2;
-			const outPng = visualsPath(`${timestamp()}_${slug}.png`);
-			onUpdate?.({
-				content: [{ type: "text", text: `Composing and rendering ${basename(excalidrawPath)}…` }],
-				details: { excalidrawPath },
-			});
-
-			await renderExcalidrawFile(pi, excalidrawPath, outPng, scale, signal);
-			const data = readFileSync(outPng).toString("base64");
-			const titlePrefix = (params.title || spec.title) ? `# ${params.title || spec.title}\n\n` : "";
-			return {
-				content: [
-					{ type: "text", text: `${titlePrefix}📐 Excalidraw  ·  Source: ${excalidrawPath}  ·  Saved: ${outPng}` },
-					{ type: "image", data, mimeType: "image/png" },
-				],
-				details: { rendered: true, excalidrawPath, pngPath: outPng, scale },
-			};
-		},
-	});
-
-	// ------------------------------------------------------------------
 	// render_excalidraw — Excalidraw JSON → PNG via Playwright
 	// ------------------------------------------------------------------
 	pi.registerTool({
@@ -522,9 +453,9 @@ export default function renderExtension(pi: ExtensionAPI) {
 			"First-time setup: cd <render_dir> && uv sync && uv run playwright install chromium",
 		promptSnippet: "Render .excalidraw JSON files to inline PNG images",
 		promptGuidelines: [
-			"Use this tool to render existing .excalidraw files; use compose_excalidraw to generate new ones from constrained specs.",
+			"Use this tool to render existing .excalidraw files only.",
 			"Use Excalidraw for freeform visual arguments where spatial layout matters — not for structural diagrams (use D2 for those)",
-			"Prefer constrained composition specs over hand-authoring raw Excalidraw scene JSON when generation is needed.",
+			"Prefer render_native_diagram for supported canonical document-bound motifs instead of introducing a new Excalidraw composition layer.",
 		],
 		parameters: Type.Object({
 			path:   Type.String({ description: "Path to .excalidraw JSON file to render" }),
@@ -586,7 +517,7 @@ export default function renderExtension(pi: ExtensionAPI) {
 					`FLUX.1 (generate_image_local): ${mfluxOk ? "✅ ready" : `❌ not found — set up ${DIFFUSION_CLI_DIR}`}`,
 					`D2 (render_diagram): ${d2Ok ? "✅ ready" : "❌ not installed — \`nix profile install nixpkgs#d2\` or \`brew install d2\`"}`,
 					`Native diagrams (render_native_diagram): ✅ ready — in-process SVG + resvg PNG export`,
-					`Excalidraw (compose_excalidraw / render_excalidraw): ${excaliOk ? "✅ ready" : `⚠️  not set up — \`cd ${EXCALIDRAW_RENDER_DIR} && uv sync && uv run playwright install chromium\``}`,
+					`Excalidraw (render_excalidraw): ${excaliOk ? "✅ ready" : `⚠️  not set up — \`cd ${EXCALIDRAW_RENDER_DIR} && uv sync && uv run playwright install chromium\``}`,
 					`Output directory: \`${VISUALS_DIR}\``,
 					``,
 					`Usage: \`/render <prompt>\``,
