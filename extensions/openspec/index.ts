@@ -39,44 +39,9 @@ import {
 	summarizeSpecs,
 	generateSpecFile,
 } from "./spec.ts";
-import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 import { transitionDesignNodesOnArchive } from "./archive-gate.ts";
-import { debug } from "../debug.ts";
-
-// ─── Dashboard State Emitter ─────────────────────────────────────────────────
-
-/**
- * Emit OpenSpec state to sharedState for the unified dashboard.
- * Reads all active changes, maps to the dashboard shape, and fires
- * the dashboard:update event for re-render.
- */
-function emitOpenSpecState(cwd: string, pi: ExtensionAPI): void {
-	try {
-		const changes = listChanges(cwd);
-		const mapped = changes.map((c) => {
-			const artifacts: string[] = [];
-			if (c.hasProposal) artifacts.push("proposal");
-			if (c.hasDesign) artifacts.push("design");
-			if (c.hasSpecs) artifacts.push("specs");
-			if (c.hasTasks) artifacts.push("tasks");
-			const specDomains = c.specs.map((s) => s.domain).filter(Boolean);
-			return {
-				name: c.name,
-				stage: c.stage || "proposal",
-				tasksDone: c.doneTasks,
-				tasksTotal: c.totalTasks,
-				artifacts,
-				specDomains,
-			};
-		});
-		(sharedState as any).openspec = { changes: mapped };
-		debug("openspec", "emitState", { count: mapped.length, cwd });
-		pi.events.emit(DASHBOARD_UPDATE_EVENT, { source: "openspec" });
-	} catch (err) {
-		debug("openspec", "emitState:error", { error: err instanceof Error ? err.message : String(err), cwd });
-		// Non-fatal — don't break the extension if openspec dir is missing
-	}
-}
+import { emitOpenSpecState } from "./dashboard-state.ts";
+import { evaluateLifecycleReconciliation, formatReconciliationIssues } from "./reconcile.ts";
 
 // ─── Extension ───────────────────────────────────────────────────────────────
 
@@ -162,6 +127,8 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 			"Specs define what must be true BEFORE code is written — they are the source of truth for correctness.",
 			"Use 'propose' to start a change, 'add_spec' or 'generate_spec' to define requirements with Given/When/Then scenarios.",
 			"Use 'fast_forward' to generate design.md and tasks.md from the specs, then `/cleave` to execute.",
+			"Treat lifecycle reconciliation as required: after implementation checkpoints, ensure tasks.md and bound design-tree state reflect reality before archive.",
+			"Archive should refuse obviously stale lifecycle state (for example incomplete tasks or no design-tree binding) until reconciliation is done.",
 			"After implementation, use `/assess spec` to verify specs are satisfied, then 'archive' to close the change.",
 			"The full lifecycle: propose → spec → fast_forward → /cleave → /assess spec → archive",
 		],
@@ -466,6 +433,23 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 					if (!params.change_name) {
 						return { content: [{ type: "text", text: "Error: change_name required" }], details: {}, isError: true };
 					}
+
+					const reconciliation = evaluateLifecycleReconciliation(cwd, params.change_name);
+					if (reconciliation.issues.length > 0) {
+						return {
+							content: [{
+								type: "text",
+								text: [
+									`Archive refused for '${params.change_name}' because lifecycle state is stale:`,
+									"",
+									formatReconciliationIssues(reconciliation.issues),
+								].join("\n"),
+							}],
+							details: reconciliation,
+							isError: true,
+						};
+					}
+
 					const result = archiveChange(cwd, params.change_name);
 					if (!result.archived) {
 						return {
@@ -692,12 +676,13 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 				return;
 			}
 
-			if (change.stage !== "verifying" && change.totalTasks > 0 && change.doneTasks < change.totalTasks) {
-				const confirm = await ctx.ui.select(
-					`Change '${changeName}' has ${change.totalTasks - change.doneTasks} incomplete tasks. Archive anyway?`,
-					["Yes, archive", "No, cancel"],
+			const reconciliation = evaluateLifecycleReconciliation(ctx.cwd, changeName);
+			if (reconciliation.issues.length > 0) {
+				ctx.ui.notify(
+					`Archive refused for '${changeName}' because lifecycle state is stale:\n${formatReconciliationIssues(reconciliation.issues)}`,
+					"warning",
 				);
-				if (confirm !== "Yes, archive") return;
+				return;
 			}
 
 			const result = archiveChange(ctx.cwd, changeName);
