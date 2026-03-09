@@ -1,7 +1,7 @@
 ---
 id: post-assess-reconciliation
 title: "Post-Assess Reconciliation — Update OpenSpec and Design Tree after Review/Fix Cycles"
-status: implementing
+status: implemented
 parent: lifecycle-reconciliation
 tags: [openspec, design-tree, cleave, assessment, lifecycle]
 open_questions: []

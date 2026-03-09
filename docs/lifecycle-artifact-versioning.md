@@ -1,7 +1,7 @@
 ---
 id: lifecycle-artifact-versioning
 title: Lifecycle Artifact Versioning Policy
-status: decided
+status: implemented
 parent: post-assess-reconciliation
 tags: [design-tree, openspec, cleave, git, documentation]
 open_questions: []
