@@ -3,14 +3,29 @@
  * and model dimension constants.
  */
 
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import * as assert from "node:assert/strict";
 import {
   cosineSimilarity,
   vectorToBlob,
   blobToVector,
   MODEL_DIMS,
+  embed,
+  isEmbeddingAvailable,
 } from "./embeddings.ts";
+import { DEFAULT_CONFIG } from "./types.ts";
+
+const originalFetch = globalThis.fetch;
+const originalOpenAiKey = process.env.OPENAI_API_KEY;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+  else process.env.OPENAI_API_KEY = originalOpenAiKey;
+  delete process.env.MEMORY_EMBEDDING_API_KEY;
+  delete process.env.MEMORY_EMBEDDING_BASE_URL;
+  delete process.env.MEMORY_EMBEDDING_MODEL;
+});
 
 describe("cosineSimilarity", () => {
   it("returns 1.0 for identical vectors", () => {
@@ -125,7 +140,51 @@ describe("vectorToBlob / blobToVector roundtrip", () => {
 
 describe("MODEL_DIMS", () => {
   it("maps known models to expected dimensions", () => {
+    assert.equal(MODEL_DIMS["text-embedding-3-small"], 1536);
     assert.equal(MODEL_DIMS["qwen3-embedding:0.6b"], 1024);
     assert.equal(MODEL_DIMS["qwen3-embedding:4b"], 2048);
+  });
+});
+
+describe("cloud embedding defaults", () => {
+  it("defaults project-memory to cheap GPT extraction and cloud embeddings", () => {
+    assert.equal(DEFAULT_CONFIG.extractionModel, "gpt-5.3-codex-spark");
+    assert.equal(DEFAULT_CONFIG.embeddingProvider, "openai");
+    assert.equal(DEFAULT_CONFIG.embeddingModel, "text-embedding-3-small");
+  });
+
+  it("reports cloud embeddings available when openai returns an embedding", async () => {
+    process.env.OPENAI_API_KEY = "test-key";
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      data: [{ embedding: [0.1, 0.2, 0.3] }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const result = await isEmbeddingAvailable({
+      provider: "openai",
+      model: "text-embedding-3-small",
+      baseUrl: "https://api.openai.com/v1",
+    });
+
+    assert.deepEqual(result, {
+      available: true,
+      model: "text-embedding-3-small",
+      dims: 3,
+    });
+  });
+
+  it("falls back cleanly when cloud embeddings are unavailable", async () => {
+    delete process.env.OPENAI_API_KEY;
+    globalThis.fetch = async () => {
+      throw new Error("should not fetch without key");
+    };
+
+    const result = await embed("hello", { provider: "openai", model: "text-embedding-3-small" });
+    assert.equal(result, null);
+    assert.deepEqual(await isEmbeddingAvailable({ provider: "openai", model: "text-embedding-3-small" }), {
+      available: false,
+    });
   });
 });

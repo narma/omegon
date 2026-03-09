@@ -2,11 +2,11 @@
  * Project Memory Extension
  *
  * Persistent, cross-session project knowledge stored in SQLite with
- * confidence-decay reinforcement, semantic retrieval via local embeddings,
+ * confidence-decay reinforcement, semantic retrieval via cloud-first embeddings,
  * episodic session narratives, and working memory.
  *
  * Storage: .pi/memory/facts.db (SQLite with WAL mode)
- * Vectors: facts_vec / episodes_vec tables (Float32 BLOBs via Ollama embeddings)
+ * Vectors: facts_vec / episodes_vec tables (Float32 BLOBs via configured embeddings)
  * Rendering: Active facts → Markdown-KV for LLM context injection
  *
  * Tools:
@@ -23,7 +23,7 @@
  *   memory_release        — Clear working memory
  *
  * Cognitive features:
- *   - Semantic retrieval via local embeddings (Ollama qwen3-embedding)
+ *   - Semantic retrieval via cloud-first embeddings (default: OpenAI text-embedding-3-small)
  *   - Contextual auto-injection (relevant facts only, not full dump)
  *   - Working memory buffer (pinned facts survive compaction)
  *   - Conflict detection at store time (flags similar but not identical facts)
@@ -48,7 +48,7 @@ import { StringEnum } from "../lib/typebox-helpers";
 import { Type } from "@sinclair/typebox";
 import { Container, type SelectItem, SelectList, Text } from "@mariozechner/pi-tui";
 import { FactStore, parseExtractionOutput, GLOBAL_DECAY, type MindRecord, type Fact } from "./factstore.ts";
-import { embed, isEmbeddingAvailable, MODEL_DIMS } from "./embeddings.ts";
+import { embed, isEmbeddingAvailable, MODEL_DIMS, type EmbeddingProvider } from "./embeddings.ts";
 import { DEFAULT_CONFIG, type MemoryConfig, type LifecycleMemoryCandidate } from "./types.ts";
 import {
   createMemoryInjectionMetrics,
@@ -406,10 +406,20 @@ export default function (pi: ExtensionAPI) {
 
   // --- Embedding Helpers ---
 
+  function getEmbeddingOpts(): { provider: EmbeddingProvider; model: string } | null {
+    if (!embeddingModel) return null;
+    return {
+      provider: config.embeddingProvider,
+      model: embeddingModel,
+    };
+  }
+
   /** Embed a single text, returning the vector or null if unavailable */
   async function embedText(text: string): Promise<Float32Array | null> {
     if (!embeddingAvailable) return null;
-    const result = await embed(text, { model: embeddingModel });
+    const opts = getEmbeddingOpts();
+    if (!opts) return null;
+    const result = await embed(text, opts);
     return result?.embedding ?? null;
   }
 
@@ -422,9 +432,11 @@ export default function (pi: ExtensionAPI) {
     if (store.hasFactVector(factId)) return true;
     const fact = store.getFact(factId);
     if (!fact || fact.status !== "active") return false;
+    const opts = getEmbeddingOpts();
+    if (!opts) return false;
     const result = await embed(
       `[${fact.section}] ${fact.content}`,
-      { model: embeddingModel },
+      opts,
     );
     if (!result) return false;
     store.storeFactVector(factId, result.embedding, result.model);
@@ -456,9 +468,11 @@ export default function (pi: ExtensionAPI) {
         if (!sessionActive) break;
         const fact = globalStore.getFact(factId);
         if (!fact || fact.status !== "active") continue;
+        const opts = getEmbeddingOpts();
+        if (!opts) continue;
         const result = await embed(
           `[${fact.section}] ${fact.content}`,
-          { model: embeddingModel },
+          opts,
         );
         if (result) {
           globalStore.storeFactVector(factId, result.embedding, result.model);
@@ -591,6 +605,16 @@ export default function (pi: ExtensionAPI) {
     // sharedState.effort is written by the effort extension's session_start,
     // which fires before ours (effort is registered earlier in package.json).
     config = { ...DEFAULT_CONFIG };
+
+    const envEmbeddingProvider = process.env.MEMORY_EMBEDDING_PROVIDER;
+    if (envEmbeddingProvider === "openai" || envEmbeddingProvider === "ollama") {
+      config.embeddingProvider = envEmbeddingProvider;
+    }
+    const envEmbeddingModel = process.env.MEMORY_EMBEDDING_MODEL?.trim();
+    if (envEmbeddingModel) config.embeddingModel = envEmbeddingModel;
+    const envExtractionModel = process.env.MEMORY_EXTRACTION_MODEL?.trim();
+    if (envExtractionModel) config.extractionModel = envExtractionModel;
+
     const effort = sharedState.effort;
     if (effort) {
       // Extraction: tiers 1-5 use local (devstral default), tiers 6-7 use cloud
@@ -606,12 +630,15 @@ export default function (pi: ExtensionAPI) {
 
     // Detect embedding availability and start background indexing
     try {
-      const embedStatus = await isEmbeddingAvailable();
+      const embedStatus = await isEmbeddingAvailable({
+        provider: config.embeddingProvider,
+        model: config.embeddingModel,
+      });
       embeddingAvailable = embedStatus.available;
       embeddingModel = embedStatus.model;
       if (embeddingAvailable && embeddingModel) {
         // Purge vectors from a different model (dimension mismatch)
-        const expectedDims = MODEL_DIMS[embeddingModel];
+        const expectedDims = embedStatus.dims ?? MODEL_DIMS[embeddingModel];
         if (expectedDims && store) {
           const purged = store.purgeStaleVectors(expectedDims);
           if (purged > 0 && ctx.hasUI) {

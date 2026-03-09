@@ -1,20 +1,27 @@
 /**
  * Project Memory — Embeddings
  *
- * Local vector embeddings via Ollama for semantic retrieval.
- * Uses qwen3-embedding models (0.6b or 4b) for zero-cost on-device embeddings.
+ * Cloud-first vector embeddings for semantic retrieval.
+ * Defaults to OpenAI `text-embedding-3-small` for low-cost background
+ * indexing, with optional Ollama support when explicitly configured.
  *
  * Storage: facts_vec table in the same SQLite DB as facts.
  * Vectors stored as raw Float32Array buffers for compact storage and fast cosine similarity.
  *
- * Graceful degradation: if Ollama is unavailable, falls back to FTS5 keyword search.
+ * Graceful degradation: if the configured embedding backend is unavailable,
+ * project-memory falls back to FTS5 keyword search.
  */
 
+export type EmbeddingProvider = "openai" | "ollama";
+
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OLLAMA_URL = "http://localhost:11434";
-const EMBED_MODELS = ["qwen3-embedding:0.6b", "qwen3-embedding:4b"] as const;
+const DEFAULT_OPENAI_EMBED_MODEL = "text-embedding-3-small";
+const OLLAMA_EMBED_MODELS = ["qwen3-embedding:0.6b", "qwen3-embedding:4b"] as const;
 
 /** Known embedding dimensions by model — used for mismatch detection */
 export const MODEL_DIMS: Record<string, number> = {
+  "text-embedding-3-small": 1536,
   "qwen3-embedding:0.6b": 1024,
   "qwen3-embedding:4b": 2048,
 };
@@ -25,18 +32,61 @@ export interface EmbeddingResult {
   dims: number;
 }
 
-/**
- * Embed a single text string via Ollama.
- * Tries models in preference order (smallest first for speed).
- */
-export async function embed(
-  text: string,
-  opts?: { baseUrl?: string; model?: string; timeout?: number },
-): Promise<EmbeddingResult | null> {
-  const baseUrl = opts?.baseUrl ?? process.env.LOCAL_INFERENCE_URL ?? DEFAULT_OLLAMA_URL;
+export interface EmbeddingOptions {
+  provider?: EmbeddingProvider;
+  model?: string;
+  baseUrl?: string;
+  timeout?: number;
+  apiKey?: string;
+}
+
+function resolveProvider(opts?: EmbeddingOptions): EmbeddingProvider {
+  if (opts?.provider) return opts.provider;
+  if (opts?.model?.startsWith("qwen3-embedding")) return "ollama";
+  return "openai";
+}
+
+async function embedOpenAI(text: string, opts?: EmbeddingOptions): Promise<EmbeddingResult | null> {
+  const apiKey = opts?.apiKey ?? process.env.MEMORY_EMBEDDING_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const baseUrl = (opts?.baseUrl ?? process.env.MEMORY_EMBEDDING_BASE_URL ?? process.env.OPENAI_BASE_URL ?? DEFAULT_OPENAI_BASE_URL)
+    .replace(/\/$/, "");
+  const model = opts?.model ?? process.env.MEMORY_EMBEDDING_MODEL ?? DEFAULT_OPENAI_EMBED_MODEL;
   const timeout = opts?.timeout ?? 5000;
 
-  const models = opts?.model ? [opts.model] : [...EMBED_MODELS];
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+
+    const resp = await fetch(`${baseUrl}/embeddings`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, input: text }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+
+    const data = (await resp.json()) as { data?: Array<{ embedding?: number[] }> };
+    const values = data.data?.[0]?.embedding;
+    if (!values?.length) return null;
+
+    const arr = new Float32Array(values);
+    return { embedding: arr, model, dims: arr.length };
+  } catch {
+    return null;
+  }
+}
+
+async function embedOllama(text: string, opts?: EmbeddingOptions): Promise<EmbeddingResult | null> {
+  const baseUrl = (opts?.baseUrl ?? process.env.LOCAL_INFERENCE_URL ?? DEFAULT_OLLAMA_URL).replace(/\/$/, "");
+  const timeout = opts?.timeout ?? 5000;
+  const models = opts?.model ? [opts.model] : [...OLLAMA_EMBED_MODELS];
 
   for (const model of models) {
     try {
@@ -51,10 +101,9 @@ export async function embed(
       });
 
       clearTimeout(timer);
-
       if (!resp.ok) continue;
 
-      const data = (await resp.json()) as { embedding: number[] };
+      const data = (await resp.json()) as { embedding?: number[] };
       if (!data.embedding?.length) continue;
 
       const arr = new Float32Array(data.embedding);
@@ -65,6 +114,17 @@ export async function embed(
   }
 
   return null;
+}
+
+/**
+ * Embed a single text string via the configured embedding backend.
+ */
+export async function embed(
+  text: string,
+  opts?: EmbeddingOptions,
+): Promise<EmbeddingResult | null> {
+  const provider = resolveProvider(opts);
+  return provider === "ollama" ? embedOllama(text, opts) : embedOpenAI(text, opts);
 }
 
 /**
@@ -102,22 +162,10 @@ export function blobToVector(blob: Buffer): Float32Array {
 }
 
 /**
- * Check if Ollama is reachable and has an embedding model available.
+ * Check if the configured embedding backend is reachable and usable.
  */
-export async function isEmbeddingAvailable(baseUrl?: string): Promise<{ available: boolean; model?: string }> {
-  const url = baseUrl ?? process.env.LOCAL_INFERENCE_URL ?? DEFAULT_OLLAMA_URL;
-  try {
-    const resp = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    if (!resp.ok) return { available: false };
-    const data = (await resp.json()) as { models: { name: string }[] };
-    const names = data.models?.map((m) => m.name) ?? [];
-    for (const model of EMBED_MODELS) {
-      if (names.some((n) => n === model || n.startsWith(model.split(":")[0]))) {
-        return { available: true, model };
-      }
-    }
-    return { available: false };
-  } catch {
-    return { available: false };
-  }
+export async function isEmbeddingAvailable(opts?: EmbeddingOptions): Promise<{ available: boolean; model?: string; dims?: number }> {
+  const result = await embed("embedding healthcheck", opts);
+  if (!result) return { available: false };
+  return { available: true, model: result.model, dims: result.dims };
 }

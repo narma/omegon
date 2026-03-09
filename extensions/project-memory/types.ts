@@ -25,6 +25,10 @@ export interface LifecycleMemoryCandidate {
 export interface MemoryConfig {
   /** Max lines in active memory before extraction prunes */
   maxLines: number;
+  /** Embedding backend used for semantic retrieval */
+  embeddingProvider: "openai" | "ollama";
+  /** Embedding model to use for fact and episode vectors */
+  embeddingModel: string;
   /** Minimum total message tokens before first extraction */
   minimumTokensToInit: number;
   /** Token delta required between extractions */
@@ -65,11 +69,13 @@ export interface MemoryConfig {
 
 export const DEFAULT_CONFIG: MemoryConfig = {
   maxLines: 50,
+  embeddingProvider: "openai",
+  embeddingModel: "text-embedding-3-small",
   minimumTokensToInit: 10_000,
   minimumTokensBetweenUpdate: 5_000,
   toolCallsBetweenUpdates: 8,
   manualStoreThreshold: 3,
-  extractionModel: "devstral-small-2:24b",
+  extractionModel: "gpt-5.3-codex-spark",
   extractionTimeout: 60_000,
   shutdownExtractionTimeout: 15_000,
   pressureOnsetPercent: 55,

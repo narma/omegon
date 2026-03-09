@@ -138,7 +138,9 @@ Defined in `types.ts` as `MemoryConfig`:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `extractionModel` | `claude-sonnet-4-6` | Model for extraction subagent |
+| `extractionModel` | `gpt-5.3-codex-spark` | Cheap GPT model for extraction subagent |
+| `embeddingProvider` | `openai` | Embedding backend for semantic retrieval |
+| `embeddingModel` | `text-embedding-3-small` | Cheap cloud embedding model |
 | `maxLines` | 50 | Max facts before pruning |
 | `minimumTokensToInit` | 10000 | Min tokens before first extraction |
 | `minimumTokensBetweenUpdate` | 5000 | Min tokens between extractions |
