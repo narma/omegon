@@ -1,10 +1,9 @@
 ---
 id: guardrail-capability-probe
 title: Guardrails as Capability Probes — pi-kit runtime dependency checks
-status: exploring
+status: decided
 tags: [guardrails, dx, ux, capabilities]
-open_questions:
-  - Which pi-kit capabilities have hard runtime deps that should be probed? (ollama, d2, pandoc, playwright, ...)
+open_questions: []
 ---
 
 # Guardrails as Capability Probes — pi-kit runtime dependency checks
@@ -22,4 +21,4 @@ Guardrails exist to tell users at session start which pi-kit features won't work
 
 ## Open Questions
 
-- Which pi-kit capabilities have hard runtime deps that should be probed? (ollama, d2, pandoc, playwright, ...)
+*No open questions.*

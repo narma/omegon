@@ -1,7 +1,7 @@
 ---
 id: compaction-fallback-chain
 title: Intelligent Compaction Fallback Chain — Local → GPT-5.3 → Haiku
-status: decided
+status: implemented
 tags: [compaction, fallback, quality, architecture, provider-routing]
 open_questions: []
 ---
@@ -55,6 +55,8 @@ Replace the current binary local/cloud compaction choice with an intelligent fal
 
 - `extensions/project-memory/index.ts` (modified) — Add resolveCompactionTier() function and implement fallback chain in session_before_compact handler
 - `extensions/project-memory/types.ts` (modified) — Add compactionFallbackChain config option and timeout settings per tier
+- `extensions/project-memory/index.ts` (modified) — Added resolveCompactionFallbackChain() and intelligent session_before_compact handler
+- `extensions/project-memory/types.ts` (modified) — Added compactionFallbackChain, compactionCodexTimeout, compactionHaikuTimeout config options
 
 ### Constraints
 
@@ -63,3 +65,6 @@ Replace the current binary local/cloud compaction choice with an intelligent fal
 - Respect effort tier overrides — tiers 1-5 prefer local, tiers 6-7 can start with cloud
 - Each fallback tier must have its own timeout to prevent cascade failures
 - Must work when cheapCloudPreferredOverLocal policy is active
+- Preserve backward compatibility with compactionLocalFirst behavior
+- Use model-routing.ts for provider-aware resolution
+- Graceful fallthrough to Pi core for cloud models

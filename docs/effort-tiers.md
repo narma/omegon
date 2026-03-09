@@ -1,10 +1,9 @@
 ---
 id: effort-tiers
 title: Effort Tiers — Global Inference Cost Control (Servitor → Omnissiah)
-status: decided
+status: implemented
 tags: [cost, local-inference, architecture, cross-cutting]
-open_questions:
-  - "How should EffortConfig represent the active provider? Options: (A) abstract capability labels (\"mid\"/\"frontier\") resolved per authenticated provider; (B) explicit provider+model pairs per tier; (C) primary provider setting + fallback chain"
+open_questions: []
 branches: ["feature/effort-tiers"]
 openspec_change: effort-tiers
 ---
@@ -183,4 +182,4 @@ interface EffortConfig {
 
 ## Open Questions
 
-- How should EffortConfig represent the active provider? Options: (A) abstract capability labels ("mid"/"frontier") resolved per authenticated provider; (B) explicit provider+model pairs per tier; (C) primary provider setting + fallback chain
+*No open questions.*
