@@ -15,15 +15,32 @@ export function _setServer(next: WebUIServer | null): void {
   server = next;
 }
 
-export { server as _server };
+/** Returns the current server instance. Prefer this over the live-binding export for reliable cross-Node-version semantics. */
+export function _getServer(): WebUIServer | null {
+  return server;
+}
 
-function openBrowser(url: string): void {
+function openBrowser(url: string, ctx: Parameters<typeof notify>[0]): void {
+  let cmd: string;
+  let args: string[];
+
   if (process.platform === "darwin") {
-    spawnFn("open", [url], { stdio: "ignore" });
+    cmd = "open";
+    args = [url];
   } else if (process.platform === "win32") {
-    spawnFn("cmd", ["/c", "start", "", url], { stdio: "ignore" });
+    // cmd.exe `start` requires an empty-string window-title when the next token is a URL.
+    cmd = "cmd";
+    args = ["/c", "start", "", url];
   } else {
-    spawnFn("xdg-open", [url], { stdio: "ignore" });
+    cmd = "xdg-open";
+    args = [url];
+  }
+
+  const child = spawnFn(cmd, args, { stdio: "ignore" });
+  if (typeof child.on === "function") {
+    child.on("error", (err: Error) => {
+      notify(ctx, `Failed to open browser (${cmd}): ${err.message}`);
+    });
   }
 }
 
@@ -72,7 +89,7 @@ export default function webUiExtension(pi: ExtensionAPI): void {
             notify(ctx, "web-ui server is not running. Run `/web-ui start` first.");
             return;
           }
-          openBrowser(server.url);
+          openBrowser(server.url, ctx);
           notify(ctx, `Opening ${server.url} in your default browser…`);
           return;
         }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, afterEach, describe, it } from "node:test";
 import { startWebUIServer, type WebUIServer } from "./server.ts";
-import { _setServer, _setSpawnFn } from "./index.ts";
+import { _setServer, _setSpawnFn, _getServer } from "./index.ts";
 
 function buildFakePi() {
   const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
@@ -66,8 +66,7 @@ describe("web-ui command surface", () => {
     assert.equal(messages.length, 1);
     assert.match(messages[0], /started/i);
     assert.match(messages[0], /127\.0\.0\.1/);
-    const mod = await import("./index.ts");
-    realServer = mod._server;
+    realServer = _getServer();
     assert.ok(realServer);
   });
 
@@ -112,6 +111,21 @@ describe("web-ui command surface", () => {
         !launcher.includes(url),
         "Launcher binary must not contain the URL (shell-string anti-pattern)"
       );
+
+      // Platform-specific argv validation:
+      // On Windows, cmd.exe `start` requires an empty-string window-title placeholder
+      // before the URL so it treats the URL as the target rather than the title.
+      if (launcher === "cmd") {
+        assert.deepEqual(
+          capturedArgs,
+          ["/c", "start", "", url],
+          `Windows argv must be ["/c","start","",url] — removing "" breaks cmd.exe start semantics`
+        );
+      } else if (launcher === "open") {
+        assert.deepEqual(capturedArgs, [url], `macOS argv must be ["<url>"]`);
+      } else {
+        assert.deepEqual(capturedArgs, [url], `Linux argv must be ["<url>"]`);
+      }
     } finally {
       _setSpawnFn(prev);
     }
@@ -121,8 +135,9 @@ describe("web-ui command surface", () => {
     realServer = await startWebUIServer();
     _setServer(realServer);
     await api._trigger("session_shutdown");
-    const mod = await import("./index.ts");
-    assert.equal(mod._server, null);
+    // Use the explicit getter rather than the ESM live-binding export so this
+    // test is not sensitive to Node version differences in live-binding semantics.
+    assert.equal(_getServer(), null);
     realServer = null;
   });
 });
