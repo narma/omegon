@@ -58,6 +58,7 @@ The current checkpoint flow asks for multiple sequential free-text inputs: actio
 - `extensions/project-memory/jsonl-io.ts` (new) — Shared helper for conditional facts.jsonl writes
 - `extensions/project-memory/index.test.ts` (new) — Added unit coverage for unchanged-vs-changed JSONL export writes
 - `openspec/changes/cleave-checkpoint-parity/tasks.md` (modified) — Reconciled completed task state after implementation
+- `docs/cleave-checkpoint-parity.md` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
 
 ### Constraints
 
