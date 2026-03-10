@@ -3,12 +3,12 @@
   "changeName": "lifecycle-state-normalization",
   "assessmentKind": "spec",
   "outcome": "pass",
-  "timestamp": "2026-03-10T22:42:42.248Z",
-  "summary": "Validated lifecycle-state-normalization for the current implementation snapshot: the canonical lifecycle resolver now computes shared stage/substate/archive-readiness/binding summaries, OpenSpec status and archive paths consume that resolver, design-tree/dashboard lifecycle surfaces align to the same truth, and both npm run typecheck and npm test pass.",
+  "timestamp": "2026-03-10T22:42:56.199Z",
+  "summary": "Refreshed lifecycle-state-normalization assessment for the current pre-archive snapshot after fixing duplicate resolver declarations and binding-callsite mismatches. The canonical lifecycle resolver now drives shared lifecycle summaries across OpenSpec and design-tree/dashboard surfaces, and the current snapshot passes typecheck and tests.",
   "snapshot": {
-    "gitHead": "65e16a270152be7ca7282e7c71d6cae01c0577b0",
-    "fingerprint": "50e59813d7bd0ccdc21937c625718ca4b93cb132be343f3c05fb3902fe06a91d",
-    "dirty": true,
+    "gitHead": "9ffe05710e47e31f48c5e9ad255b3993fdc3d406",
+    "fingerprint": "d94b21441bf39a3c86e8154851f3efd8d0f216bfab38402393b0df42388875bd",
+    "dirty": false,
     "scopedPaths": [
       "docs/lifecycle-state-normalization.md",
       "extensions/design-tree/*.test.ts",
@@ -91,20 +91,12 @@
     "reopen": false,
     "changedFiles": [
       "extensions/openspec/spec.ts",
-      "extensions/openspec/index.ts",
-      "extensions/openspec/dashboard-state.ts",
-      "extensions/design-tree/index.ts",
-      "extensions/design-tree/dashboard-state.ts",
       "extensions/openspec/spec.test.ts",
-      "extensions/openspec/lifecycle-surfaces.test.ts",
-      "extensions/design-tree/index.test.ts",
+      "extensions/design-tree/index.ts",
       "openspec/changes/lifecycle-state-normalization/tasks.md",
       "docs/lifecycle-state-normalization.md"
     ],
-    "constraints": [
-      "Preserve historical coarse stage semantics while adding finer verification substate detail through the canonical resolver.",
-      "Dashboard, OpenSpec, and design-tree must not re-derive overlapping lifecycle readiness/binding truth independently when a canonical resolver result is available."
-    ],
+    "constraints": [],
     "recommendedAction": null
   }
 }
