@@ -118,3 +118,12 @@ describe("createAssessStructuredExecutors", () => {
 		assert.deepEqual(result.constraints, ["Lifecycle metadata must be derived after scenario evaluation"]);
 	});
 });
+
+describe("dirty-tree preflight acceptance coverage", () => {
+	it.todo("clean tree proceeds without a dirty-tree checkpoint prompt");
+	it.todo("dirty tree summary distinguishes related, unrelated or unknown, and volatile files");
+	it.todo("volatile-only dirt does not block cleave by default");
+	it.todo("low-confidence unknown files are excluded from checkpoint scope by default");
+	it.todo("generic classification still works when no active OpenSpec change exists");
+	it.todo("checkpoint plans stage related files and wait for explicit approval before committing");
+});

@@ -1050,3 +1050,38 @@ describe("getActiveChangesStatus", () => {
 		assert.equal(result[0].name, "current");
 	});
 });
+
+describe("cleave-dirty-tree-checkpointing lifecycle artifacts", () => {
+	const changeDir = path.join(process.cwd(), "openspec", "changes", "cleave-dirty-tree-checkpointing");
+
+	it("exposes the dirty-tree preflight scenarios through buildOpenSpecContext", () => {
+		const ctx = buildOpenSpecContext(changeDir);
+		assert.ok(ctx.specScenarios.length > 0, "expected preflight scenarios to be present");
+
+		const requirements = ctx.specScenarios.map((scenario) => scenario.requirement);
+		assert.ok(requirements.includes("Cleave runs a dirty-tree preflight before worktree dispatch"));
+		assert.ok(requirements.includes("Volatile artifacts do not block cleave by default"));
+		assert.ok(requirements.includes("Checkpointing is an explicit operator-approved action"));
+		assert.ok(requirements.includes("Preflight handles transient low-confidence classification conservatively"));
+		assert.ok(requirements.includes("Preflight works without an active OpenSpec change"));
+	});
+
+	it("keeps the explicit operator-approval checkpoint scenario in the spec context", () => {
+		const ctx = buildOpenSpecContext(changeDir);
+		const checkpointRequirement = ctx.specScenarios.find((scenario) =>
+			scenario.requirement === "Checkpointing is an explicit operator-approved action",
+		);
+		assert.ok(checkpointRequirement, "checkpoint requirement should be present");
+		assert.equal(checkpointRequirement?.scenarios.length, 1);
+		assert.match(checkpointRequirement?.scenarios[0] ?? "", /performs the commit only after operator approval/i);
+	});
+
+	it("captures the dirty-tree design decisions that define lifecycle policy", () => {
+		const ctx = buildOpenSpecContext(changeDir);
+		assert.deepEqual(ctx.decisions, [
+			"Add an explicit cleave preflight checkpoint phase: **Status:** decided",
+			"Checkpointing should be tied to lifecycle milestones, not only archive: **Status:** decided",
+			"Memory sync artifacts should not block cleave by default: **Status:** decided",
+		]);
+	});
+});
