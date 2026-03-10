@@ -17,6 +17,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { OverlayHandle } from "@mariozechner/pi-tui";
 import { DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
+import { getSharedBridge, buildSlashCommandResult } from "../lib/slash-command-bridge.ts";
 import { DashboardFooter } from "./footer.ts";
 import { DashboardOverlay, showDashboardOverlay } from "./overlay.ts";
 import type { DashboardState, DashboardMode } from "./types.ts";
@@ -399,50 +400,80 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ── Slash command: /dash ─────────────────────────────────────
-  // 2-state footer toggle: compact ↔ raised. Panel modes are closed first.
+  // ── Slash commands: /dash and /dashboard ─────────────────────
+  // Registered with the shared bridge as interactive-only (agentCallable: false)
+  // so the agent gets a structured refusal instead of an opaque "not registered" error.
 
-  pi.registerCommand("dash", {
+  const bridge = getSharedBridge();
+
+  bridge.register(pi, {
+    name: "dash",
     description: "Toggle dashboard footer: compact ↔ raised. /dashboard opens the side panel.",
-    handler: async (_args, ctx) => {
-      dashToggle(ctx);
+    bridge: {
+      agentCallable: false,
+      sideEffectClass: "read",
+      summary: "Interactive-only dashboard footer toggle",
+    },
+    structuredExecutor: async (_args, ctx) => {
+      dashToggle(ctx as ExtensionContext);
       const label = state.mode === "raised" ? "raised" : "compact";
-      ctx.ui.notify(`Dashboard: ${label}`, "info");
+      return buildSlashCommandResult("dash", [], {
+        ok: true,
+        summary: `Dashboard: ${label}`,
+        humanText: `Dashboard: ${label}`,
+        effects: { sideEffectClass: "read" },
+      });
     },
   });
 
-  // ── Slash command: /dashboard ─────────────────────────────────
-  // Toggles the side panel open/closed. Panel and raised footer are mutually exclusive.
-  // Legacy subcommands still work for power users.
-
-  pi.registerCommand("dashboard", {
+  bridge.register(pi, {
+    name: "dashboard",
     description: "Toggle dashboard side panel (open/close). Use /dash to raise/lower the footer.",
     getArgumentCompletions: (prefix) => {
-      const lower = prefix.toLowerCase();
+      const lower = (prefix ?? "").toLowerCase();
       return DASHBOARD_SUBCOMMANDS
         .filter(s => s.startsWith(lower))
         .map(s => ({ label: s, value: s }));
     },
-    handler: async (args, ctx) => {
+    bridge: {
+      agentCallable: false,
+      sideEffectClass: "read",
+      summary: "Interactive-only dashboard panel toggle",
+    },
+    structuredExecutor: async (args, ctx) => {
       const arg = (args ?? "").trim().toLowerCase();
+      const extCtx = ctx as ExtensionContext;
 
-      // Legacy subcommands preserved
       if (arg === "open") {
         state.mode = "raised";
-        persistMode(ctx);
+        persistMode(extCtx);
         tui?.requestRender();
-        await showDashboardOverlay(ctx, pi);
-        return;
+        await showDashboardOverlay(extCtx, pi);
+        return buildSlashCommandResult("dashboard", [arg], {
+          ok: true,
+          summary: "Dashboard: raised + panel",
+          humanText: "Dashboard: raised + panel",
+          effects: { sideEffectClass: "read" },
+        });
       }
-      if (arg === "compact") { cycleTo(ctx, "compact"); ctx.ui.notify("Dashboard: compact", "info"); return; }
-      if (arg === "raised")  { cycleTo(ctx, "raised");  ctx.ui.notify("Dashboard: raised", "info");  return; }
-      if (arg === "panel")   { cycleTo(ctx, "panel");   ctx.ui.notify("Dashboard: panel", "info");   return; }
-      if (arg === "focus")   { cycleTo(ctx, "focused"); ctx.ui.notify("Dashboard: focused", "info"); return; }
+      if (arg === "compact") { cycleTo(extCtx, "compact"); return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: compact", humanText: "Dashboard: compact", effects: { sideEffectClass: "read" } }); }
+      if (arg === "raised")  { cycleTo(extCtx, "raised");  return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: raised", humanText: "Dashboard: raised", effects: { sideEffectClass: "read" } }); }
+      if (arg === "panel")   { cycleTo(extCtx, "panel");   return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: panel", humanText: "Dashboard: panel", effects: { sideEffectClass: "read" } }); }
+      if (arg === "focus")   { cycleTo(extCtx, "focused"); return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: focused", humanText: "Dashboard: focused", effects: { sideEffectClass: "read" } }); }
 
       // Default: toggle panel
-      panelToggle(ctx);
+      panelToggle(extCtx);
       const label = (state.mode === "panel" || state.mode === "focused") ? "panel open" : "panel closed";
-      ctx.ui.notify(`Dashboard: ${label}`, "info");
+      return buildSlashCommandResult("dashboard", [], {
+        ok: true,
+        summary: `Dashboard: ${label}`,
+        humanText: `Dashboard: ${label}`,
+        effects: { sideEffectClass: "read" },
+      });
+    },
+    interactiveHandler: async (result) => {
+      // The structuredExecutor already performs the toggle; just suppress double notification
+      // since dashToggle/cycleTo/panelToggle already update visual state.
     },
   });
 }

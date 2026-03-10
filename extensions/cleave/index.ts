@@ -23,7 +23,7 @@ import { createHash } from "node:crypto";
 import { sharedState, DASHBOARD_UPDATE_EVENT } from "../shared-state.ts";
 import { debug } from "../debug.ts";
 import { emitOpenSpecState } from "../openspec/dashboard-state.ts";
-import { createSlashCommandBridge, buildSlashCommandResult } from "../lib/slash-command-bridge.ts";
+import { getSharedBridge, buildSlashCommandResult } from "../lib/slash-command-bridge.ts";
 import { buildAssessBridgeResult } from "./bridge.ts";
 import {
 	assessDirective,
@@ -1378,7 +1378,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 		{ value: "complexity", label: "complexity", description: "Assess directive complexity (cleave_assess)" },
 	];
 	const assessExecutors = createAssessStructuredExecutors(pi);
-	const slashCommandBridge = createSlashCommandBridge();
+	const slashCommandBridge = getSharedBridge();
 	const toBridgeAssessResult = (
 		bridgedArgs: string[],
 		result: AssessStructuredResult,

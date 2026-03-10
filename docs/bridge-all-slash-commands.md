@@ -1,7 +1,7 @@
 ---
 id: bridge-all-slash-commands
 title: Bridge all pi-kit slash commands through SlashCommandBridge
-status: decided
+status: implemented
 parent: agent-assess-tooling-access
 tags: [harness, slash-commands, bridge, openspec, agent-callable]
 open_questions: []
@@ -23,3 +23,18 @@ Convert all pi-kit slash commands to use the SlashCommandBridge so the agent can
 ## Open Questions
 
 *No open questions.*
+
+## Implementation Notes
+
+### File Scope
+
+- `extensions/openspec/index.ts` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+- `extensions/openspec/bridge.test.ts` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+- `extensions/lib/slash-command-bridge.ts` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+- `extensions/cleave/index.ts` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+- `extensions/dashboard/index.ts` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+
+### Constraints
+
+- All pi-kit slash commands must be registered with the shared SlashCommandBridge (getSharedBridge()) so execute_slash_command can discover and invoke them.
+- Interactive-only commands are bridged with agentCallable: false for structured refusals.
