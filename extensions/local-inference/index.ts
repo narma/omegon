@@ -258,14 +258,8 @@ export default function (pi: ExtensionAPI) {
       return "Stopped Ollama background process.";
     }
 
-    try {
-      execSync("pkill -f 'ollama serve'", { stdio: "ignore" });
-      serverOnline = false;
-      cachedModels = [];
-      return "Stopped Ollama process.";
-    } catch {
-      return "Ollama doesn't appear to be running.";
-    }
+    // No managed child — do NOT use broad pkill to avoid terminating unrelated processes.
+    return "No managed Ollama server is running. If you started Ollama externally, stop it manually.";
   }
 
   async function waitForOllama(maxSeconds: number): Promise<boolean> {
