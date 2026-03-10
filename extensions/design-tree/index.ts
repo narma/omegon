@@ -670,6 +670,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 						return { content: [{ type: "text", text: `Node '${params.node_id}' not found` }], details: {}, isError: true };
 					}
 					addResearch(node, params.heading, params.content);
+					emitCurrentState();
 					return {
 						content: [{ type: "text", text: `Added research '${params.heading}' to '${node.title}'` }],
 						details: { id: node.id, heading: params.heading },
@@ -704,6 +705,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 							candidates: decisionCandidates,
 						});
 					}
+					emitCurrentState();
 					return {
 						content: [{ type: "text", text: `Added decision '${params.decision_title}' (${dStatus}) to '${node.title}'` }],
 						details: { id: node.id, decision: params.decision_title, status: dStatus, emittedCandidates: decisionCandidates.length },
@@ -724,6 +726,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 					const updated = addDependency(node, params.target_id);
 					tree.nodes.set(updated.id, updated);
+					emitCurrentState();
 					return {
 						content: [{ type: "text", text: `Added dependency: '${node.title}' depends on '${params.target_id}'` }],
 						details: { id: node.id, dependency: params.target_id },
@@ -745,6 +748,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 					const updated = addRelated(node, params.target_id, targetNode);
 					tree.nodes.set(updated.id, updated);
+					emitCurrentState();
 					return {
 						content: [{ type: "text", text: `Added related: '${node.title}' ↔ '${targetNode.title}' (bidirectional)` }],
 						details: { id: node.id, related: params.target_id },
@@ -778,6 +782,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 							candidates: constraintCandidates,
 						});
 					}
+					emitCurrentState();
 					return {
 						content: [{ type: "text", text: `Added implementation notes to '${node.title}': ${added.join(", ")}` }],
 						details: { id: node.id, emittedCandidates: constraintCandidates.length },

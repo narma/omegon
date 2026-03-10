@@ -268,4 +268,32 @@ describe("design-tree dashboard refresh helper", () => {
 		await runUpdateTool({ action: "unfocus" });
 		assert.equal(sharedState.designTree?.focusedNode, null, "focusedNode should be null after unfocus");
 	});
+
+	it("emits a dashboard update event when add_research is called", async () => {
+		const before = emitCalls.length;
+		await runUpdateTool({ action: "add_research", node_id: "alpha-node", heading: "Findings", content: "Some research." });
+		const dashboardEmits = emitCalls.slice(before).filter((c) => c.channel === "dashboard:update");
+		assert.ok(dashboardEmits.length >= 1, "expected at least one dashboard:update event after add_research");
+	});
+
+	it("emits a dashboard update event when add_decision is called", async () => {
+		const before = emitCalls.length;
+		await runUpdateTool({ action: "add_decision", node_id: "alpha-node", decision_title: "Use TypeScript", decision_status: "decided", rationale: "Type safety" });
+		const dashboardEmits = emitCalls.slice(before).filter((c) => c.channel === "dashboard:update");
+		assert.ok(dashboardEmits.length >= 1, "expected at least one dashboard:update event after add_decision");
+	});
+
+	it("emits a dashboard update event when add_impl_notes is called", async () => {
+		const before = emitCalls.length;
+		await runUpdateTool({ action: "add_impl_notes", node_id: "alpha-node", constraints: ["Must be fast"] });
+		const dashboardEmits = emitCalls.slice(before).filter((c) => c.channel === "dashboard:update");
+		assert.ok(dashboardEmits.length >= 1, "expected at least one dashboard:update event after add_impl_notes");
+	});
+
+	it("emits a dashboard update event when add_question is called", async () => {
+		const before = emitCalls.length;
+		await runUpdateTool({ action: "add_question", node_id: "alpha-node", question: "What is the best approach?" });
+		const dashboardEmits = emitCalls.slice(before).filter((c) => c.channel === "dashboard:update");
+		assert.ok(dashboardEmits.length >= 1, "expected at least one dashboard:update event after add_question");
+	});
 });
