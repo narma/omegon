@@ -498,8 +498,12 @@ async function installMissing(ctx: CommandContext, tiers: DepTier[]): Promise<vo
  * directly via execve-style spawn.
  */
 export function requiresShell(cmd: string): boolean {
-	// Shell metacharacters that need sh -c interpretation
-	return /[|&;<>()$`\\!*?[\]{}#~]/.test(cmd);
+	// Shell metacharacters that need sh -c interpretation.
+	// `#` is only a shell comment when it appears at the start of a word
+	// (preceded by whitespace or at string start) — inside a URL fragment
+	// like https://host/path#anchor it is plain data and must NOT trigger
+	// the shell path.  All other listed chars are unambiguous metacharacters.
+	return /[|&;<>()$`\\!*?[\]{}~]|(^|\s)#/.test(cmd);
 }
 
 /**
@@ -528,6 +532,11 @@ export function parseCommandArgv(cmd: string): [string, ...string[]] {
  * registry and are never influenced by operator input.
  *
  * Returns the process exit code (124 = timeout).
+ *
+ * stdio: "inherit" is intentional — install commands produce streaming
+ * progress output (brew's download bar, cargo's compilation log) that is
+ * useful to stream directly to the terminal.  pi's TUI captures stdin but
+ * does not redirect stdout/stderr, so inherit is safe for output.
  */
 export function runAsync(cmd: string, timeoutMs: number = 300_000): Promise<number> {
 	return new Promise((resolve) => {
@@ -545,19 +554,35 @@ export function runAsync(cmd: string, timeoutMs: number = 300_000): Promise<numb
 			child = spawn(exe, args, { stdio: "inherit", env });
 		}
 
+		let settled = false;
+		let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
+
+		const settle = (code: number) => {
+			if (settled) return;
+			settled = true;
+			resolve(code);
+		};
+
 		const timer = setTimeout(() => {
 			child.kill("SIGTERM");
-			resolve(124); // timeout exit code
+			// Some processes (e.g. brew install) ignore SIGTERM.  Schedule a
+			// SIGKILL after a 5-second grace period to prevent orphaned children.
+			sigkillTimer = setTimeout(() => {
+				try { child.kill("SIGKILL"); } catch { /* already exited */ }
+			}, 5_000);
+			settle(124); // timeout exit code
 		}, timeoutMs);
 
 		child.on("exit", (code) => {
 			clearTimeout(timer);
-			resolve(code ?? 1);
+			clearTimeout(sigkillTimer);
+			settle(code ?? 1);
 		});
 
 		child.on("error", () => {
 			clearTimeout(timer);
-			resolve(1);
+			clearTimeout(sigkillTimer);
+			settle(1);
 		});
 	});
 }

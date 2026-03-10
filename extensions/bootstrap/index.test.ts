@@ -168,6 +168,21 @@ describe("bootstrap subprocess dispatch helpers", () => {
 			assert.equal(requiresShell("cargo install --git https://github.com/cwilson613/mdserve --branch feature/wikilinks-graph"), false);
 		});
 
+		it("returns false for URL containing a fragment (#anchor)", () => {
+			// '#' inside a URL fragment is not a shell comment — only '#' at the
+			// start of a word (after whitespace or at string start) is.
+			assert.equal(requiresShell("cargo install --git https://github.com/user/repo#v1.2.3"), false);
+		});
+
+		it("returns true for inline shell comment (# preceded by whitespace)", () => {
+			// 'brew install foo # comment' requires shell to strip the comment
+			assert.equal(requiresShell("brew install foo # install homebrew package"), true);
+		});
+
+		it("returns true for hash at start of string", () => {
+			assert.equal(requiresShell("# this is a comment"), true);
+		});
+
 		it("returns false for apt install single package", () => {
 			assert.equal(requiresShell("sudo apt install pandoc"), false);
 		});
@@ -218,8 +233,10 @@ describe("bootstrap subprocess dispatch helpers", () => {
 		});
 
 		it("returns 124 on timeout", async () => {
-			// sleep long enough to trigger a short timeout
-			const code = await runAsync("sleep 60", 50);
+			// Use a generous timeout (500 ms) so that spawn + SIGTERM delivery
+			// completes reliably even on heavily-loaded CI hosts.  The child
+			// sleeps for 60 s so the timeout always fires first.
+			const code = await runAsync("sleep 60", 500);
 			assert.equal(code, 124);
 		});
 
