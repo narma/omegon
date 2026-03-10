@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { before, beforeEach, afterEach, describe, it } from "node:test";
 import { startWebUIServer, type WebUIServer } from "./server.ts";
-import { _setServer, _setExecFn } from "./index.ts";
+import { _setServer, _setSpawnFn, _getServer } from "./index.ts";
 
 function buildFakePi() {
   const commands = new Map<string, { handler: (args: string, ctx: any) => Promise<void> }>();
@@ -63,31 +63,71 @@ describe("web-ui command surface", () => {
 
   it("starts server and reports URL", async () => {
     const messages = await runCommand(api, "start");
+    realServer = _getServer(); // capture before any assertion can throw — ensures afterEach stops the server
     assert.equal(messages.length, 1);
     assert.match(messages[0], /started/i);
     assert.match(messages[0], /127\.0\.0\.1/);
-    const mod = await import("./index.ts");
-    realServer = mod._server;
     assert.ok(realServer);
   });
 
-  it("opens browser when server is running", async () => {
+  it("opens browser using explicit argv (no shell string)", async () => {
     realServer = await startWebUIServer();
     _setServer(realServer);
-    let captured: string | null = null;
-    const prev = _setExecFn(((cmd: string, cb: (err: Error | null) => void) => {
-      captured = cmd;
-      cb(null);
-      return {} as any;
+
+    let capturedCmd: string | null = null;
+    let capturedArgs: string[] | null = null;
+
+    const prev = _setSpawnFn(((cmd: string, args: string[], _opts: unknown) => {
+      capturedCmd = cmd;
+      capturedArgs = args;
+      return { on: () => {}, unref: () => {} } as any;
     }) as any);
+
     try {
       const messages = await runCommand(api, "open");
       assert.equal(messages.length, 1);
       assert.match(messages[0], /Opening/);
-      assert.notEqual(captured, null);
-      assert.match(String(captured), /127\.0\.0\.1/);
+
+      // Must have called spawn with an explicit program
+      assert.notEqual(capturedCmd, null, "spawn should have been called");
+      assert.notEqual(capturedArgs, null, "spawn should have been called with args");
+
+      // URL must appear as a discrete argument, not interpolated into a shell string
+      const url = realServer!.url;
+      assert.ok(
+        capturedArgs!.includes(url),
+        `URL "${url}" should be a discrete spawn argument, got: ${JSON.stringify(capturedArgs)}`
+      );
+
+      // The command itself must be a launcher binary, not a shell-formatted string
+      const launcher = capturedCmd!;
+      assert.ok(
+        ["open", "xdg-open", "cmd"].includes(launcher),
+        `Expected platform launcher binary, got: "${launcher}"`
+      );
+
+      // The shell-string anti-pattern: the command must NOT contain the URL baked in
+      assert.ok(
+        !launcher.includes(url),
+        "Launcher binary must not contain the URL (shell-string anti-pattern)"
+      );
+
+      // Platform-specific argv validation:
+      // On Windows, cmd.exe `start` requires an empty-string window-title placeholder
+      // before the URL so it treats the URL as the target rather than the title.
+      if (launcher === "cmd") {
+        assert.deepEqual(
+          capturedArgs,
+          ["/c", "start", "", url],
+          `Windows argv must be ["/c","start","",url] — removing "" breaks cmd.exe start semantics`
+        );
+      } else if (launcher === "open") {
+        assert.deepEqual(capturedArgs, [url], `macOS argv must be ["<url>"]`);
+      } else {
+        assert.deepEqual(capturedArgs, [url], `Linux argv must be ["<url>"]`);
+      }
     } finally {
-      _setExecFn(prev);
+      _setSpawnFn(prev);
     }
   });
 
@@ -95,8 +135,9 @@ describe("web-ui command surface", () => {
     realServer = await startWebUIServer();
     _setServer(realServer);
     await api._trigger("session_shutdown");
-    const mod = await import("./index.ts");
-    assert.equal(mod._server, null);
+    // Use the explicit getter rather than the ESM live-binding export so this
+    // test is not sensitive to Node version differences in live-binding semantics.
+    assert.equal(_getServer(), null);
     realServer = null;
   });
 });

@@ -1,13 +1,13 @@
-import { exec as nodeExec } from "node:child_process";
+import { spawn as nodeSpawn } from "node:child_process";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { startWebUIServer, type WebUIServer } from "./server.ts";
 
 let server: WebUIServer | null = null;
-let execFn: typeof nodeExec = nodeExec;
+let spawnFn: typeof nodeSpawn = nodeSpawn;
 
-export function _setExecFn(fn: typeof nodeExec): typeof nodeExec {
-  const prev = execFn;
-  execFn = fn;
+export function _setSpawnFn(fn: typeof nodeSpawn): typeof nodeSpawn {
+  const prev = spawnFn;
+  spawnFn = fn;
   return prev;
 }
 
@@ -15,15 +15,36 @@ export function _setServer(next: WebUIServer | null): void {
   server = next;
 }
 
-export { server as _server };
+/** Returns the current server instance. Prefer this over the live-binding export for reliable cross-Node-version semantics. */
+export function _getServer(): WebUIServer | null {
+  return server;
+}
 
-function openBrowser(url: string): void {
-  const cmd = process.platform === "darwin"
-    ? `open ${JSON.stringify(url)}`
-    : process.platform === "win32"
-      ? `cmd /c start \"\" ${JSON.stringify(url)}`
-      : `xdg-open ${JSON.stringify(url)}`;
-  execFn(cmd, () => {});
+function openBrowser(url: string, ctx: Parameters<typeof notify>[0]): void {
+  let cmd: string;
+  let args: string[];
+
+  if (process.platform === "darwin") {
+    cmd = "open";
+    args = [url];
+  } else if (process.platform === "win32") {
+    // cmd.exe `start` requires an empty-string window-title when the next token is a URL.
+    cmd = "cmd";
+    args = ["/c", "start", "", url];
+  } else {
+    cmd = "xdg-open";
+    args = [url];
+  }
+
+  const child = spawnFn(cmd, args, { stdio: "ignore" });
+  if (typeof child.on === "function") {
+    child.on("error", (err: Error) => {
+      notify(ctx, `Failed to open browser (${cmd}): ${err.message}`);
+    });
+  }
+  if (typeof child.unref === "function") {
+    child.unref();
+  }
 }
 
 function notify(ctx: { ui?: { notify?: (msg: string, level?: "info" | "warning" | "error") => void } }, message: string): void {
@@ -71,7 +92,7 @@ export default function webUiExtension(pi: ExtensionAPI): void {
             notify(ctx, "web-ui server is not running. Run `/web-ui start` first.");
             return;
           }
-          openBrowser(server.url);
+          openBrowser(server.url, ctx);
           notify(ctx, `Opening ${server.url} in your default browser…`);
           return;
         }
