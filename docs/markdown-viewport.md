@@ -1,7 +1,7 @@
 ---
 id: markdown-viewport
 title: Markdown Viewport — Lightweight FOSS viewer for agent-generated docs
-status: decided
+status: deferred
 tags: [viewport, markdown, documentation, foss]
 open_questions: []
 ---
