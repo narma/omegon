@@ -44,14 +44,12 @@ import {
 	readAssessmentRecord,
 	writeAssessmentRecord,
 	getAssessmentStatus,
-	resolveVerificationStatus,
-	resolveLifecycleSummary,
 	type AssessmentKind,
 	type AssessmentOutcome,
 	type AssessmentRecord,
 	type LifecycleSummary,
-	type VerificationStatus,
 } from "./spec.ts";
+import { buildLifecycleSummary } from "./lifecycle.ts";
 import { transitionDesignNodesOnArchive } from "./archive-gate.ts";
 import { emitOpenSpecState } from "./dashboard-state.ts";
 import {
@@ -211,37 +209,6 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 		};
 	}
 
-	function buildArchiveAssessmentGate(
-		state: AssessmentState,
-		changeName: string,
-	): { ok: boolean; message: string } {
-		if (!state.record) {
-			return {
-				ok: false,
-				message: `Archive refused for '${changeName}' because no persisted assessment record exists. Run /opsx:verify ${changeName} first.`,
-			};
-		}
-		if (state.record.outcome === "ambiguous") {
-			return {
-				ok: false,
-				message: `Archive refused for '${changeName}' because the latest structured assessment is ambiguous. Re-run verification and reconcile the result before archive.`,
-			};
-		}
-		if (state.record.outcome === "reopen") {
-			return {
-				ok: false,
-				message: `Archive refused for '${changeName}' because the latest structured assessment reopened work. Finish the follow-up work, then verify again.`,
-			};
-		}
-		if (state.status === "stale") {
-			return {
-				ok: false,
-				message: `Archive refused for '${changeName}' because the latest assessment is stale for the current implementation snapshot. Run /opsx:verify ${changeName} to refresh it.`,
-			};
-		}
-		return { ok: true, message: "Assessment gate satisfied." };
-	}
-
 	function formatAssessmentSummary(record: AssessmentRecord): string[] {
 		return [
 			`Assessment kind: ${record.assessmentKind}`,
@@ -253,37 +220,10 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 		];
 	}
 
-	function getLifecycleSummary(cwd: string, change: ChangeInfo): LifecycleSummary {
-		const assessment = getAssessmentStatus(cwd, change.name);
-		const reconciliation = evaluateLifecycleReconciliation(cwd, change.name);
-		const archiveBlockedReason = reconciliation.issues.length > 0
-			? reconciliation.issues.map((issue) => issue.suggestedAction).join(" ")
-			: null;
-		return resolveLifecycleSummary({
-			change,
-			record: assessment.record,
-			freshness: assessment.freshness,
-			archiveBlocked: reconciliation.issues.length > 0,
-			archiveBlockedReason,
-			archiveBlockedIssueCodes: reconciliation.issues.map((issue) => issue.code),
-		});
-	}
-
-	/** @deprecated Use getLifecycleSummary — kept for internal callsites not yet migrated */
-	function getVerificationStatus(cwd: string, change: ChangeInfo): VerificationStatus {
-		const summary = getLifecycleSummary(cwd, change);
-		return resolveVerificationStatus({
-			stage: summary.stage,
-			record: summary.assessmentFreshness !== null
-				? getAssessmentStatus(cwd, change.name).record
-				: null,
-			freshness: summary.assessmentFreshness ?? { current: false, reasons: ["No assessment record"] },
-			archiveBlocked: !summary.archiveReady && summary.verificationSubstate !== null && summary.verificationSubstate !== "archive-ready",
-			archiveBlockedReason: summary.nextAction,
-			archiveBlockedIssueCodes: summary.bindingStatus === "unbound" ? ["missing_design_binding"] : [],
-			changeName: change.name,
-		});
-	}
+	// getLifecycleSummary is the single shared resolver for all lifecycle surfaces.
+	// It is imported from lifecycle.ts so that tests can import and verify the same
+	// function is used by both status and get surfaces (not re-implemented locally).
+	const getLifecycleSummary = buildLifecycleSummary;
 
 	// ─── Tool: openspec_manage ───────────────────────────────────────
 
@@ -772,34 +712,20 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 							isError: true,
 						};
 					}
-					const assessmentState = await getAssessmentState(cwd, changeInfo);
-					const assessmentGate = buildArchiveAssessmentGate(assessmentState, params.change_name);
-					if (!assessmentGate.ok) {
+					// Archive gate: use the canonical lifecycle resolver so that the readiness
+					// check here is identical to what the status/get surfaces report.
+					const lifecycle = getLifecycleSummary(cwd, changeInfo);
+					if (!lifecycle.archiveReady) {
+						const assessmentState = await getAssessmentState(cwd, changeInfo);
 						return {
 							content: [{
 								type: "text",
 								text: [
-									assessmentGate.message,
+									`Archive refused for '${params.change_name}': ${lifecycle.nextAction ?? "lifecycle not ready for archive."}`,
 									...(assessmentState.record ? ["", ...formatAssessmentSummary(assessmentState.record)] : []),
 								].join("\n"),
 							}],
-							details: { assessmentState },
-							isError: true,
-						};
-					}
-
-					const reconciliation = evaluateLifecycleReconciliation(cwd, params.change_name);
-					if (reconciliation.issues.length > 0) {
-						return {
-							content: [{
-								type: "text",
-								text: [
-									`Archive refused for '${params.change_name}' because lifecycle state is stale:`,
-									"",
-									formatReconciliationIssues(reconciliation.issues),
-								].join("\n"),
-							}],
-							details: { reconciliation, assessmentState },
+							details: { lifecycle },
 							isError: true,
 						};
 					}
@@ -1626,38 +1552,24 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 				});
 			}
 
-			const assessmentState = await getAssessmentState(ctx.cwd, changeInfo);
-			const assessmentGate = buildArchiveAssessmentGate(assessmentState, changeName);
-			if (!assessmentGate.ok) {
+			// Archive gate: use the canonical lifecycle resolver so that readiness
+			// reported here is identical to what the status/get surfaces show.
+			const lifecycle = getLifecycleSummary(ctx.cwd, changeInfo);
+			if (!lifecycle.archiveReady) {
+				const assessmentState = await getAssessmentState(ctx.cwd, changeInfo);
 				const message = [
-					assessmentGate.message,
+					`Archive refused for '${changeName}': ${lifecycle.nextAction ?? "lifecycle not ready for archive."}`,
 					...(assessmentState.record ? ["", ...formatAssessmentSummary(assessmentState.record)] : []),
 				].join("\n");
 
 				return buildSlashCommandResult("opsx:archive", [changeName], {
 					ok: false,
-					summary: `Archive refused: assessment gate failed`,
+					summary: "Archive refused: lifecycle not ready",
 					humanText: message,
-					data: { assessmentState, gateRefusal: assessmentGate.message },
+					data: { lifecycle },
 					effects: { sideEffectClass: "workspace-write" },
 					nextSteps: [
-						{ label: "Run verification", command: `/opsx:verify ${changeName}`, rationale: "Refresh assessment" },
-					],
-				});
-			}
-
-			const reconciliation = evaluateLifecycleReconciliation(ctx.cwd, changeName);
-			if (reconciliation.issues.length > 0) {
-				const message = `Archive refused for '${changeName}' because lifecycle state is stale:\n${formatReconciliationIssues(reconciliation.issues)}`;
-
-				return buildSlashCommandResult("opsx:archive", [changeName], {
-					ok: false,
-					summary: "Archive refused: lifecycle reconciliation needed",
-					humanText: message,
-					data: { reconciliation, assessmentState },
-					effects: { sideEffectClass: "workspace-write" },
-					nextSteps: [
-						{ label: "Reconcile lifecycle", rationale: "Fix lifecycle state before archive" },
+						{ label: "Run verification", command: `/opsx:verify ${changeName}`, rationale: "Refresh assessment to unblock archive" },
 					],
 				});
 			}
