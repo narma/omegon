@@ -1,7 +1,7 @@
 ---
 id: dash-raised-layout
 title: "Raised Dashboard: Horizontal Split Layout"
-status: implementing
+status: implemented
 tags: [dashboard, tui, layout]
 open_questions: []
 branches: ["feature/dash-raised-layout"]
