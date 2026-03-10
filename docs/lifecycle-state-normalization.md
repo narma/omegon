@@ -1,7 +1,7 @@
 ---
 id: lifecycle-state-normalization
 title: Lifecycle state normalization
-status: implementing
+status: implemented
 parent: repo-consolidation-hardening
 tags: [lifecycle, design-tree, openspec, dashboard, shared-state]
 open_questions: []
@@ -40,3 +40,23 @@ The most practical seam is not a repo-wide rewrite of all state handling at once
 ## Open Questions
 
 *No open questions.*
+
+## Implementation Notes
+
+### File Scope
+
+- `extensions/openspec/spec.ts` (modified) — Added canonical lifecycle summary resolver and shared lifecycle summary fields
+- `extensions/openspec/index.ts` (modified) — Moved status/get/archive-facing lifecycle reporting onto the shared resolver
+- `extensions/openspec/dashboard-state.ts` (modified) — Published dashboard-facing OpenSpec lifecycle state from canonical resolver output
+- `extensions/design-tree/index.ts` (modified) — Aligned bound-to-OpenSpec lifecycle metadata with canonical lifecycle binding truth
+- `extensions/design-tree/dashboard-state.ts` (modified) — Aligned design-tree dashboard lifecycle publication with canonical resolver semantics
+- `extensions/openspec/spec.test.ts` (modified) — Added canonical lifecycle resolver regression coverage
+- `extensions/openspec/lifecycle-surfaces.test.ts` (modified) — Added surface agreement tests across status/detail/archive/dashboard
+- `extensions/design-tree/index.test.ts` (modified) — Added binding-truth normalization coverage
+- `openspec/changes/lifecycle-state-normalization/tasks.md` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+- `docs/lifecycle-state-normalization.md` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
+
+### Constraints
+
+- Preserve historical coarse stage semantics while adding finer verification substate detail through the canonical resolver.
+- Dashboard, OpenSpec, and design-tree must not re-derive overlapping lifecycle readiness/binding truth independently when a canonical resolver result is available.

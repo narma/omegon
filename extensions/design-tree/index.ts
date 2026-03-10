@@ -148,7 +148,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 				archiveBlocked,
 				archiveBlockedReason,
 				archiveBlockedIssueCodes,
-				bound: true, // resolveNodeLifecycleSummary only calls this for bound nodes
+				boundNodeIds: [node.id],
 			});
 		} catch {
 			// Non-fatal — return null if OpenSpec data is unavailable
