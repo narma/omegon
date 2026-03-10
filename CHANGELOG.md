@@ -3,6 +3,37 @@
 All notable changes to pi-kit are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-03-10
+
+### Added
+
+- **Upstream error recovery and fallback signaling** — pi-kit now classifies upstream provider failures into structured recovery events, applies bounded retry or failover, and surfaces recovery state to the dashboard and agent.
+  - Failure taxonomy in `extensions/lib/model-routing.ts`: `retryable-flake`, `rate-limit`, `backoff`, `auth`, `quota`, `tool-output`, `context-overflow`, `invalid-request`, `non-retryable`.
+  - Same-model retry bounded to one attempt per request fingerprint; retry ledger clears on next successful turn.
+  - Rate limits and explicit backoff trigger candidate cooldown and failover through existing routing.
+  - Non-transient failures (auth, quota, malformed output, context overflow) are never generic-retried.
+  - Extension-driven retry fallback for structured error codes (e.g. Codex JSON `server_error`) that pi core's regex misses.
+  - Recovery state visible in dashboard shared state (`latestRecoveryEvent`, `recovery`).
+- **Invalid request error classification** — oversized image errors (>8000px), `invalid_request_error`, and other 400-class API rejections are now classified as `invalid-request` with actionable operator guidance instead of surfacing as raw JSON.
+- **Slash command bridge for all commands** — all pi-kit slash commands are now registered with a shared `SlashCommandBridge` singleton, so the agent can invoke them via `execute_slash_command`.
+  - 7 OpenSpec commands bridged as agent-callable: `/opsx:propose`, `/opsx:spec`, `/opsx:ff`, `/opsx:status`, `/opsx:verify`, `/opsx:archive`, `/opsx:apply`.
+  - `/dashboard` and `/dash` bridged with `agentCallable: false` — returns structured refusal instead of opaque "not registered" error.
+  - Shared bridge via `getSharedBridge()` in `extensions/lib/slash-command-bridge.ts` (Symbol.for global singleton).
+  - Side-effect metadata: `read` for status/verify/apply, `workspace-write` for propose/spec/ff/archive.
+- **Cleave child progress emission** — `emitCleaveChildProgress()` in `extensions/cleave/dispatcher.ts` now updates shared state and emits `DASHBOARD_UPDATE_EVENT` so the terminal title and dashboard footer reflect child progress in real time.
+
+### Changed
+
+- OpenSpec commands converted from plain `pi.registerCommand()` to bridge-registered with `structuredExecutor` and `interactiveHandler` separation.
+- Cleave `/assess` now uses the shared bridge instance instead of creating a local one.
+- Operator fallback logic extended with cooldown tracking and alternate candidate resolution for rate-limited providers.
+
+### Fixed
+
+- Terminal tab title now updates dynamically as cleave child progress changes (was static after initial render).
+- Assess spec bridge tests no longer depend on a real active OpenSpec change — tests scaffold a temporary fixture and clean up after themselves.
+- Dashboard footer recovery section renders safely when recovery state is absent or partially rolled out.
+
 ## [0.4.1] - 2026-03-09
 
 ### Fixed

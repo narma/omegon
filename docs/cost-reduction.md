@@ -1,7 +1,7 @@
 ---
 id: cost-reduction
 title: Token Cost Reduction — Local Inference Offload Strategy
-status: decided
+status: implemented
 related: [operator-capability-profile]
 tags: [cost, local-inference, architecture]
 open_questions: []

@@ -1,7 +1,7 @@
 ---
 id: context-aware-uri
 title: Context-Aware OSC 8 URIs — Smart File Links in Terminal Output
-status: decided
+status: implemented
 tags: [ux, view, uri, terminal, osc8]
 open_questions: []
 ---

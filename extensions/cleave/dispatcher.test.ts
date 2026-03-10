@@ -9,6 +9,7 @@ import { describe, it } from "node:test";
 import * as assert from "node:assert/strict";
 import {
 	AsyncSemaphore,
+	emitCleaveChildProgress,
 	extractResultSection,
 	resolveModelIdForTier,
 	LARGE_RUN_THRESHOLD,
@@ -379,6 +380,44 @@ describe("resolveModelIdForTier", () => {
 	});
 });
 
+describe("emitCleaveChildProgress", () => {
+	it("updates shared cleave child progress and emits a dashboard event", () => {
+		const previous = (sharedState as any).cleave;
+		try {
+			(sharedState as any).cleave = {
+				status: "dispatching",
+				runId: "test-run",
+				updatedAt: 0,
+				children: [
+					{ label: "child-0", status: "pending" },
+					{ label: "child-1", status: "pending" },
+				],
+			};
+			const events: Array<{ channel: string; data: unknown }> = [];
+			const pi = {
+				events: {
+					emit: (channel: string, data: unknown) => {
+						events.push({ channel, data });
+					},
+				},
+			} as any;
+
+			emitCleaveChildProgress(pi, 1, { status: "running" });
+			assert.equal((sharedState as any).cleave.children[1].status, "running");
+			assert.ok((sharedState as any).cleave.updatedAt > 0);
+			assert.equal(events.length, 1);
+			assert.equal(events[0]?.channel, "dashboard:update");
+
+			emitCleaveChildProgress(pi, 1, { status: "done", elapsed: 42 });
+			assert.equal((sharedState as any).cleave.children[1].status, "done");
+			assert.equal((sharedState as any).cleave.children[1].elapsed, 42);
+			assert.equal(events.length, 2);
+		} finally {
+			(sharedState as any).cleave = previous;
+		}
+	});
+});
+
 // ─── ProviderRoutingPolicy structure (spec: Session policy stores provider order and flags) ──
 
 describe("ProviderRoutingPolicy structure", () => {
@@ -534,6 +573,10 @@ function makeMockPi() {
 				return ""; // operator presses Enter → keep current
 			},
 		},
+		exec: async (_cmd: string, args: string[]) => {
+			if (args[0] === "status") return { code: 0, stdout: "", stderr: "" };
+			return { code: 0, stdout: "", stderr: "" };
+		},
 		// Minimal stubs so dispatchSingleChild doesn't crash looking for pi internals
 		modelRegistry: { getAll: () => [] },
 	} as any;
@@ -634,7 +677,11 @@ describe("dispatchChildren preflight — integration (spec: Large/Small run trig
 			};
 
 			// pi.ui exists but .input is not a function — the C2 bug scenario
-			const mockPi = { ui: { /* no input */ }, modelRegistry: { getAll: () => [] } } as any;
+			const mockPi = {
+				ui: { /* no input */ },
+				exec: async () => ({ code: 0, stdout: "", stderr: "" }),
+				modelRegistry: { getAll: () => [] },
+			} as any;
 			const state = makeTestState(LARGE_RUN_THRESHOLD);
 			const messages: string[] = [];
 

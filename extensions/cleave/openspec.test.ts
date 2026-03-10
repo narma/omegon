@@ -1052,7 +1052,7 @@ describe("getActiveChangesStatus", () => {
 });
 
 describe("cleave-dirty-tree-checkpointing lifecycle artifacts", () => {
-	const changeDir = path.join(process.cwd(), "openspec", "changes", "cleave-dirty-tree-checkpointing");
+	const changeDir = path.join(process.cwd(), "openspec", "archive", "2026-03-10-cleave-dirty-tree-checkpointing");
 
 	it("exposes the dirty-tree preflight scenarios through buildOpenSpecContext", () => {
 		const ctx = buildOpenSpecContext(changeDir);

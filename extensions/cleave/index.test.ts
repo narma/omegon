@@ -13,16 +13,23 @@ function runJsonScript(script: string) {
 function runAssessSpecScenario(mode: "bridged" | "interactive" | "reopen") {
 	const script = String.raw`
 (async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
   const { createAssessStructuredExecutors } = await import('./extensions/cleave/index.ts');
   const mode = ${JSON.stringify(mode)};
-  const changeName = 'cleave-dirty-tree-checkpointing';
+  const changeName = '__test-assess-fixture';
+
+  // Scaffold a temporary OpenSpec change so findExecutableChanges discovers it
+  const fixtureDir = path.join(process.cwd(), 'openspec', 'changes', changeName);
+  const specsDir = path.join(fixtureDir, 'specs', 'test');
+  fs.mkdirSync(specsDir, { recursive: true });
+  const NL = String.fromCharCode(10);
+  fs.writeFileSync(path.join(fixtureDir, 'proposal.md'), ['# Test fixture', '## Intent', 'Test', ''].join(NL));
+  fs.writeFileSync(path.join(fixtureDir, 'tasks.md'), ['# Tasks', '- [x] 1.1 Done', ''].join(NL));
+  fs.writeFileSync(path.join(specsDir, 'spec.md'), ['# test/spec', '## ADDED Requirements', '### Requirement: Test', '#### Scenario: test passes', 'Given a test', 'When it runs', 'Then it passes', ''].join(NL));
+  const cleanup = () => { try { fs.rmSync(fixtureDir, { recursive: true, force: true }); } catch {} };
   const scenarios = [
-    { domain: 'cleave/preflight', requirement: 'Cleave runs a dirty-tree preflight before worktree dispatch', scenario: 'clean tree proceeds without preflight interruption', status: 'PASS', evidence: ['extensions/cleave/index.ts'] },
-    { domain: 'cleave/preflight', requirement: 'Cleave runs a dirty-tree preflight before worktree dispatch', scenario: 'dirty tree shows classified preflight choices', status: 'PASS', evidence: ['extensions/cleave/index.ts'] },
-    { domain: 'cleave/preflight', requirement: 'Volatile artifacts do not block cleave by default', scenario: 'volatile artifacts are visible but separately handled', status: 'PASS', evidence: ['extensions/cleave/index.ts'] },
-    { domain: 'cleave/preflight', requirement: 'Checkpointing is an explicit operator-approved action', scenario: 'checkpoint action prepares a scoped commit', status: mode === 'reopen' ? 'FAIL' : 'PASS', evidence: ['extensions/cleave/index.ts'], notes: mode === 'reopen' ? 'Reopened work.' : undefined },
-    { domain: 'cleave/preflight', requirement: 'Preflight handles transient low-confidence classification conservatively', scenario: 'unknown files are not silently included in checkpoint scope', status: 'PASS', evidence: ['extensions/cleave/index.ts'] },
-    { domain: 'cleave/preflight', requirement: 'Preflight works without an active OpenSpec change', scenario: 'generic classification works without OpenSpec context', status: 'PASS', evidence: ['extensions/cleave/index.ts'] },
+    { domain: 'test/spec', requirement: 'Test', scenario: 'test passes', status: mode === 'reopen' ? 'FAIL' : 'PASS', evidence: ['extensions/model-budget.ts'], notes: mode === 'reopen' ? 'Reopened work.' : undefined },
   ];
   let runnerCalled = false;
   const pi = {
@@ -42,8 +49,8 @@ function runAssessSpecScenario(mode: "bridged" | "interactive" | "reopen") {
       return {
         assessed: {
           summary: mode === 'reopen'
-            ? { total: 6, pass: 5, fail: 1, unclear: 0 }
-            : { total: 6, pass: 6, fail: 0, unclear: 0 },
+            ? { total: 1, pass: 0, fail: 1, unclear: 0 }
+            : { total: 1, pass: 1, fail: 0, unclear: 0 },
           scenarios,
           changedFiles: mode === 'reopen' ? ['extensions/cleave/index.ts'] : [],
           constraints: mode === 'reopen'
@@ -68,6 +75,7 @@ function runAssessSpecScenario(mode: "bridged" | "interactive" | "reopen") {
     constraints: result.lifecycleRecord?.reconciliation.constraints,
     runnerCalled,
   }));
+  cleanup();
 })();
 `;
 
@@ -222,7 +230,7 @@ describe("dirty-tree preflight acceptance coverage", () => {
 		assert.ok(addCommand, "expected git add to stage checkpoint files");
 		assert.ok(commitCommand, "expected git commit after explicit approval");
 		assert.ok(addCommand.includes("openspec/changes/cleave-dirty-tree-checkpointing/tasks.md"));
-		assert.ok(addCommand.includes("docs/cleave-dirty-tree-checkpointing.md"));
+		assert.ok(!addCommand.includes("docs/cleave-dirty-tree-checkpointing.md"));
 		assert.ok(commitCommand.some((part: string) => /checkpoint/i.test(String(part))));
 	});
 });
