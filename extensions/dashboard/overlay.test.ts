@@ -4,17 +4,17 @@ import assert from "node:assert/strict";
 import { INSPECTION_OVERLAY_OPTIONS } from "./overlay.ts";
 
 describe("dashboard inspection overlay layout", () => {
-  it("uses a wide centered blocking layout", () => {
+  it("uses a full-screen centered blocking layout", () => {
     assert.equal(INSPECTION_OVERLAY_OPTIONS.anchor, "center");
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.width, "88%");
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.minWidth, 80);
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.maxHeight, "88%");
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.margin, 1);
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.width, "100%");
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.minWidth, 60);
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.maxHeight, "100%");
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.margin, 0);
   });
 
-  it("only shows the inspection overlay on sufficiently wide terminals", () => {
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.visible(99), false);
-    assert.equal(INSPECTION_OVERLAY_OPTIONS.visible(100), true);
+  it("is always visible regardless of terminal width", () => {
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.visible(40), true);
+    assert.equal(INSPECTION_OVERLAY_OPTIONS.visible(80), true);
     assert.equal(INSPECTION_OVERLAY_OPTIONS.visible(160), true);
   });
 });

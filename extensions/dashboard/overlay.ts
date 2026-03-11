@@ -31,13 +31,17 @@ import {
   type ListItem,
 } from "./overlay-data.ts";
 
+/**
+ * Full-screen blocking overlay options for the /dashboard operator panel.
+ * No width/height restrictions — consumes the entire terminal.
+ */
 export const INSPECTION_OVERLAY_OPTIONS = {
   anchor: "center",
-  width: "88%",
-  minWidth: 80,
-  maxHeight: "88%",
-  margin: 1,
-  visible: (termWidth: number) => termWidth >= 100,
+  width: "100%",
+  minWidth: 60,
+  maxHeight: "100%",
+  margin: 0,
+  visible: (_termWidth: number) => true,
 } as const;
 
 // ── Overlay Component ───────────────────────────────────────────
@@ -231,7 +235,7 @@ export class DashboardOverlay {
       ? th.fg("warning", ` ${this.statusMessage}`)
       : th.fg("dim", " ↵/o open selected item  ↑↓ navigate  ←→ expand/collapse");
     lines.push(border("│") + pad(footerPrimary) + border("│"));
-    lines.push(border("│") + pad(th.fg("dim", " Tab switch  Esc close  items with ↗ are openable")) + border("│"));
+    lines.push(border("│") + pad(th.fg("dim", " Tab / 1-4 switch tabs  Esc close  items with ↗ are openable")) + border("│"));
     lines.push(border("╰" + "─".repeat(innerW) + "╯"));
 
     return lines;

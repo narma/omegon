@@ -461,13 +461,12 @@ export default function (pi: ExtensionAPI) {
       if (arg === "panel")   { cycleTo(extCtx, "panel");   return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: panel", humanText: "Dashboard: panel", effects: { sideEffectClass: "read" } }); }
       if (arg === "focus")   { cycleTo(extCtx, "focused"); return buildSlashCommandResult("dashboard", [arg], { ok: true, summary: "Dashboard: focused", humanText: "Dashboard: focused", effects: { sideEffectClass: "read" } }); }
 
-      // Default: toggle panel
-      panelToggle(extCtx);
-      const label = (state.mode === "panel" || state.mode === "focused") ? "panel open" : "panel closed";
+      // Default: open blocking full-page operator panel
+      await showDashboardOverlay(extCtx, pi);
       return buildSlashCommandResult("dashboard", [], {
         ok: true,
-        summary: `Dashboard: ${label}`,
-        humanText: `Dashboard: ${label}`,
+        summary: "Dashboard: closed",
+        humanText: "Dashboard: closed",
         effects: { sideEffectClass: "read" },
       });
     },

@@ -7,6 +7,7 @@
 
 import { sharedState } from "../shared-state.ts";
 import type { CleaveState, DesignTreeDashboardState, OpenSpecDashboardState } from "./types.ts";
+import type { ProviderRoutingPolicy } from "../lib/model-routing.ts";
 import {
   getDashboardFileUri,
   getOpenSpecArtifactUri,
@@ -17,7 +18,7 @@ import {
 
 // ── Tab definitions ─────────────────────────────────────────────
 
-export type TabId = "design" | "openspec" | "cleave";
+export type TabId = "design" | "openspec" | "cleave" | "system";
 
 export interface Tab {
   id: TabId;
@@ -26,9 +27,10 @@ export interface Tab {
 }
 
 export const TABS: Tab[] = [
-  { id: "design", label: "Design Tree", shortcut: "1" },
-  { id: "openspec", label: "OpenSpec", shortcut: "2" },
-  { id: "cleave", label: "Cleave", shortcut: "3" },
+  { id: "design",   label: "Design Tree", shortcut: "1" },
+  { id: "openspec", label: "OpenSpec",    shortcut: "2" },
+  { id: "cleave",   label: "Cleave",      shortcut: "3" },
+  { id: "system",   label: "System",      shortcut: "4" },
 ];
 
 // ── Item model for navigable lists ──────────────────────────────
@@ -313,6 +315,258 @@ export function buildCleaveItems(
   return items;
 }
 
+// ── System / Config tab ─────────────────────────────────────────
+
+/** pi-kit env vars surfaced in the System tab */
+const PI_ENV_VARS: Array<{ key: string; description: string }> = [
+  { key: "PI_CHILD",               description: "Non-empty when running as cleave child" },
+  { key: "PI_OFFLINE",             description: "Force offline/local-only mode" },
+  { key: "PI_SKIP_VERSION_CHECK",  description: "Disable GitHub release polling" },
+  { key: "PI_DEBUG",               description: "Enable verbose debug logging" },
+  { key: "PI_LOG_LEVEL",           description: "Log verbosity (debug|info|warn|error)" },
+  { key: "PI_PROVIDER",            description: "Override active provider (anthropic|openai|local)" },
+  { key: "PI_MODEL",               description: "Override active model ID" },
+  { key: "ANTHROPIC_API_KEY",      description: "Anthropic API key" },
+  { key: "OPENAI_API_KEY",         description: "OpenAI API key" },
+  { key: "OLLAMA_HOST",            description: "Ollama server URL (default: localhost:11434)" },
+];
+
+function fmtBool(val: boolean, th: ThemeFn): string {
+  return val ? th("success", "yes") : th("dim", "no");
+}
+
+function fmtValue(val: string | undefined, th: ThemeFn): string {
+  if (!val) return th("dim", "(unset)");
+  if (val.length > 40) return th("muted", val.slice(0, 37) + "…");
+  return th("accent", val);
+}
+
+function routingPolicyItems(policy: ProviderRoutingPolicy, expandedKeys: Set<string>): ListItem[] {
+  const key = "sys-routing";
+  const items: ListItem[] = [];
+
+  items.push({
+    key,
+    depth: 0,
+    expandable: true,
+    lines: (th) => [th("accent", "Routing Policy")],
+  });
+
+  if (!expandedKeys.has(key)) return items;
+
+  items.push({
+    key: "sys-routing-order",
+    depth: 1,
+    expandable: false,
+    lines: (th) => [th("dim", "provider order: ") + th("muted", policy.providerOrder.join(" → "))],
+  });
+
+  if (policy.avoidProviders.length > 0) {
+    items.push({
+      key: "sys-routing-avoid",
+      depth: 1,
+      expandable: false,
+      lines: (th) => [th("dim", "avoid: ") + th("warning", policy.avoidProviders.join(", "))],
+    });
+  }
+
+  items.push({
+    key: "sys-routing-cheap",
+    depth: 1,
+    expandable: false,
+    lines: (th) => [th("dim", "cheap cloud over local: ") + fmtBool(policy.cheapCloudPreferredOverLocal, th)],
+  });
+
+  items.push({
+    key: "sys-routing-preflight",
+    depth: 1,
+    expandable: false,
+    lines: (th) => [th("dim", "preflight for large runs: ") + fmtBool(policy.requirePreflightForLargeRuns, th)],
+  });
+
+  if (policy.notes) {
+    items.push({
+      key: "sys-routing-notes",
+      depth: 1,
+      expandable: false,
+      lines: (th) => [th("dim", "notes: ") + th("muted", policy.notes!)],
+    });
+  }
+
+  return items;
+}
+
+function effortItems(effort: any | undefined, expandedKeys: Set<string>): ListItem[] {
+  if (!effort) return [];
+  const key = "sys-effort";
+  const items: ListItem[] = [];
+
+  items.push({
+    key,
+    depth: 0,
+    expandable: true,
+    lines: (th) => {
+      const name = effort.name ?? `Level ${effort.level ?? "?"}`;
+      return [th("accent", "Effort Tier") + th("dim", ": ") + th("muted", name)];
+    },
+  });
+
+  if (!expandedKeys.has(key)) return items;
+
+  const fields: Array<[string, string]> = [
+    ["level",    String(effort.level ?? "?")],
+    ["driver",   effort.driverModel ?? "?"],
+    ["extract",  effort.extractionModel ?? "?"],
+    ["thinking", effort.thinkingLevel ?? "?"],
+  ];
+  for (const [label, val] of fields) {
+    items.push({
+      key: `sys-effort-${label}`,
+      depth: 1,
+      expandable: false,
+      lines: (th) => [th("dim", `${label}: `) + th("muted", val)],
+    });
+  }
+
+  return items;
+}
+
+function recoveryItems(recovery: any | undefined, expandedKeys: Set<string>): ListItem[] {
+  if (!recovery) return [];
+  const key = "sys-recovery";
+  const items: ListItem[] = [];
+
+  const color = recovery.escalated ? "error" : recovery.action === "retry" ? "warning" : "dim";
+
+  items.push({
+    key,
+    depth: 0,
+    expandable: true,
+    lines: (th) => [th("accent", "Last Recovery Event") + th("dim", ": ") + th(color, recovery.action ?? "?")],
+  });
+
+  if (!expandedKeys.has(key)) return items;
+
+  items.push({
+    key: "sys-recovery-provider",
+    depth: 1,
+    expandable: false,
+    lines: (th) => [th("dim", "provider: ") + th("muted", `${recovery.provider}/${recovery.modelId}`)],
+  });
+  items.push({
+    key: "sys-recovery-class",
+    depth: 1,
+    expandable: false,
+    lines: (th) => [th("dim", "class: ") + th("muted", recovery.classification ?? "?")],
+  });
+  if (recovery.summary) {
+    items.push({
+      key: "sys-recovery-summary",
+      depth: 1,
+      expandable: false,
+      lines: (th) => [th("dim", "summary: ") + th("muted", recovery.summary)],
+    });
+  }
+
+  return items;
+}
+
+function memoryItems(expandedKeys: Set<string>): ListItem[] {
+  const key = "sys-memory";
+  const items: ListItem[] = [];
+  const metrics = sharedState.lastMemoryInjection;
+
+  items.push({
+    key,
+    depth: 0,
+    expandable: !!metrics,
+    lines: (th) => {
+      const est = sharedState.memoryTokenEstimate;
+      const label = est > 0 ? th("muted", `~${est.toLocaleString()} tokens`) : th("dim", "no injection yet");
+      return [th("accent", "Memory Injection") + th("dim", ": ") + label];
+    },
+  });
+
+  if (!metrics || !expandedKeys.has(key)) return items;
+
+  const mFields: Array<[string, string]> = [
+    ["project facts",  String(metrics.projectFactCount ?? "?")],
+    ["global facts",   String(metrics.globalFactCount ?? "?")],
+    ["working memory", String(metrics.workingMemoryFactCount ?? "?")],
+    ["episodes",       String(metrics.episodeCount ?? "?")],
+    ["tokens ~",       String(metrics.estimatedTokens ?? "?")],
+  ];
+  for (const [label, val] of mFields) {
+    items.push({
+      key: `sys-mem-${label}`,
+      depth: 1,
+      expandable: false,
+      lines: (th) => [th("dim", `${label}: `) + th("muted", val)],
+    });
+  }
+
+  return items;
+}
+
+export function buildSystemItems(expandedKeys: Set<string>): ListItem[] {
+  const items: ListItem[] = [];
+
+  // ── Section: Environment Variables ──────────────────────────
+  const envKey = "sys-env";
+  items.push({
+    key: envKey,
+    depth: 0,
+    expandable: true,
+    lines: (th) => [th("accent", "Environment Variables")],
+  });
+
+  if (expandedKeys.has(envKey)) {
+    for (const { key, description } of PI_ENV_VARS) {
+      const raw = process.env[key];
+      // Mask key values to avoid leaking secrets
+      const masked = key.endsWith("_KEY") && raw
+        ? raw.slice(0, 4) + "…" + raw.slice(-4)
+        : raw;
+      items.push({
+        key: `sys-env-${key}`,
+        depth: 1,
+        expandable: false,
+        lines: (th) => {
+          const valStr = fmtValue(masked, th);
+          return [`${th("dim", key + ": ")}${valStr}  ${th("muted", description)}`];
+        },
+      });
+    }
+  }
+
+  // ── Section: Routing Policy ──────────────────────────────────
+  if (sharedState.routingPolicy) {
+    items.push(...routingPolicyItems(sharedState.routingPolicy, expandedKeys));
+  }
+
+  // ── Section: Effort Tier ─────────────────────────────────────
+  items.push(...effortItems(sharedState.effort, expandedKeys));
+
+  // ── Section: Memory Injection ────────────────────────────────
+  items.push(...memoryItems(expandedKeys));
+
+  // ── Section: Last Recovery Event ────────────────────────────
+  items.push(...recoveryItems(sharedState.recovery, expandedKeys));
+
+  // ── Section: Dashboard Mode ──────────────────────────────────
+  items.push({
+    key: "sys-mode",
+    depth: 0,
+    expandable: false,
+    lines: (th) => [
+      th("dim", "dashboard mode: ") + th("muted", sharedState.dashboardMode ?? "compact") +
+      th("dim", "   turns: ") + th("muted", String(sharedState.dashboardTurns ?? 0))
+    ],
+  });
+
+  return items;
+}
+
 // ── State management ────────────────────────────────────────────
 
 export function rebuildItems(
@@ -326,6 +580,8 @@ export function rebuildItems(
       return buildOpenSpecItems(sharedState.openspec, expandedKeys);
     case "cleave":
       return buildCleaveItems(sharedState.cleave, expandedKeys);
+    case "system":
+      return buildSystemItems(expandedKeys);
   }
 }
 

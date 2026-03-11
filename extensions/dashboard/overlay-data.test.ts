@@ -31,9 +31,9 @@ function renderItem(item: { lines: (th: ThemeFn, w: number) => string[] }): stri
 // ── Tests ───────────────────────────────────────────────────────
 
 describe("TABS", () => {
-  it("has 3 tabs with correct IDs", () => {
-    assert.equal(TABS.length, 3);
-    assert.deepEqual(TABS.map(t => t.id), ["design", "openspec", "cleave"]);
+  it("has 4 tabs with correct IDs", () => {
+    assert.equal(TABS.length, 4);
+    assert.deepEqual(TABS.map(t => t.id), ["design", "openspec", "cleave", "system"]);
   });
 });
 
