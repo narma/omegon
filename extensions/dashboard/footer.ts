@@ -503,24 +503,31 @@ export class DashboardFooter implements Component {
     // usefulness quickly and crowd out model/driver/thinking info.
     if (Date.now() - recovery.timestamp > RECOVERY_STALE_MS) return "";
 
+    // Past-tense labels for auto-handled actions so they read as status, not
+    // directives.  'escalate' is the only case where the operator must act.
     const actionColor: ThemeColor = recovery.action === "retry" ? "warning"
       : recovery.action === "switch_candidate" || recovery.action === "switch_offline" ? "accent"
       : recovery.action === "cooldown" ? "warning"
       : recovery.action === "escalate" ? "error"
       : "dim";
-    const actionLabel = recovery.action === "retry" ? "retry"
-      : recovery.action === "switch_candidate" ? "switch"
-      : recovery.action === "switch_offline" ? "offline"
-      : recovery.action === "cooldown" ? "cooldown"
-      : recovery.action === "escalate" ? "escalate"
-      : "recovery";
-    // Compact mode: keep to a terse badge — never render the full error string.
-    // Wide gets provider/model; narrow just the action label is enough.
+    const actionLabel = recovery.action === "retry" ? "retried"
+      : recovery.action === "switch_candidate" ? "switched"
+      : recovery.action === "switch_offline" ? "went offline"
+      : recovery.action === "cooldown" ? "cooling"
+      : recovery.action === "escalate" ? "escalated"
+      : "observed";
+
+    // Compact mode: terse badge.  Wide adds provider/model context.
+    // Escalate appends a dim command hint so the operator knows what to do.
     const summary = wide ? `${recovery.provider}/${recovery.modelId}` : "";
     const cooldown = summarizeCooldown(recovery.cooldowns);
+    const escalateHint = recovery.action === "escalate"
+      ? theme.fg("dim", "→ /set-model-tier")
+      : "";
+    const icon = recovery.action === "escalate" ? "⚠" : "↺";
     return composePrimaryMetaLine(width,
-      theme.fg(actionColor, `↺ ${actionLabel}`),
-      [summary ? theme.fg("dim", summary) : "", cooldown ? theme.fg("dim", cooldown) : ""].filter(Boolean),
+      theme.fg(actionColor, `${icon} ${actionLabel}`),
+      [summary ? theme.fg("dim", summary) : "", cooldown ? theme.fg("dim", cooldown) : "", escalateHint].filter(Boolean),
     );
   }
 
@@ -538,18 +545,25 @@ export class DashboardFooter implements Component {
       : recovery.action === "cooldown" ? "warning"
       : recovery.action === "escalate" ? "error"
       : "dim";
-    const actionLabel = recovery.action === "retry" ? "retrying"
+    const actionLabel = recovery.action === "retry" ? "retried"
       : recovery.action === "switch_candidate" ? "switched candidate"
-      : recovery.action === "switch_offline" ? "switched offline"
-      : recovery.action === "cooldown" ? "cooldown active"
-      : recovery.action === "escalate" ? "operator escalation"
+      : recovery.action === "switch_offline" ? "went offline"
+      : recovery.action === "cooldown" ? "cooling"
+      : recovery.action === "escalate" ? "escalated — operator action required"
       : "observed";
 
+    const recoveryIcon = recovery.action === "escalate" ? "⚠" : "↺";
+    const escalateHint = recovery.action === "escalate"
+      ? theme.fg("dim", "→ /set-model-tier to switch provider/driver")
+      : "";
+
+    const headerParts = [theme.fg(actionColor, actionLabel), theme.fg("dim", recovery.classification)];
     const lines = [composePrimaryMetaLine(
       width,
-      theme.fg("accent", "↺ Recovery"),
-      [theme.fg(actionColor, actionLabel), theme.fg("dim", recovery.classification)],
+      theme.fg("accent", `${recoveryIcon} Recovery`),
+      headerParts,
     )];
+    if (escalateHint) lines.push(escalateHint);
 
     const target = recovery.target?.modelId
       ? `${recovery.target.provider}/${recovery.target.modelId}`

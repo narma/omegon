@@ -90,7 +90,7 @@ describe("dashboard recovery state", () => {
 
     const [line] = footer.render(160);
     // Compact mode shows only the terse action badge + provider/model, not the full error string.
-    assert.match(line, /↺ offline/);
+    assert.match(line, /↺ went offline/);
     assert.match(line, /anthropic\/claude-sonnet-4-5/);
     assert.match(line, /anthropic 1m/);
     assert.doesNotMatch(line, /Anthropic rate limited the last assistant turn\./);
@@ -119,7 +119,7 @@ describe("dashboard recovery state", () => {
     // ("→ anthropic/claude-sonnet-4-5") gets truncated. Use stacked width
     // (< 120) to assert the full detail line.
     const linesWide = footer.render(160);
-    assert.ok(linesWide.some((line) => line.includes("↺ Recovery") && line.includes("retrying") && line.includes("server_error")), linesWide.join("\n"));
+    assert.ok(linesWide.some((line) => line.includes("↺ Recovery") && line.includes("retried") && line.includes("server_error")), linesWide.join("\n"));
     assert.ok(linesWide.some((line) => line.includes("Retrying once after upstream server_error.")), linesWide.join("\n"));
 
     const linesStacked = footer.render(100);
