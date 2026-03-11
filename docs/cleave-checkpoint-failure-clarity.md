@@ -1,11 +1,10 @@
 ---
 id: cleave-checkpoint-failure-clarity
 title: Cleave checkpoint execution reliability and failure clarity
-status: decided
+status: implemented
 parent: cleave-dirty-tree-checkpointing
 tags: [cleave, git, checkpoint, workflow, ux]
-open_questions:
-  - After a confirmed checkpoint, should cleave automatically re-enter dirty-tree resolution for any remaining excluded files, or fail closed with an explicit post-checkpoint diagnosis and no generic blocker?
+open_questions: []
 ---
 
 # Cleave checkpoint execution reliability and failure clarity
@@ -29,4 +28,16 @@ runDirtyTreePreflight() returns "continue" immediately after checkpointRelatedCh
 
 ## Open Questions
 
-- After a confirmed checkpoint, should cleave automatically re-enter dirty-tree resolution for any remaining excluded files, or fail closed with an explicit post-checkpoint diagnosis and no generic blocker?
+*No open questions.*
+
+## Implementation Notes
+
+### File Scope
+
+- `extensions/cleave/index.ts` — checkpoint attempts now re-run `git status --porcelain` before leaving preflight, emit explicit post-checkpoint remaining-dirty diagnosis, and surface git add/commit failures as actionable preflight errors.
+- `extensions/cleave/index.test.ts` — regression coverage now includes clean post-checkpoint continuation, remaining excluded dirt after checkpoint, git commit failure, and empty checkpoint scope handling.
+
+### Validation
+
+- `npm test -- --runInBand extensions/cleave/index.test.ts`
+- `npm run typecheck`
