@@ -252,7 +252,10 @@ async function checkpointRelatedChanges(
 	ui?: { input?: (prompt: string, initial?: string) => Promise<string | undefined> },
 ): Promise<void> {
 	if (classification.checkpointFiles.length === 0) {
-		throw new Error("Checkpoint requested, but no related files were confidently classified.");
+		throw new Error(
+			"Checkpoint scope is empty — no related files were confidently classified as checkpointable. " +
+			"The checkpoint would produce no commit. Resolve remaining dirty files manually or choose a different preflight action.",
+		);
 	}
 	if (typeof ui?.input !== "function") {
 		throw new Error("Checkpoint requires interactive approval, but input is unavailable.");
@@ -273,12 +276,22 @@ async function checkpointRelatedChanges(
 	}
 	const commitMessage = response && response.length > 0 ? response : suggested;
 	const addResult = await pi.exec("git", ["add", "--", ...classification.checkpointFiles], { cwd: repoPath, timeout: 15_000 });
-	if (addResult.code !== 0) throw new Error(addResult.stderr.trim() || "Failed to stage checkpoint files.");
+	if (addResult.code !== 0) {
+		throw new Error(
+			`git add failed during checkpoint — ${addResult.stderr.trim() || "unknown error staging checkpoint files"}. ` +
+			"The checkpoint was not created. Choose a different preflight action or resolve the staging error first.",
+		);
+	}
 	const commitResult = await pi.exec("git", ["commit", "-m", commitMessage, "--", ...classification.checkpointFiles], {
 		cwd: repoPath,
 		timeout: 20_000,
 	});
-	if (commitResult.code !== 0) throw new Error(commitResult.stderr.trim() || "Failed to create checkpoint commit.");
+	if (commitResult.code !== 0) {
+		throw new Error(
+			`git commit failed during checkpoint — ${commitResult.stderr.trim() || "unknown error creating checkpoint commit"}. ` +
+			"The checkpoint was not created. Resolve the git error and try again.",
+		);
+	}
 }
 
 export async function runDirtyTreePreflight(pi: ExtensionAPI, options: DirtyTreePreflightOptions): Promise<"continue" | "skip_cleave" | "cancelled"> {
@@ -328,9 +341,33 @@ export async function runDirtyTreePreflight(pi: ExtensionAPI, options: DirtyTree
 		))?.toLowerCase();
 		try {
 			switch (answer) {
-				case "checkpoint":
+				case "checkpoint": {
 					await checkpointRelatedChanges(pi, options.repoPath, classification, checkpointPlan.message, options.ui);
-					return "continue";
+					// Re-verify cleanliness after the checkpoint commit.
+					const postCheckpointStatus = await pi.exec("git", ["status", "--porcelain"], {
+						cwd: options.repoPath,
+						timeout: 5_000,
+					});
+					const postState = inspectGitState(postCheckpointStatus.stdout);
+					if (postState.entries.length === 0) {
+						// Tree is clean — checkpoint fully resolved the dirty tree.
+						return "continue";
+					}
+					// Remaining dirty files — emit explicit diagnosis and stay in preflight.
+					const remainingPaths = postState.entries.map((e) => e.path);
+					const diagnosisLines = [
+						"Checkpoint committed successfully, but dirty files remain — cleave cannot continue yet:",
+						...remainingPaths.map((p) => `  • ${p}`),
+						"",
+						"These files were not included in the checkpoint (unrelated, volatile, or unknown classification).",
+						"Choose another preflight action to resolve them.",
+					];
+					options.onUpdate?.({
+						content: [{ type: "text", text: diagnosisLines.join("\n") }],
+						details: { phase: "preflight", postCheckpointDirty: remainingPaths },
+					});
+					break;
+				}
 				case "stash-unrelated":
 					await stashPaths(pi, options.repoPath, "cleave-preflight-unrelated", [...classification.unrelated, ...classification.unknown]);
 					return "continue";
