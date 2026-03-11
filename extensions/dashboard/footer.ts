@@ -350,12 +350,17 @@ export class DashboardFooter implements Component {
   /**
    * Render content + footer lines inside a rounded box with a top border label
    * and a `/dash to compact` hint embedded in the bottom border.
+   *
+   * @param targetHeight  If provided, content area is padded with blank lines so
+   *                      the total box height reaches targetHeight.  Pass 0 or
+   *                      omit to render exactly the content provided.
    */
   private renderBoxed(
     contentLines: string[],
     footerLines: string[],
     topLineContent: string,
     width: number,
+    targetHeight = 0,
   ): string[] {
     const theme = this.theme;
     const innerWidth = width - 4; // 2 for │ borders + 2 for padding spaces
@@ -374,8 +379,20 @@ export class DashboardFooter implements Component {
     const botPad = Math.max(0, width - 2 - visibleWidth(dashHint));
     const bottomBorder = b("╰") + theme.fg("dim", dashHint) + b("─".repeat(botPad)) + b("╯");
 
+    // Compute how many blank padding lines we need in the content area so the
+    // total rendered box reaches targetHeight.
+    //   box height = 1 (top) + content + [1 separator + footer] + 1 (bottom)
+    const boxChrome = 1 + 1 + (footerLines.length > 0 ? 1 + footerLines.length : 0);
+    const paddedContentLength = targetHeight > 0
+      ? Math.max(contentLines.length, targetHeight - boxChrome)
+      : contentLines.length;
+
     const lines: string[] = [topBorder];
     for (const line of contentLines) lines.push(wrapLine(line));
+    // Fill blank rows up to paddedContentLength
+    for (let i = contentLines.length; i < paddedContentLength; i++) {
+      lines.push(wrapLine(""));
+    }
     if (footerLines.length > 0) {
       lines.push(separator);
       for (const line of footerLines) lines.push(wrapLine(line));
@@ -401,7 +418,12 @@ export class DashboardFooter implements Component {
       ...this.buildCleaveLines(innerWidth),
     ];
 
-    return this.renderBoxed(contentLines, this.buildFooterZone(innerWidth), topLine, width);
+    // Target: fill as much of the terminal as possible, leaving ~3 rows for
+    // pi's editor/input area. Minimum = whatever the content naturally needs.
+    const termRows = process.stdout.rows || 24;
+    const targetHeight = Math.max(0, termRows - 3);
+
+    return this.renderBoxed(contentLines, this.buildFooterZone(innerWidth), topLine, width, targetHeight);
   }
 
   /**
@@ -433,7 +455,10 @@ export class DashboardFooter implements Component {
         : []),
     ];
 
-    return this.renderBoxed(contentLines, this.buildFooterZone(innerWidth), topLine, width);
+    const termRows = process.stdout.rows || 24;
+    const targetHeight = Math.max(0, termRows - 3);
+
+    return this.renderBoxed(contentLines, this.buildFooterZone(innerWidth), topLine, width, targetHeight);
   }
 
   // ── Footer Zone (shared by stacked + wide layouts) ────────────

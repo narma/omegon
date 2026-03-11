@@ -198,6 +198,9 @@ export class DashboardOverlay {
     const innerW = Math.max(1, width - 2);
     const border = (c: string) => th.fg("border", c);
     const pad = (s: string) => truncateToWidth(s, innerW, "…", true);
+
+    // Fixed chrome: top border (1) + tab bar (1) + separator (1) + footer separator (1) + 2 footer lines + bottom border (1) = 7
+
     const lines: string[] = [];
 
     // Top border with title
@@ -219,13 +222,22 @@ export class DashboardOverlay {
     lines.push(border("│") + pad(" " + tabParts.join("  ")) + border("│"));
     lines.push(border("├" + "─".repeat(innerW) + "┤"));
 
-    // Content area (capped to prevent maxHeight from eating the footer)
+    // Content area — always fill MAX_CONTENT_LINES and rely on maxHeight:"100%"
+    // in the overlay options to clip to actual terminal height. This avoids
+    // stale process.stdout.rows readings that cause a short overlay.
     const contentLines = this.renderContent(innerW).slice(0, MAX_CONTENT_LINES);
     if (contentLines.length === 0) {
       lines.push(border("│") + pad(th.fg("dim", " (no data)")) + border("│"));
+      for (let i = 1; i < MAX_CONTENT_LINES; i++) {
+        lines.push(border("│") + pad("") + border("│"));
+      }
     } else {
       for (const cl of contentLines) {
         lines.push(border("│") + pad(cl) + border("│"));
+      }
+      // Pad to fill MAX_CONTENT_LINES; maxHeight:"100%" clips to terminal height
+      for (let i = contentLines.length; i < MAX_CONTENT_LINES; i++) {
+        lines.push(border("│") + pad("") + border("│"));
       }
     }
 
@@ -235,7 +247,7 @@ export class DashboardOverlay {
       ? th.fg("warning", ` ${this.statusMessage}`)
       : th.fg("dim", " ↵/o open selected item  ↑↓ navigate  ←→ expand/collapse");
     lines.push(border("│") + pad(footerPrimary) + border("│"));
-    lines.push(border("│") + pad(th.fg("dim", " Tab / 1-4 switch tabs  Esc close  items with ↗ are openable")) + border("│"));
+    lines.push(border("│") + pad(th.fg("dim", " Tab switch  Esc close  items with ↗ are openable")) + border("│"));
     lines.push(border("╰" + "─".repeat(innerW) + "╯"));
 
     return lines;
