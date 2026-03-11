@@ -251,12 +251,28 @@ async function checkpointRelatedChanges(
 	checkpointMessage: string | null,
 	ui?: { input?: (prompt: string, initial?: string) => Promise<string | undefined> },
 ): Promise<void> {
-	if (classification.checkpointFiles.length === 0) {
+	// When the user explicitly chooses "checkpoint", commit all non-volatile dirty
+	// files — not just those confidently classified as related. The conservative
+	// classification is for automatic decisions; an explicit user choice overrides it.
+	const allNonVolatile = [
+		...classification.related,
+		...classification.unrelated,
+		...classification.unknown,
+	].map((f) => f.path);
+
+	const filesToCommit = classification.checkpointFiles.length > 0
+		? classification.checkpointFiles
+		: allNonVolatile;
+
+	if (filesToCommit.length === 0) {
 		throw new Error(
-			"Checkpoint scope is empty — no related files were confidently classified as checkpointable. " +
-			"The checkpoint would produce no commit. Resolve remaining dirty files manually or choose a different preflight action.",
+			"Checkpoint scope is empty — no dirty files found to commit (only volatile artifacts are dirty). " +
+			"Choose a different preflight action.",
 		);
 	}
+
+	// Patch classification so the rest of the function uses the resolved file list.
+	classification = { ...classification, checkpointFiles: filesToCommit };
 	if (typeof ui?.input !== "function") {
 		throw new Error("Checkpoint requires interactive approval, but input is unavailable.");
 	}

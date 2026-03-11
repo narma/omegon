@@ -104,8 +104,8 @@ function runDirtyTreePreflightScenario(mode: "clean" | "volatile-only" | "checkp
     'checkpoint-post-dirty': ['checkpoint', '', 'stash-unrelated'],
     // checkpoint-commit-fail: git commit fails, error surfaces in preflight, operator cancels.
     'checkpoint-commit-fail': ['checkpoint', '', 'cancel'],
-    // checkpoint-empty-scope: no related/checkpointable files — checkpoint throws, operator cancels.
-    'checkpoint-empty-scope': ['checkpoint', 'cancel'],
+    // checkpoint-empty-scope: only untracked unknown file — explicit checkpoint commits it, then clean.
+    'checkpoint-empty-scope': ['checkpoint', ''],
   };
   const inputs = [...answersByMode[mode]];
 
@@ -128,8 +128,8 @@ function runDirtyTreePreflightScenario(mode: "clean" | "volatile-only" | "checkp
     'checkpoint-post-dirty': [dirtyCheckpointStatus, '?? docs/cleave-dirty-tree-checkpointing.md\n'],
     // commit-fail: status always dirty (commit never actually happens)
     'checkpoint-commit-fail': [dirtyCheckpointStatus],
-    // empty-scope: only untracked docs file — no related/tracked files to checkpoint
-    'checkpoint-empty-scope': ['?? docs/cleave-dirty-tree-checkpointing.md\n'],
+    // empty-scope: only untracked docs file — checkpoint now commits it (call 0: dirty, call 1: clean)
+    'checkpoint-empty-scope': ['?? docs/cleave-dirty-tree-checkpointing.md\n', ''],
   };
 
   const pi = {
@@ -317,17 +317,19 @@ describe("dirty-tree preflight acceptance coverage", () => {
 		assert.equal(result.result, "cancelled");
 	});
 
-	it("empty checkpoint scope reports that no files are stageable rather than exiting preflight as success", () => {
-		// Spec: "no approved checkpoint files remain stageable"
+	it("checkpoint with only-untracked unknown files still commits them (explicit user choice)", () => {
+		// When the user explicitly selects checkpoint, ALL non-volatile dirty files are
+		// committed — even untracked unknowns. The conservative classification only gates
+		// automatic decisions, not explicit operator choices.
+		// scenario: only an untracked doc file, no OpenSpec context — checkpoint commits it.
 		const result = runDirtyTreePreflightScenario("checkpoint-empty-scope");
-		// The checkpoint attempt must throw and be caught as a preflight error.
-		const errorUpdate = result.updates.find((u: { content: Array<{ text: string }> }) =>
-			/preflight action failed/i.test(u.content?.[0]?.text ?? "")
-		);
-		assert.ok(errorUpdate, "expected preflight error update for empty checkpoint scope");
-		const errorText: string = errorUpdate.content[0].text;
-		assert.match(errorText, /checkpoint scope is empty/i);
-		// Operator cancels — must not return "continue".
-		assert.equal(result.result, "cancelled");
+		// Expect success (checkpoint resolved the dirty tree)
+		assert.equal(result.result, "continue", `expected continue; updates:\n${result.updates.map((u: any) => u.content?.[0]?.text).join("\n")}`);
+		// A git add + commit must have been issued for the untracked file
+		const gitCommands = result.commands.filter((c: string[]) => c[0] === "git");
+		const addCmd = gitCommands.find((c: string[]) => c[1] === "add");
+		assert.ok(addCmd, `expected git add; commands: ${JSON.stringify(gitCommands)}`);
+		const commitCmd = gitCommands.find((c: string[]) => c[1] === "commit");
+		assert.ok(commitCmd, `expected git commit; commands: ${JSON.stringify(gitCommands)}`);
 	});
 });
