@@ -367,9 +367,8 @@ export class DashboardFooter implements Component {
   /**
    * Wide layout (≥120 cols) — 3-zone:
    *   Zone A: Git branch tree — full width
-   *   Zone B: Design tree — full width
-   *   Zone C: mergeColumns — Recovery+Cleave left │ OpenSpec right
-   *   Zone D: Shared footer (meta, memory audit, separator, hint, footer data)
+   *   Zone B: mergeColumns — Design tree + Recovery + Cleave left │ OpenSpec right
+   *   Zone C: Shared footer (meta, memory audit, separator, hint, footer data)
    */
   private renderRaisedWide(width: number): string[] {
     const divider = "│";
@@ -381,11 +380,11 @@ export class DashboardFooter implements Component {
     // Zone A — git branch tree full-width
     lines.push(...this.buildBranchTree(width));
 
-    // Zone B — design tree full-width
-    lines.push(...this.buildDesignTreeLines(width));
-
-    // Zone C — two-column split: recovery+cleave left, openspec right
+    // Zone B — two-column split:
+    //   left  = design tree + recovery + cleave (active work context)
+    //   right = openspec (spec/task progress)
     const leftLines = [
+      ...this.buildDesignTreeLines(leftColWidth),
       ...this.buildRecoveryLines(leftColWidth),
       ...this.buildCleaveLines(leftColWidth),
     ];
@@ -395,7 +394,7 @@ export class DashboardFooter implements Component {
       lines.push(...mergeColumns(leftLines, rightLines, leftColWidth, rightColWidth, divider));
     }
 
-    // Zone D — shared footer
+    // Zone C — shared footer
     lines.push(...this.buildFooterZone(width));
 
     return lines;
@@ -417,7 +416,7 @@ export class DashboardFooter implements Component {
     const memoryAuditLine = this.buildMemoryAuditLine(width);
     if (memoryAuditLine) zone.push(memoryAuditLine);
 
-    const ruleLen = Math.max(2, Math.min(width - 2, 78));
+    const ruleLen = Math.max(2, width - 2);
     zone.push(theme.fg("dim", "╶" + "─".repeat(ruleLen) + "╴"));
 
     zone.push(truncateToWidth(theme.fg("dim", "/dash to compact"), width, "…"));
@@ -524,7 +523,7 @@ export class DashboardFooter implements Component {
         ? theme.fg("dim", ` +${dt.focusedNode.branchCount! - 1}`)
         : "";
       const branchInfo = dt.focusedNode.status === "implementing" && dt.focusedNode.branch
-        ? theme.fg("dim", ` · ${dt.focusedNode.branch}`) + branchExtra
+        ? theme.fg("dim", dt.focusedNode.branch) + branchExtra
         : "";
       const linkedTitle = linkDashboardFile(dt.focusedNode.title, dt.focusedNode.filePath);
       lines.push(composePrimaryMetaLine(
@@ -537,7 +536,7 @@ export class DashboardFooter implements Component {
     // Implementing nodes (if no focused node)
     if (dt.implementingNodes && dt.implementingNodes.length > 0 && !dt.focusedNode) {
       for (const n of dt.implementingNodes.slice(0, 3)) {
-        const branchSuffix = n.branch ? theme.fg("dim", ` · ${n.branch}`) : "";
+        const branchSuffix = n.branch ? theme.fg("dim", n.branch) : "";
         const linkedTitle = linkDashboardFile(n.title, n.filePath);
         lines.push(composePrimaryMetaLine(
           width,

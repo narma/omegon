@@ -85,8 +85,10 @@ describe("DashboardFooter raised mode polish", () => {
     const lines = footer.render(160);
     assert.ok(lines.some((line) => line.includes("◈ Design Tree")));
     assert.ok(lines.some((line) => line.includes("◎ OpenSpec")));
-    // Design tree must appear on its own full-width row (not merged with openspec)
-    assert.ok(lines.every((line) => !(line.includes("◈ Design Tree") && line.includes("◎ OpenSpec"))), lines.join("\n"));
+    // In wide mode design tree (left col) and OpenSpec (right col) are zipped
+    // by mergeColumns — their headers land on the same output row separated by │.
+    // Verify at least one │ divider row exists (confirms two-column layout).
+    assert.ok(lines.some((line) => line.includes("│")), `expected │ divider in wide layout;\n${lines.join("\n")}`);
   });
 
   it("hides stale failed cleave state after it ages out", () => {
@@ -146,15 +148,12 @@ describe("DashboardFooter raised mode polish", () => {
 
     const lines = footer.render(140);
 
-    // Design tree must appear on its own full-width row
+    // Design tree (left col) and OpenSpec (right col) share the same merged zone —
+    // their headers are zipped into the same row by mergeColumns.
     const dtLine = lines.find((l) => l.includes("◈ Design Tree"));
     assert.ok(dtLine, `expected ◈ Design Tree line; got:\n${lines.join("\n")}`);
-    assert.ok(!dtLine!.includes("◎ OpenSpec"), "design tree row must not bleed into openspec");
-
-    // In wide mode, cleave (left column) and openspec (right column) are side-by-side on
-    // the SAME merged row — verify at least one such row exists (confirming column layout).
-    const mergedRow = lines.find((l) => l.includes("⚡ Cleave") || l.includes("◎ OpenSpec"));
-    assert.ok(mergedRow, `expected a row with cleave or openspec in column zone; got:\n${lines.join("\n")}`);
+    // OpenSpec header should exist somewhere in the output
+    assert.ok(lines.some((l) => l.includes("◎ OpenSpec")), `expected ◎ OpenSpec line; got:\n${lines.join("\n")}`);
 
     // There must be a row containing the divider (│) — confirms two-column layout
     const dividerRow = lines.find((l) => l.includes("│"));
@@ -452,5 +451,146 @@ describe("DashboardFooter raised mode polish", () => {
     assert.ok(specLine, lines.join("\n"));
     assert.ok(designLine!.includes("⚙"), designLine);
     assert.ok(specLine!.includes("◦"), specLine);
+  });
+});
+
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { readLocalBranches, buildBranchTreeLines } from "./git.ts";
+
+describe("readLocalBranches", () => {
+  it("returns [] gracefully when .git/refs/heads does not exist", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-git-"));
+    try {
+      const result = readLocalBranches(tmp);
+      assert.deepEqual(result, []);
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+
+  it("reads flat and nested feature/ branches from .git/refs/heads/", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-git-"));
+    try {
+      const headsDir = path.join(tmp, ".git", "refs", "heads");
+      const featureDir = path.join(headsDir, "feature");
+      fs.mkdirSync(featureDir, { recursive: true });
+      fs.writeFileSync(path.join(headsDir, "main"), "abc123\n");
+      fs.writeFileSync(path.join(featureDir, "dash-raised-layout"), "def456\n");
+      fs.writeFileSync(path.join(featureDir, "skill-aware-dispatch"), "ghi789\n");
+
+      const result = readLocalBranches(tmp);
+      assert.deepEqual(result, [
+        "main",
+        "feature/dash-raised-layout",
+        "feature/skill-aware-dispatch",
+      ]);
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+
+  it("sorts main first, then feature/*, then refactor/*, then fix/*, then rest", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pi-git-"));
+    try {
+      const headsDir = path.join(tmp, ".git", "refs", "heads");
+      for (const [sub, name] of [
+        ["fix", "the-bug"],
+        ["feature", "alpha"],
+        ["refactor", "cleanup"],
+        ["", "main"],
+        ["feature", "beta"],
+      ]) {
+        const dir = sub ? path.join(headsDir, sub) : headsDir;
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, name), "sha\n");
+      }
+      const result = readLocalBranches(tmp);
+      assert.equal(result[0], "main");
+      assert.ok(result.indexOf("feature/alpha") < result.indexOf("refactor/cleanup"), result.join(", "));
+      assert.ok(result.indexOf("refactor/cleanup") < result.indexOf("fix/the-bug"), result.join(", "));
+    } finally {
+      fs.rmSync(tmp, { recursive: true });
+    }
+  });
+});
+
+describe("buildBranchTreeLines", () => {
+  const theme = makeTheme() as any;
+
+  it("zero branches returns just repoName", () => {
+    const lines = buildBranchTreeLines({ repoName: "pi-kit", currentBranch: null, allBranches: [] }, theme);
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.includes("pi-kit"));
+    assert.ok(!lines[0]!.includes("─"), "should have no connectors");
+  });
+
+  it("single branch uses ─── connector", () => {
+    const lines = buildBranchTreeLines({ repoName: "pi-kit", currentBranch: "main", allBranches: ["main"] }, theme);
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.includes("───"), lines[0]);
+    assert.ok(!lines[0]!.includes("┬"), lines[0]);
+  });
+
+  it("two branches use ─┬─ on first line, └─ on second", () => {
+    const lines = buildBranchTreeLines({
+      repoName: "pi-kit",
+      currentBranch: "main",
+      allBranches: ["main", "feature/foo"],
+    }, theme);
+    assert.equal(lines.length, 2);
+    assert.ok(lines[0]!.includes("─┬─"), lines[0]);
+    assert.ok(lines[1]!.includes("└─"), lines[1]);
+    assert.ok(!lines[1]!.includes("├─"), lines[1]);
+  });
+
+  it("three branches use ─┬─, ├─, └─", () => {
+    const lines = buildBranchTreeLines({
+      repoName: "pi-kit",
+      currentBranch: "main",
+      allBranches: ["main", "feature/foo", "feature/bar"],
+    }, theme);
+    assert.equal(lines.length, 3);
+    assert.ok(lines[0]!.includes("─┬─"), lines[0]);
+    assert.ok(lines[1]!.includes("├─"), lines[1]);
+    assert.ok(lines[2]!.includes("└─"), lines[2]);
+  });
+
+  it("indent on continuation lines equals visibleWidth(repoName + ' ─')", () => {
+    const { visibleWidth: vw } = require("@mariozechner/pi-tui");
+    const repoName = "pi-kit";
+    const lines = buildBranchTreeLines({
+      repoName,
+      currentBranch: "main",
+      allBranches: ["main", "feature/foo", "feature/bar"],
+    }, theme);
+    const expectedIndent = vw(repoName + " ─");
+    // Line 2 (index 1) should start with that many spaces
+    const leadingSpaces = lines[1]!.match(/^( *)/)?.[1]?.length ?? 0;
+    assert.equal(leadingSpaces, expectedIndent, `indent should be ${expectedIndent}, got ${leadingSpaces}`);
+  });
+
+  it("annotation appears for a branch matching a design node's branches[]", () => {
+    const lines = buildBranchTreeLines({
+      repoName: "pi-kit",
+      currentBranch: "main",
+      allBranches: ["main", "feature/my-work"],
+      designNodes: [{ branches: ["feature/my-work"], title: "My Work Node" }],
+    }, theme);
+    const featureLine = lines.find((l) => l.includes("feature/my-work"))!;
+    assert.ok(featureLine, "feature line not found");
+    assert.ok(featureLine.includes("◈"), featureLine);
+    assert.ok(featureLine.includes("My Work Node"), featureLine);
+  });
+
+  it("current branch is placed first regardless of sort order", () => {
+    const lines = buildBranchTreeLines({
+      repoName: "pi-kit",
+      currentBranch: "feature/current",
+      allBranches: ["main", "feature/current", "feature/other"],
+    }, theme);
+    // First connector line after repoName should contain the current branch
+    assert.ok(lines[0]!.includes("feature/current"), lines[0]);
   });
 });
