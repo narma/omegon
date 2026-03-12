@@ -8,6 +8,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type {
+	AcceptanceCriteria,
+	AcceptanceCriteriaConstraint,
+	AcceptanceCriteriaFalsifiability,
+	AcceptanceCriteriaScenario,
 	DesignNode,
 	DesignTree,
 	DesignDecision,
@@ -161,6 +165,7 @@ export function parseSections(body: string): DocumentSections {
 		decisions: [],
 		openQuestions: [],
 		implementationNotes: { fileScope: [], constraints: [], rawContent: "" },
+		acceptanceCriteria: { scenarios: [], falsifiability: [], constraints: [] },
 		extraSections: [],
 	};
 
@@ -190,6 +195,8 @@ export function parseSections(body: string): DocumentSections {
 			sections.openQuestions = parseOpenQuestionsSection(content);
 		} else if (heading === SECTION_HEADINGS.implementationNotes) {
 			sections.implementationNotes = parseImplementationNotesSection(content);
+		} else if (heading === SECTION_HEADINGS.acceptanceCriteria) {
+			sections.acceptanceCriteria = parseAcceptanceCriteriaSection(content);
 		} else {
 			sections.extraSections.push({
 				heading: heading.replace(/^## /, ""),
@@ -315,6 +322,143 @@ function parseFileAction(raw: string | undefined): FileScope["action"] | undefin
 	return undefined;
 }
 
+// ─── Acceptance Criteria Parsing ──────────────────────────────────────────────
+
+/**
+ * Parse the ## Acceptance Criteria section into structured scenarios,
+ * falsifiability conditions, and checkbox constraints.
+ *
+ * ### Scenarios — bold Given/When/Then blocks:
+ *   **Given** some context
+ *   **When** something happens
+ *   **Then** expected outcome
+ *
+ * ### Falsifiability — bullet list with "This decision is wrong if:" prefix:
+ *   - This decision is wrong if: some condition
+ *   - some condition (bare, without prefix)
+ *
+ * ### Constraints — GFM checkboxes:
+ *   - [ ] unchecked constraint
+ *   - [x] checked constraint
+ */
+function parseAcceptanceCriteriaSection(content: string): AcceptanceCriteria {
+	const result: AcceptanceCriteria = {
+		scenarios: [],
+		falsifiability: [],
+		constraints: [],
+	};
+
+	// Split on ### sub-headings
+	const parts = content.split(/^(### .+)$/m);
+
+	for (let i = 1; i < parts.length; i += 2) {
+		const subHeading = parts[i].replace(/^### /, "").trim();
+		const body = (parts[i + 1] || "").trim();
+
+		if (subHeading === "Scenarios") {
+			result.scenarios = parseScenariosBlock(body);
+		} else if (subHeading === "Falsifiability") {
+			result.falsifiability = parseFalsifiabilityBlock(body);
+		} else if (subHeading === "Constraints") {
+			result.constraints = parseCheckboxConstraints(body);
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Parse bold Given/When/Then scenario blocks. Each scenario may optionally
+ * have a title on a line before the Given keyword, or be titled by sequence.
+ *
+ * Accepts both single-line (**Given** text) and multi-line formats.
+ */
+function parseScenariosBlock(content: string): AcceptanceCriteriaScenario[] {
+	const scenarios: AcceptanceCriteriaScenario[] = [];
+	const blocks: Array<{ title: string; content: string }> = [];
+
+	// Try explicit #### or "Scenario:" headings first
+	const headingMatches = [...content.matchAll(/^(?:####\s+(.+)|Scenario:\s*(.+))$/gm)];
+	if (headingMatches.length > 0) {
+		for (let i = 0; i < headingMatches.length; i++) {
+			const m = headingMatches[i];
+			const title = (m[1] || m[2] || "").trim();
+			const start = (m.index ?? 0) + m[0].length;
+			const end = i + 1 < headingMatches.length ? (headingMatches[i + 1].index ?? content.length) : content.length;
+			blocks.push({ title, content: content.slice(start, end).trim() });
+		}
+	} else {
+		// Split on "**Given**" lines (non-zero-width match to avoid infinite loop)
+		const parts = content.split(/^(?=\*\*Given\*\*)/m);
+		if (parts.length <= 1) {
+			// No split happened — whole content is one block
+			blocks.push({ title: "", content: content.trim() });
+		} else {
+			for (const part of parts) {
+				const trimmed = part.trim();
+				// Skip preamble segments that don't start with **Given** (e.g. intro text)
+				if (trimmed && /^\*\*Given\*\*/.test(trimmed)) {
+					blocks.push({ title: "", content: trimmed });
+				}
+			}
+		}
+	}
+
+	for (let idx = 0; idx < blocks.length; idx++) {
+		const { title, content: block } = blocks[idx];
+		const givenMatch = block.match(/\*\*Given\*\*\s*(.+)/);
+		const whenMatch = block.match(/\*\*When\*\*\s*(.+)/);
+		const thenMatch = block.match(/\*\*Then\*\*\s*(.+)/);
+
+		if (givenMatch || whenMatch || thenMatch) {
+			scenarios.push({
+				title: title || `Scenario ${idx + 1}`,
+				given: givenMatch ? givenMatch[1].trim() : "",
+				when: whenMatch ? whenMatch[1].trim() : "",
+				then: thenMatch ? thenMatch[1].trim() : "",
+			});
+		}
+	}
+
+	return scenarios;
+}
+
+/**
+ * Parse falsifiability bullet list.
+ * Strips the "This decision is wrong if:" prefix when present.
+ */
+function parseFalsifiabilityBlock(content: string): AcceptanceCriteriaFalsifiability[] {
+	const results: AcceptanceCriteriaFalsifiability[] = [];
+	const PREFIX = /^this decision is wrong if:\s*/i;
+
+	for (const line of content.split("\n")) {
+		const m = line.match(/^\s*[-*]\s+(.+)/);
+		if (m) {
+			const raw = m[1].trim();
+			const condition = raw.replace(PREFIX, "").trim();
+			results.push({ condition });
+		}
+	}
+	return results;
+}
+
+/**
+ * Parse GFM checkbox list into AcceptanceCriteriaConstraint items.
+ */
+function parseCheckboxConstraints(content: string): AcceptanceCriteriaConstraint[] {
+	const results: AcceptanceCriteriaConstraint[] = [];
+	for (const line of content.split("\n")) {
+		const m = line.match(/^\s*-\s+\[([ xX])\]\s+(.+)/);
+		if (m) {
+			results.push({
+				checked: m[1].toLowerCase() === "x",
+				text: m[2].trim(),
+			});
+		}
+	}
+	return results;
+}
+
 // ─── Body Generation ─────────────────────────────────────────────────────────
 
 /**
@@ -378,6 +522,41 @@ export function generateBody(title: string, sections: DocumentSections): string 
 			parts.push("### Constraints", "");
 			for (const c of sections.implementationNotes.constraints) {
 				parts.push(`- ${c}`);
+			}
+			parts.push("");
+		}
+	}
+
+	// Acceptance Criteria (only if has content)
+	const ac = sections.acceptanceCriteria;
+	if (ac.scenarios.length > 0 || ac.falsifiability.length > 0 || ac.constraints.length > 0) {
+		parts.push(SECTION_HEADINGS.acceptanceCriteria, "");
+
+		if (ac.scenarios.length > 0) {
+			parts.push("### Scenarios", "");
+			for (const s of ac.scenarios) {
+				if (s.title && !s.title.match(/^Scenario \d+$/)) {
+					parts.push(`#### ${s.title}`, "");
+				}
+				if (s.given) parts.push(`**Given** ${s.given}`);
+				if (s.when) parts.push(`**When** ${s.when}`);
+				if (s.then) parts.push(`**Then** ${s.then}`);
+				parts.push("");
+			}
+		}
+
+		if (ac.falsifiability.length > 0) {
+			parts.push("### Falsifiability", "");
+			for (const f of ac.falsifiability) {
+				parts.push(`- This decision is wrong if: ${f.condition}`);
+			}
+			parts.push("");
+		}
+
+		if (ac.constraints.length > 0) {
+			parts.push("### Constraints", "");
+			for (const c of ac.constraints) {
+				parts.push(`- [${c.checked ? "x" : " "}] ${c.text}`);
 			}
 			parts.push("");
 		}
@@ -531,6 +710,66 @@ export function getNodeSections(node: DesignNode): DocumentSections {
 	return parseSections(body);
 }
 
+/**
+ * Lightweight acceptance-criteria counter for the `list` hot path.
+ * Avoids full section parse by scanning for the AC section and counting
+ * structural markers (Given blocks, bullet items, checkboxes) with regex.
+ * Returns null when no Acceptance Criteria section exists.
+ */
+export function countAcceptanceCriteria(
+	node: DesignNode,
+): { scenarios: number; falsifiability: number; constraints: number } | null {
+	let content: string;
+	try {
+		content = fs.readFileSync(node.filePath, "utf-8");
+	} catch {
+		return null;
+	}
+
+	// Find the ## Acceptance Criteria section via string search (regex lookahead
+	// for end-of-string is unreliable across JS engines with multiline mode).
+	const ACH = "\n## Acceptance Criteria\n";
+	const acStart = content.indexOf(ACH);
+	if (acStart === -1) return null;
+	const acBodyStart = acStart + ACH.length;
+	const nextH2 = content.indexOf("\n## ", acBodyStart);
+	const acBody = nextH2 >= 0 ? content.slice(acBodyStart, nextH2) : content.slice(acBodyStart);
+
+	// Count **Given** occurrences for scenarios
+	const scenarioCount = (acBody.match(/^\*\*Given\*\*/gm) ?? []).length;
+
+	// Find the ### Falsifiability sub-section and count list items
+	const falsifiabilityCount = (() => {
+		const h = "\n### Falsifiability\n";
+		const start = acBody.indexOf(h);
+		if (start === -1) return 0;
+		const bodyStart = start + h.length;
+		const nextH3 = acBody.indexOf("\n### ", bodyStart);
+		const sub = nextH3 >= 0 ? acBody.slice(bodyStart, nextH3) : acBody.slice(bodyStart);
+		return (sub.match(/^\s*-\s+\S/gm) ?? []).length;
+	})();
+
+	// Find the ### Constraints sub-section and count checkboxes
+	const constraintCount = (() => {
+		const h = "\n### Constraints\n";
+		const start = acBody.indexOf(h);
+		if (start === -1) return 0;
+		const bodyStart = start + h.length;
+		const nextH3 = acBody.indexOf("\n### ", bodyStart);
+		const sub = nextH3 >= 0 ? acBody.slice(bodyStart, nextH3) : acBody.slice(bodyStart);
+		return (sub.match(/^\s*-\s+\[[ xX]\]/gm) ?? []).length;
+	})();
+
+	const total = scenarioCount + falsifiabilityCount + constraintCount;
+	if (total === 0) return null;
+
+	return {
+		scenarios: scenarioCount,
+		falsifiability: falsifiabilityCount,
+		constraints: constraintCount,
+	};
+}
+
 // ─── Tree Mutations ──────────────────────────────────────────────────────────
 
 /**
@@ -579,6 +818,7 @@ export function createNode(
 		decisions: [],
 		openQuestions: [],
 		implementationNotes: { fileScope: [], constraints: [], rawContent: "" },
+		acceptanceCriteria: { scenarios: [], falsifiability: [], constraints: [] },
 		extraSections: [],
 	};
 
@@ -1210,4 +1450,133 @@ export function scaffoldOpenSpecChange(
 		`  - After implementation, run \`/assess spec ${node.id}\` to verify against specs`;
 
 	return { message, changePath, files };
+}
+
+// ─── Design-phase OpenSpec Scaffolding ──────────────────────────────────────
+
+/**
+ * Scaffold a design-phase OpenSpec change at openspec/design/<node-id>/.
+ * Called on set_status(exploring) transition — idempotent (returns early if
+ * the directory already has files).
+ *
+ * Generated files:
+ *   proposal.md — one-liner intent + link to design doc
+ *   spec.md     — template with Scenarios / Falsifiability / Constraints subsections
+ *   tasks.md    — Open Questions mirrored as unchecked tasks
+ */
+export function scaffoldDesignOpenSpecChange(
+	cwd: string,
+	node: DesignNode,
+): { message: string; changePath: string; created: boolean } {
+	const changePath = path.join(cwd, "openspec", "design", node.id);
+
+	// Idempotent: if directory already has markdown files, skip
+	if (fs.existsSync(changePath)) {
+		const existing = fs.readdirSync(changePath).filter((f) => f.endsWith(".md"));
+		if (existing.length > 0) {
+			return {
+				message: `Design OpenSpec change already exists at openspec/design/${node.id}/ — skipping scaffold.`,
+				changePath,
+				created: false,
+			};
+		}
+	}
+
+	fs.mkdirSync(changePath, { recursive: true });
+
+	const sections = getNodeSections(node);
+	const docRelPath = `docs/${node.id}.md`;
+
+	// ── proposal.md ──────────────────────────────────────────────
+	const intentLine = sections.overview
+		? sections.overview.split("\n").find((l) => l.trim()) ?? sections.overview
+		: `Explore and decide the design of: ${node.title}`;
+
+	const proposal = [
+		`# ${node.title}`,
+		"",
+		"## Intent",
+		"",
+		intentLine,
+		"",
+		`See [${node.title} design doc](../../../${docRelPath}) for full context.`,
+		"",
+	].join("\n");
+
+	fs.writeFileSync(path.join(changePath, "proposal.md"), proposal);
+
+	// ── spec.md ───────────────────────────────────────────────────
+	const spec = [
+		`# ${node.title} — Design Spec`,
+		"",
+		"> This spec defines acceptance criteria for the design phase.",
+		"> Add Given/When/Then scenarios that must be true before marking this node 'decided'.",
+		"",
+		"## Scenarios",
+		"",
+		"<!-- Add scenarios here. Example:",
+		"Given [context]",
+		"When [action or condition]",
+		"Then [observable outcome]",
+		"-->",
+		"",
+		"## Falsifiability",
+		"",
+		"<!-- What would disprove this design? List concrete failure conditions. -->",
+		"",
+		"## Constraints",
+		"",
+		"<!-- Non-negotiable constraints this design must satisfy. -->",
+		"",
+	].join("\n");
+
+	fs.writeFileSync(path.join(changePath, "spec.md"), spec);
+
+	// ── tasks.md ──────────────────────────────────────────────────
+	const tasks = buildDesignTasksContent(node, sections);
+	fs.writeFileSync(path.join(changePath, "tasks.md"), tasks);
+
+	return {
+		message: `Scaffolded design OpenSpec change at openspec/design/${node.id}/ (proposal.md, spec.md, tasks.md).`,
+		changePath,
+		created: true,
+	};
+}
+
+/**
+ * Build tasks.md content from a node's Open Questions.
+ * Used both during initial scaffold and for mirroring on question mutations.
+ */
+export function buildDesignTasksContent(node: DesignNode, sections: DocumentSections): string {
+	const lines = [`# ${node.title} — Design Tasks`, ""];
+
+	if (sections.openQuestions.length === 0) {
+		lines.push("## 1. Design exploration", "");
+		lines.push(`- [ ] 1.1 Explore and decide: ${node.title}`);
+		lines.push("");
+	} else {
+		lines.push("## 1. Open Questions", "");
+		let i = 1;
+		for (const q of sections.openQuestions) {
+			lines.push(`- [ ] 1.${i} ${q}`);
+			i++;
+		}
+		lines.push("");
+	}
+
+	return lines.join("\n");
+}
+
+/**
+ * Mirror the node's Open Questions to tasks.md in the design OpenSpec change
+ * directory (openspec/design/<node-id>/tasks.md), if that directory exists.
+ * Idempotent — overwrites tasks.md on every call.
+ */
+export function mirrorOpenQuestionsToDesignSpec(cwd: string, node: DesignNode): void {
+	const tasksPath = path.join(cwd, "openspec", "design", node.id, "tasks.md");
+	if (!fs.existsSync(tasksPath)) return;
+
+	const sections = getNodeSections(node);
+	const content = buildDesignTasksContent(node, sections);
+	fs.writeFileSync(tasksPath, content);
 }

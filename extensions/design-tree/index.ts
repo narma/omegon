@@ -41,6 +41,7 @@ import {
 	getChildren,
 	getAllOpenQuestions,
 	getDocBody,
+	countAcceptanceCriteria,
 	getNodeSections,
 	createNode,
 	setNodeStatus,
@@ -55,6 +56,8 @@ import {
 	toSlug,
 	validateNodeId,
 	scaffoldOpenSpecChange,
+	scaffoldDesignOpenSpecChange,
+	mirrorOpenQuestionsToDesignSpec,
 	matchBranchToNode,
 	appendBranch,
 	readGitBranch,
@@ -268,6 +271,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 							openspec_change: n.openspec_change ?? null,
 							priority: n.priority ?? null,
 							issue_type: n.issue_type ?? null,
+							acceptance_criteria_summary: countAcceptanceCriteria(n),
 							lifecycle: {
 								// Normalized binding status from canonical resolver when available.
 								// The fallback (binding.bound ? "bound" : "unbound") is an explicit safety
@@ -323,6 +327,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 								fileScope: sections.implementationNotes.fileScope,
 								constraints: sections.implementationNotes.constraints,
 							},
+							acceptanceCriteria: sections.acceptanceCriteria,
 							extraSections: sections.extraSections.map((s) => s.heading),
 						},
 						lifecycle: {
@@ -700,6 +705,16 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 
 					let text = `${STATUS_ICONS[newStatus]} '${node.title}': ${oldStatus} → ${newStatus}`;
 
+					// If transitioning to exploring, scaffold design OpenSpec change (idempotent)
+					if (newStatus === "exploring") {
+						const result = scaffoldDesignOpenSpecChange(ctx.cwd, node);
+						if (result.created) {
+							text += `\n\nScaffolded design spec at openspec/design/${node.id}/\n` +
+								`  - proposal.md, spec.md, tasks.md\n\n` +
+								`Fill in spec.md with Given/When/Then scenarios that must be true before deciding.`;
+						}
+					}
+
 					// If transitioning to decided, check for OpenSpec bridge opportunity
 					if (newStatus === "decided") {
 						const sections = getNodeSections(node);
@@ -734,6 +749,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					const updated = addOpenQuestion(node, params.question);
 					tree.nodes.set(updated.id, updated);
 					emitCurrentState();
+					mirrorOpenQuestionsToDesignSpec(ctx.cwd, updated);
 					return {
 						content: [{ type: "text", text: `Added question to '${node.title}': ${params.question}` }],
 						details: { id: node.id, question: params.question, totalQuestions: updated.open_questions.length },
@@ -752,6 +768,7 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					const updated = removeOpenQuestion(node, params.question);
 					tree.nodes.set(updated.id, updated);
 					emitCurrentState();
+					mirrorOpenQuestionsToDesignSpec(ctx.cwd, updated);
 					return {
 						content: [{ type: "text", text: `Removed question from '${node.title}'` }],
 						details: { id: node.id, remainingQuestions: updated.open_questions.length },
