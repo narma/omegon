@@ -3,11 +3,11 @@
   "changeName": "repo-consolidation-hardening",
   "assessmentKind": "spec",
   "outcome": "pass",
-  "timestamp": "2026-03-12T12:47:16.052Z",
-  "summary": "Umbrella change — filled in Scope and Success Criteria in proposal.md. All 5 child slices individually archived. Design node implemented. Nothing to verify at the umbrella level.",
+  "timestamp": "2026-03-12T12:48:21.267Z",
+  "summary": "Added minimal tasks.md to unblock archive gate. All 5 child slices individually archived. Design node implemented.",
   "snapshot": {
-    "gitHead": "f4f1cdca28de7d7c2f6f0bcf2d88ad37b808a34b",
-    "fingerprint": "91fa89920a5759b79b66a2ecc7ca5830da13136cf85e269ebd1d25792cb73194",
+    "gitHead": "60c21d09be0f3a918908407b8e432fe2138d8639",
+    "fingerprint": "11e8a7423ccdf0d7ec5596499b83e398cefa11051ab1e121c036e945180acd48",
     "dirty": true,
     "scopedPaths": [],
     "files": [
@@ -16,6 +16,12 @@
         "exists": true,
         "size": 1172,
         "sha256": "70bede318f1fce1c647ec3d18a1977707a2ac3ad01d79465a73b223dab089954"
+      },
+      {
+        "path": "openspec/changes/repo-consolidation-hardening/tasks.md",
+        "exists": true,
+        "size": 337,
+        "sha256": "3c9a319cb8be10bea1e94def6e9166f18173223ade06a4bc17884c8065ec708e"
       }
     ]
   },
