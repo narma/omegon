@@ -8,7 +8,7 @@
 // ── Schema version ────────────────────────────────────────────────────────────
 
 /** Bumped when the shape of ControlPlaneState changes in a breaking way. */
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
 export type SchemaVersion = typeof SCHEMA_VERSION;
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -114,6 +114,87 @@ export interface DesignNodeSummary {
   tags: string[];
   openspecChange: string | null;
   branch: string | null;
+  /** Linked design-phase OpenSpec change info, if any. */
+  designSpec: DesignSpecBinding | null;
+  /** Acceptance-criteria summary counts from the node document, if any. */
+  acSummary: ACSummary | null;
+  /** Latest design-spec assessment result, if any. */
+  assessmentResult: AssessmentResult | null;
+}
+
+/** Binding between a design node and its openspec/design/<nodeId>/ directory. */
+export interface DesignSpecBinding {
+  /** Relative path to the design change directory (openspec/design/<nodeId>/). */
+  changePath: string;
+  hasProposal: boolean;
+  hasSpec: boolean;
+  hasTasks: boolean;
+  hasAssessment: boolean;
+  tasksDone: number;
+  tasksTotal: number;
+  isArchived: boolean;
+}
+
+/** Acceptance-criteria counts parsed from the node's markdown document. */
+export interface ACSummary {
+  scenarios: number;
+  falsifiability: number;
+  constraints: number;
+}
+
+/** Latest assessment.json result for a design-spec change. */
+export interface AssessmentResult {
+  pass: boolean;
+  capturedAt: string;
+}
+
+// ── Design Pipeline ───────────────────────────────────────────────────────────
+
+/**
+ * A single design-phase change entry (openspec/design/<nodeId>/).
+ */
+export interface DesignChangeSummary {
+  nodeId: string;
+  changePath: string;
+  hasProposal: boolean;
+  hasSpec: boolean;
+  hasTasks: boolean;
+  hasAssessment: boolean;
+  assessmentPass: boolean | null;
+  capturedAt: string | null;
+  tasksDone: number;
+  tasksTotal: number;
+  isArchived: boolean;
+  archivedPath: string | undefined;
+}
+
+/**
+ * Funnel counts — how many design nodes have reached each lifecycle milestone.
+ */
+export interface DesignFunnelCounts {
+  /** Total design nodes. */
+  total: number;
+  /** Nodes with an openspec/design/<nodeId>/ binding. */
+  bound: number;
+  /** Bound nodes where tasksTotal > 0 and tasksDone >= tasksTotal. */
+  tasksComplete: number;
+  /** Bound nodes with a passing assessment. */
+  assessed: number;
+  /** Archived design-phase changes. */
+  archived: number;
+}
+
+/**
+ * Snapshot of the design-pipeline funnel.
+ * Top-level slice at GET /api/design-pipeline.
+ */
+export interface DesignPipelineSnapshot {
+  /** ISO 8601 timestamp when snapshot was generated. */
+  capturedAt: string;
+  /** All active + archived design-phase changes. */
+  changes: DesignChangeSummary[];
+  /** Funnel counts across the design tree. */
+  funnelCounts: DesignFunnelCounts;
 }
 
 // ── OpenSpec ──────────────────────────────────────────────────────────────────
@@ -197,4 +278,5 @@ export interface ControlPlaneState {
   models: ModelsSnapshot;
   memory: MemorySnapshot;
   health: HealthSnapshot;
+  designPipeline: DesignPipelineSnapshot;
 }

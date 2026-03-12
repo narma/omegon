@@ -1267,3 +1267,108 @@ export function summarizeSpecs(specs: SpecFile[]): string {
 
 	return `${domains.length} domain(s), ${totalReqs} requirement(s), ${totalScenarios} scenario(s)`;
 }
+
+// ─── Design Change Scanning ──────────────────────────────────────────────────
+
+/**
+ * Metadata about a design-phase OpenSpec change (openspec/design/<nodeId>/).
+ */
+export interface DesignChangeInfo {
+	nodeId: string;
+	path: string;
+	hasProposal: boolean;
+	hasSpec: boolean;
+	hasTasks: boolean;
+	hasAssessment: boolean;
+	assessmentPass: boolean | null;
+	capturedAt: string | null;
+	tasksDone: number;
+	tasksTotal: number;
+	isArchived: boolean;
+	archivedPath?: string;
+}
+
+/**
+ * Scan openspec/design/ (active) and openspec/design-archive/ (archived) for
+ * design-phase change directories.  Returns [] when neither directory exists.
+ */
+export function listDesignChanges(repoRoot: string): DesignChangeInfo[] {
+	const results: DesignChangeInfo[] = [];
+
+	function scanDir(dir: string, archived: boolean): void {
+		if (!fs.existsSync(dir)) return;
+		let entries: string[];
+		try {
+			entries = fs.readdirSync(dir);
+		} catch {
+			return;
+		}
+		for (const entry of entries) {
+			const entryPath = path.join(dir, entry);
+			try {
+				const stat = fs.statSync(entryPath);
+				if (!stat.isDirectory()) continue;
+			} catch {
+				continue;
+			}
+
+			const proposalPath  = path.join(entryPath, "proposal.md");
+			const specPath      = path.join(entryPath, "spec.md");
+			const tasksPath     = path.join(entryPath, "tasks.md");
+			const assessPath    = path.join(entryPath, "assessment.json");
+
+			const hasProposal   = fs.existsSync(proposalPath);
+			const hasSpec       = fs.existsSync(specPath);
+			const hasTasks      = fs.existsSync(tasksPath);
+			const hasAssessment = fs.existsSync(assessPath);
+
+			// Parse tasks.md checkbox progress
+			let tasksDone  = 0;
+			let tasksTotal = 0;
+			if (hasTasks) {
+				try {
+					const raw = fs.readFileSync(tasksPath, "utf8");
+					const all  = raw.match(/^\s*-\s+\[[ xX]\]/gm) ?? [];
+					const done = raw.match(/^\s*-\s+\[[xX]\]/gm) ?? [];
+					tasksTotal = all.length;
+					tasksDone  = done.length;
+				} catch { /* leave at 0 */ }
+			}
+
+			// Parse assessment.json
+			let assessmentPass: boolean | null = null;
+			let capturedAt: string | null = null;
+			if (hasAssessment) {
+				try {
+					const raw = JSON.parse(fs.readFileSync(assessPath, "utf8")) as {
+						outcome?: string;
+						timestamp?: string;
+					};
+					assessmentPass = raw.outcome === "pass";
+					capturedAt = raw.timestamp ?? null;
+				} catch { /* leave null */ }
+			}
+
+			const info: DesignChangeInfo = {
+				nodeId: entry,
+				path: entryPath,
+				hasProposal,
+				hasSpec,
+				hasTasks,
+				hasAssessment,
+				assessmentPass,
+				capturedAt,
+				tasksDone,
+				tasksTotal,
+				isArchived: archived,
+			};
+			if (archived) info.archivedPath = entryPath;
+			results.push(info);
+		}
+	}
+
+	scanDir(path.join(repoRoot, "openspec", "design"), false);
+	scanDir(path.join(repoRoot, "openspec", "design-archive"), true);
+
+	return results;
+}

@@ -12,8 +12,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { sharedState } from "../shared-state.ts";
-import { listChanges } from "../openspec/spec.ts";
-import { scanDesignDocs } from "../design-tree/tree.ts";
+import { listChanges, listDesignChanges } from "../openspec/spec.ts";
+import { scanDesignDocs, countAcceptanceCriteria } from "../design-tree/tree.ts";
 import {
   SCHEMA_VERSION,
   type ControlPlaneState,
@@ -21,6 +21,9 @@ import {
   type DashboardSnapshot,
   type DesignTreeSnapshot,
   type DesignNodeSummary,
+  type DesignSpecBinding,
+  type ACSummary,
+  type AssessmentResult,
   type OpenSpecSnapshot,
   type OpenSpecChangeSummary,
   type CleaveSnapshot,
@@ -29,6 +32,9 @@ import {
   type HealthSnapshot,
   type RecoverySnapshot,
   type OperatorMetadataSnapshot,
+  type DesignPipelineSnapshot,
+  type DesignChangeSummary,
+  type DesignFunnelCounts,
 } from "./types.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -134,6 +140,56 @@ function buildDashboard(): DashboardSnapshot {
   };
 }
 
+function resolveDesignSpecBinding(repoRoot: string, nodeId: string): DesignSpecBinding | null {
+  const activeDir   = path.join(repoRoot, "openspec", "design", nodeId);
+  const archiveDir  = path.join(repoRoot, "openspec", "design-archive", nodeId);
+  const [dir, isArchived] = fs.existsSync(activeDir)
+    ? [activeDir, false]
+    : fs.existsSync(archiveDir)
+      ? [archiveDir, true]
+      : [null, false];
+
+  if (!dir) return null;
+
+  const hasProposal   = fs.existsSync(path.join(dir, "proposal.md"));
+  const hasSpec       = fs.existsSync(path.join(dir, "spec.md"));
+  const hasTasks      = fs.existsSync(path.join(dir, "tasks.md"));
+  const hasAssessment = fs.existsSync(path.join(dir, "assessment.json"));
+
+  let tasksDone  = 0;
+  let tasksTotal = 0;
+  if (hasTasks) {
+    try {
+      const raw = fs.readFileSync(path.join(dir, "tasks.md"), "utf8");
+      tasksTotal = (raw.match(/^\s*-\s+\[[ xX]\]/gm) ?? []).length;
+      tasksDone  = (raw.match(/^\s*-\s+\[[xX]\]/gm) ?? []).length;
+    } catch { /* ignore */ }
+  }
+
+  // Relative path from repoRoot for portability
+  const changePath = path.relative(repoRoot, dir);
+
+  return { changePath, hasProposal, hasSpec, hasTasks, hasAssessment, tasksDone, tasksTotal, isArchived };
+}
+
+function readAssessmentResult(repoRoot: string, nodeId: string): AssessmentResult | null {
+  for (const subDir of ["design", "design-archive"]) {
+    const assessPath = path.join(repoRoot, "openspec", subDir, nodeId, "assessment.json");
+    if (fs.existsSync(assessPath)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(assessPath, "utf8")) as {
+          outcome?: string;
+          timestamp?: string;
+        };
+        if (raw.timestamp) {
+          return { pass: raw.outcome === "pass", capturedAt: raw.timestamp };
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  return null;
+}
+
 function buildDesignTree(repoRoot: string): DesignTreeSnapshot {
   // Use sharedState.designTree if available (populated by design-tree extension),
   // otherwise fall back to an on-demand file scan.
@@ -157,6 +213,13 @@ function buildDesignTree(repoRoot: string): DesignTreeSnapshot {
     try {
       const tree = scanDesignDocs(docsDir);
       for (const [, node] of tree.nodes) {
+        const acRaw   = countAcceptanceCriteria(node);
+        const acSummary: ACSummary | null = acRaw
+          ? { scenarios: acRaw.scenarios, falsifiability: acRaw.falsifiability, constraints: acRaw.constraints }
+          : null;
+        const designSpec    = resolveDesignSpecBinding(repoRoot, node.id);
+        const assessmentResult = readAssessmentResult(repoRoot, node.id);
+
         const summary: DesignNodeSummary = {
           id: node.id,
           title: node.title,
@@ -167,6 +230,9 @@ function buildDesignTree(repoRoot: string): DesignTreeSnapshot {
           tags: node.tags,
           openspecChange: node.openspec_change ?? null,
           branch: node.branch ?? null,
+          designSpec,
+          acSummary,
+          assessmentResult,
         };
         nodes.push(summary);
         statusCounts[node.status] = (statusCounts[node.status] ?? 0) + 1;
@@ -274,6 +340,56 @@ function buildMemory(): MemorySnapshot {
   };
 }
 
+function buildDesignPipeline(repoRoot: string): DesignPipelineSnapshot {
+  const raw = listDesignChanges(repoRoot);
+
+  const changes: DesignChangeSummary[] = raw.map((c) => ({
+    nodeId:         c.nodeId,
+    changePath:     path.relative(repoRoot, c.path),
+    hasProposal:    c.hasProposal,
+    hasSpec:        c.hasSpec,
+    hasTasks:       c.hasTasks,
+    hasAssessment:  c.hasAssessment,
+    assessmentPass: c.assessmentPass,
+    capturedAt:     c.capturedAt,
+    tasksDone:      c.tasksDone,
+    tasksTotal:     c.tasksTotal,
+    isArchived:     c.isArchived,
+    archivedPath:   c.archivedPath ? path.relative(repoRoot, c.archivedPath) : undefined,
+  }));
+
+  // Compute funnel counts from design tree (on-demand scan)
+  let total    = 0;
+  let bound    = 0;
+  let tasksComplete = 0;
+  let assessed = 0;
+  const archived = raw.filter((c) => c.isArchived).length;
+
+  try {
+    const docsDir = path.join(repoRoot, "docs");
+    if (fs.existsSync(docsDir)) {
+      const tree = scanDesignDocs(docsDir);
+      for (const [, node] of tree.nodes) {
+        total++;
+        const binding = resolveDesignSpecBinding(repoRoot, node.id);
+        if (!binding) continue;
+        bound++;
+        if (binding.tasksTotal > 0 && binding.tasksDone >= binding.tasksTotal) tasksComplete++;
+        const ar = readAssessmentResult(repoRoot, node.id);
+        if (ar?.pass) assessed++;
+      }
+    }
+  } catch { /* design tree may not exist */ }
+
+  const funnelCounts: DesignFunnelCounts = { total, bound, tasksComplete, assessed, archived };
+
+  return {
+    capturedAt: new Date().toISOString(),
+    changes,
+    funnelCounts,
+  };
+}
+
 function buildHealth(startedAt: number): HealthSnapshot {
   return {
     status: "ok",
@@ -304,6 +420,7 @@ export function buildControlPlaneState(
     models: buildModels(),
     memory: buildMemory(),
     health: buildHealth(startedAt),
+    designPipeline: buildDesignPipeline(repoRoot),
   };
 }
 
@@ -325,6 +442,7 @@ export function buildSlice(
     case "models":     return buildModels();
     case "memory":     return buildMemory();
     case "health":     return buildHealth(startedAt);
+    case "designPipeline": return buildDesignPipeline(repoRoot);
     default: {
       const _exhaustive: never = slice;
       throw new Error(`Unhandled slice: ${String(_exhaustive)}`);
