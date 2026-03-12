@@ -127,6 +127,27 @@ describe("dashboard recovery state", () => {
     assert.ok(linesStacked.some((line) => line.includes("→ anthropic/claude-sonnet-4-5")), linesStacked.join("\n"));
   });
 
+  it("compact escalate badge shows ⚠ icon, error label, and /set-model-tier hint", () => {
+    (sharedState as any).recovery = makeRecoveryState({
+      action: "escalate",
+      classification: "exhausted",
+      summary: "All automatic recovery options exhausted.",
+    });
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      makeFooterData() as any,
+      { mode: "compact", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const [line] = footer.render(160);
+    assert.match(line, /⚠ escalated/, `Expected ⚠ escalated in: ${line}`);
+    assert.match(line, /\/set-model-tier/, `Expected /set-model-tier hint in: ${line}`);
+    assert.doesNotMatch(line, /↺/, `Should not use ↺ icon for escalate: ${line}`);
+  });
+
   it("omits recovery lines when no recovery state is present", () => {
     const footer = new DashboardFooter(
       {} as any,

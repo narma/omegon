@@ -1,7 +1,7 @@
 ---
 id: dashboard-recovery-badge
 title: Dashboard Recovery Badge — Actionability
-status: decided
+status: implemented
 parent: unified-dashboard
 tags: [dashboard, recovery, ux]
 open_questions: []
