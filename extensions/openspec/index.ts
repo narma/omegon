@@ -778,20 +778,112 @@ export default function openspecExtension(pi: ExtensionAPI): void {
 		},
 
 		renderCall(args, theme) {
-			let text = theme.fg("toolTitle", theme.bold("openspec "));
-			text += theme.fg("accent", args.action);
-			if (args.change_name) text += " " + theme.fg("dim", args.change_name);
-			return new Text(text, 0, 0);
+			const icon = theme.fg("accent", "◎");
+			const action = theme.fg("toolTitle", theme.bold(args.action));
+			let extra = "";
+			switch (args.action) {
+				case "propose":
+					extra = args.name ? " " + theme.fg("dim", args.name) : "";
+					break;
+				case "add_spec":
+					if (args.change_name && args.domain)
+						extra = " " + theme.fg("dim", `${args.change_name}/${args.domain}`);
+					else if (args.change_name)
+						extra = " " + theme.fg("dim", args.change_name);
+					break;
+				case "generate_spec":
+					if (args.change_name && args.domain)
+						extra = " " + theme.fg("dim", `${args.change_name}/${args.domain}`);
+					else if (args.change_name)
+						extra = " " + theme.fg("dim", args.change_name);
+					break;
+				case "fast_forward":
+				case "get":
+				case "archive":
+				case "reconcile_after_assess":
+					extra = args.change_name ? " " + theme.fg("dim", args.change_name) : "";
+					break;
+				case "status":
+					extra = "";
+					break;
+			}
+			return new Text(`${icon} ${action}${extra}`, 0, 0);
 		},
 
-		renderResult(result, _opts, theme) {
+		renderResult(result, { expanded }, theme) {
 			if ((result as any).isError) {
 				const first = result.content?.[0];
-				return new Text(theme.fg("error", (first && 'text' in first ? first.text : "Error")), 0, 0);
+				const msg = (first && "text" in first ? first.text : "Error").split("\n")[0];
+				return new Text(theme.fg("accent", "◎") + " " + theme.fg("error", `✕ ${msg}`), 0, 0);
 			}
-			const first = result.content?.[0];
-			const text = (first && 'text' in first ? first.text : null) || "Done";
-			return new Text(theme.fg("success", text.split("\n")[0]), 0, 0);
+
+			if (expanded) {
+				const first = result.content?.[0];
+				const full = (first && "text" in first ? first.text : null) || "Done";
+				return new Text(theme.fg("success", full), 0, 0);
+			}
+
+			// Collapsed: action-specific one-liner
+			const details = (result.details || {}) as Record<string, any>;
+			const icon = theme.fg("accent", "◎");
+			let summary = "";
+
+			if (details.changePath) {
+				// propose
+				const name = typeof details.changePath === "string"
+					? details.changePath.split("/").pop() ?? details.changePath
+					: "";
+				summary = theme.fg("success", `✓ proposed ${name}`);
+			} else if (details.specPath !== undefined && details.sections !== undefined) {
+				// add_spec
+				const specName = typeof details.specPath === "string"
+					? details.specPath.split("/").slice(-2).join("/")
+					: "spec";
+				summary = theme.fg("success", `✓ spec added ${specName}`);
+			} else if (details.specPath !== undefined && details.generated) {
+				// generate_spec
+				const specName = typeof details.specPath === "string"
+					? details.specPath.split("/").slice(-2).join("/")
+					: "spec";
+				summary = theme.fg("success", `✓ spec generated ${specName}`);
+			} else if (details.files && !details.operations) {
+				// fast_forward
+				const files = Array.isArray(details.files) ? details.files.join(", ") : "files";
+				summary = theme.fg("success", `✓ fast-forwarded (${files})`);
+			} else if (details.operations) {
+				// archive
+				const name = details.transitionedNodes !== undefined
+					? (result.content?.[0] && "text" in result.content[0]
+						? result.content[0].text.match(/Archived '([^']+)'/)?.[1] ?? "change"
+						: "change")
+					: "change";
+				summary = theme.fg("success", `✓ archived ${name}`);
+			} else if (details.changes) {
+				// status
+				const count = Array.isArray(details.changes) ? details.changes.length : 0;
+				summary = count === 0
+					? theme.fg("muted", "no active changes")
+					: theme.fg("success", `${count} change${count !== 1 ? "s" : ""}`);
+			} else if (details.change) {
+				// get
+				const name = details.change?.name ?? "";
+				const stage = details.change?.stage ?? "";
+				summary = theme.fg("accent", `${name}`) + theme.fg("muted", ` (${stage})`);
+			} else if (details.reconcileCandidatesEmitted !== undefined) {
+				// reconcile_after_assess
+				const changeName = details.changeName
+					?? (result.content?.[0] && "text" in result.content[0]
+						? result.content[0].text.match(/reconciliation applied to '([^']+)'/)?.[1]
+						: null)
+					?? "change";
+				const outcome = details.lifecycleSignals?.outcome ?? "";
+				summary = theme.fg("success", `✓ reconciled ${changeName}`) + theme.fg("muted", ` (${outcome})`);
+			} else {
+				const first = result.content?.[0];
+				summary = theme.fg("success", (first && "text" in first ? first.text?.split("\n")[0] : null) || "done");
+			}
+
+			return new Text(`${icon} ${summary}`, 0, 0);
 		},
 	});
 
