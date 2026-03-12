@@ -122,13 +122,14 @@ describe("DashboardFooter raised mode polish", () => {
     footer.setContext(makeContext() as any);
 
     const lines = footer.render(160);
-    // Consolidated memory line uses ⌗ icon and "injected" label
-    const memoryLine = lines.find((line) => line.includes("⌗") || line.includes("injected"));
-    assert.ok(memoryLine, `expected consolidated memory line; got:\n${lines.join("\n")}`);
-    assert.ok(!memoryLine?.includes("chars:"));
-    assert.ok(!memoryLine?.includes("hits:"));
-    // Should show injection stats from sharedState.lastMemoryInjection
-    assert.ok(memoryLine?.includes("30 injected") || memoryLine?.includes("injected"), memoryLine);
+    // HUD memory section: divider line labels the section, data line uses terse "inj" label.
+    // ⌗ appears only when the memory extension reports a fact count in its status text.
+    const memDivider = lines.find((l) => l.includes("╌╌ memory"));
+    assert.ok(memDivider, `expected HUD "memory" section divider; got:\n${lines.join("\n")}`);
+    const memDataLine = lines.find((line) => line.includes("inj "));
+    assert.ok(memDataLine, `expected memory data line with "inj" label; got:\n${lines.join("\n")}`);
+    assert.ok(!memDataLine?.includes("chars:"));
+    assert.ok(!memDataLine?.includes("hits:"));
   });
 
   it("wide raised mode uses two-column layout — design tree full-width, recovery+cleave left, openspec right", () => {
@@ -243,13 +244,15 @@ describe("DashboardFooter raised mode polish", () => {
     footer.setContext(makeContext() as any);
 
     const lines = footer.render(100);
-    // The meta line includes "Context", "gpt-5.4", and the context gauge percentage.
-    const metaLine = lines.find((l) => l.includes("Context") && l.includes("gpt-5.4"));
-    assert.ok(metaLine, `expected meta line with Context + gpt-5.4; got:\n${lines.join("\n")}`);
-    assert.ok(metaLine!.includes("31%"), `expected context percent in meta line: ${metaLine}`);
-    // There must NOT be a separate bare-percentage stats row (no "31%/272k" without "Context ").
-    const bareStatsLine = lines.find((l) => l.includes("31%/272k") && l.includes("gpt-5.4") && !l.includes("Context"));
-    assert.ok(!bareStatsLine, `raised mode must not emit a duplicate bare stats row:\n${lines.join("\n")}`);
+    // HUD context section: bar line uses ▐▌ delimiters and shows %; provider/model line uses ▸ pointer.
+    const barLine = lines.find((l) => l.includes("▐") && l.includes("▌"));
+    assert.ok(barLine, `expected HUD bar line with ▐▌ delimiters; got:\n${lines.join("\n")}`);
+    assert.ok(barLine!.includes("31%"), `expected context percent in bar line: ${barLine}`);
+    const modelLine = lines.find((l) => l.includes("▸") && l.includes("gpt-5.4"));
+    assert.ok(modelLine, `expected HUD model line with ▸ pointer + model id; got:\n${lines.join("\n")}`);
+    // There must NOT be a separate bare-percentage stats row.
+    const bareStatsLine = lines.find((l) => l.includes("31%/272k") && l.includes("gpt-5.4") && l.includes("Context"));
+    assert.ok(!bareStatsLine, `raised mode must not emit old-style "Context" stats row:\n${lines.join("\n")}`);
   });
 
   it("narrow raised mode (<120) stays stacked — no inner column │ divider rows", () => {

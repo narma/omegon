@@ -22,7 +22,6 @@ import type { DashboardState, RecoveryCooldownSummary, RecoveryDashboardState } 
 import { sharedState } from "../shared-state.ts";
 import { debug } from "../debug.ts";
 import { linkDashboardFile, linkOpenSpecArtifact, linkOpenSpecChange } from "./uri-helper.ts";
-import { formatMemoryAuditSummary } from "./memory-audit.ts";
 import { buildContextGaugeModel } from "./context-gauge.ts";
 
 /**
@@ -509,22 +508,229 @@ export class DashboardFooter implements Component {
     return this.renderBoxed(contentLines, this.buildFooterZone(innerWidth), topLine, width);
   }
 
-  // ── Footer Zone (shared by stacked + wide layouts) ────────────
+  // ── HUD Footer Zone (raised mode) ────────────────────────────
 
   /**
-   * Build the shared footer zone: meta line, memory audit, separator, hint,
-   * and the original footer data lines.
+   * Dim dashed section divider with a lowercase label flush-left.
+   * Fills the remaining inner width with ╌ chars so it reads as a
+   * scan-line separator without competing with the solid box borders.
+   *
+   *   ╌╌ context ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+   */
+  private buildHudSectionDivider(label: string, innerWidth: number): string {
+    const prefix = `╌╌ ${label} `;
+    const fill = Math.max(0, innerWidth - visibleWidth(prefix));
+    return this.theme.fg("dim", prefix + "╌".repeat(fill));
+  }
+
+  /**
+   * HUD context section — two lines:
+   *   ▐▓▓████░░░░░░░░░░░░░░░▌ 43% / 200k  T·8
+   *   ▸ anthropic / claude-opus-4-6  ·  ◉ high
+   *
+   * Bar uses ▐▌ half-block delimiters (panel-slot look).
+   * ▸ acts as active-pointer glyph; ◉/○ for thinking on/off.
+   */
+  private buildHudContextLines(width: number): string[] {
+    const theme = this.theme;
+    const ctx = this.ctxRef;
+    if (!ctx) return [];
+
+    const wide = width >= 100;
+    const barWidth = wide ? 22 : 14;
+    const lines: string[] = [];
+
+    // ── Bar line ──────────────────────────────────────────────
+    const usage = ctx.getContextUsage();
+    const contextWindow = usage?.contextWindow ?? 0;
+    const gaugeModel = buildContextGaugeModel({
+      percent: usage?.percent,
+      contextWindow,
+      memoryTokenEstimate: sharedState.memoryTokenEstimate,
+      turns: this.dashState.turns,
+    }, barWidth);
+
+    const bLeft  = theme.fg("dim", "▐");
+    const bRight = theme.fg("dim", "▌");
+
+    if (gaugeModel.state === "unknown") {
+      const unknownBar = theme.fg("dim", "?".repeat(barWidth));
+      const winStr = contextWindow > 0 ? theme.fg("dim", ` / ${formatTokens(contextWindow)}`) : "";
+      lines.push(`  ${bLeft}${unknownBar}${bRight} ${theme.fg("dim", "?")}${winStr}`);
+    } else {
+      const percent = gaugeModel.percent ?? 0;
+      const otherColor: ThemeColor = percent > 70 ? "error" : percent > 45 ? "warning" : "muted";
+      let bar = "";
+      if (gaugeModel.memoryBlocks > 0) bar += theme.fg("accent", "▓".repeat(gaugeModel.memoryBlocks));
+      if (gaugeModel.otherBlocks > 0)  bar += theme.fg(otherColor, "█".repeat(gaugeModel.otherBlocks));
+      if (gaugeModel.freeBlocks > 0)   bar += theme.fg("dim", "░".repeat(gaugeModel.freeBlocks));
+
+      const pctNum = Math.round(percent);
+      const pctColor: ThemeColor = percent > 70 ? "error" : percent > 45 ? "warning" : "dim";
+      const pctStr = theme.fg(pctColor, `${pctNum}%`);
+      const winStr = contextWindow > 0 ? theme.fg("dim", ` / ${formatTokens(contextWindow)}`) : "";
+      const turnStr = gaugeModel.turns > 0 ? `  ${theme.fg("dim", `T·${gaugeModel.turns}`)}` : "";
+      lines.push(`  ${bLeft}${bar}${bRight} ${pctStr}${winStr}${turnStr}`);
+    }
+
+    // ── Provider / model / thinking line ──────────────────────
+    const m = ctx.model;
+    if (m) {
+      const multiProvider = this.footerData.getAvailableProviderCount() > 1;
+      const pointer = theme.fg("accent", "▸");
+      const dot = theme.fg("dim", "  ·  ");
+
+      const providerModel = multiProvider
+        ? `${pointer} ${theme.fg("muted", m.provider)} ${theme.fg("dim", "/")} ${theme.fg("muted", m.id)}`
+        : `${pointer} ${theme.fg("muted", m.id)}`;
+
+      const parts: string[] = [providerModel];
+
+      if (m.reasoning) {
+        const thinkColor: ThemeColor = this.cachedThinkingLevel === "high"    ? "accent"
+          : this.cachedThinkingLevel === "medium"   ? "muted"
+          : "dim";
+        const thinkIcon = this.cachedThinkingLevel === "off"
+          ? theme.fg("dim", "○")
+          : theme.fg(thinkColor, "◉");
+        parts.push(`${thinkIcon} ${theme.fg(thinkColor, this.cachedThinkingLevel)}`);
+      }
+
+      if (this.cachedTokens.cost > 0) {
+        parts.push(theme.fg("dim", `$${this.cachedTokens.cost.toFixed(3)}`));
+      }
+
+      lines.push(truncateToWidth(`  ${parts.join(dot)}`, width, "…"));
+    }
+
+    return lines;
+  }
+
+  /**
+   * HUD memory section — single line:
+   *   ⌗ 1167  ·  inj 23  ·  wm 5  ·  ep 3  ·  gl 2  ·  ~4.2k
+   *
+   * ⌗ is the established memory glyph. Sub-labels are dim, values muted.
+   */
+  private buildHudMemoryLine(width: number): string {
+    const theme = this.theme;
+    const extStatuses = this.footerData.getExtensionStatuses();
+    const memStatus = extStatuses.get("memory") ?? "";
+    const totalMatch = memStatus.match(/(\d+)\s+facts/);
+    const totalFacts = totalMatch ? parseInt(totalMatch[1], 10) : null;
+    const metrics = sharedState.lastMemoryInjection;
+
+    if (!metrics && totalFacts === null) return "";
+
+    const sep = theme.fg("dim", "  ·  ");
+    const parts: string[] = [];
+
+    if (totalFacts !== null) {
+      parts.push(`${theme.fg("accent", "⌗")} ${theme.fg("muted", String(totalFacts))}`);
+    }
+
+    if (metrics) {
+      if (metrics.projectFactCount > 0)
+        parts.push(theme.fg("dim", "inj ") + theme.fg("muted", String(metrics.projectFactCount)));
+      if (metrics.workingMemoryFactCount > 0)
+        parts.push(theme.fg("dim", "wm ")  + theme.fg("muted", String(metrics.workingMemoryFactCount)));
+      if (metrics.episodeCount > 0)
+        parts.push(theme.fg("dim", "ep ")  + theme.fg("muted", String(metrics.episodeCount)));
+      if (metrics.globalFactCount > 0)
+        parts.push(theme.fg("dim", "gl ")  + theme.fg("muted", String(metrics.globalFactCount)));
+      parts.push(theme.fg("dim", `~${metrics.estimatedTokens}`));
+    } else {
+      parts.push(theme.fg("dim", "pending injection"));
+    }
+
+    return truncateToWidth(`  ${parts.join(sep)}`, width, "…");
+  }
+
+  /**
+   * HUD system section — one or two lines:
+   *   ⌂ ~/workspace/ai/pi-kit                       ◦ my-session
+   *   ⚡ dispatch 3/8  ·  ◎ 2 active  ·  ↑ ok
+   *
+   * Extension badges reuse the established content-section glyphs so the
+   * footer visually echoes the dashboard sections above it.
+   */
+  private buildHudSystemLines(width: number): string[] {
+    const theme = this.theme;
+    const ctx = this.ctxRef;
+    const lines: string[] = [];
+
+    // ── pwd + session ─────────────────────────────────────────
+    let pwd = process.cwd();
+    const home = process.env.HOME || process.env.USERPROFILE;
+    if (home && pwd.startsWith(home)) pwd = `~${pwd.slice(home.length)}`;
+
+    const pwdStr = theme.fg("dim", "⌂ ") + theme.fg("muted", pwd);
+    const sessionName = ctx?.sessionManager?.getSessionName?.();
+    const sessionStr = sessionName
+      ? theme.fg("dim", "◦ ") + theme.fg("muted", sessionName)
+      : "";
+
+    lines.push(sessionStr
+      ? leftRight(`  ${pwdStr}`, sessionStr, width)
+      : truncateToWidth(`  ${pwdStr}`, width, "…"),
+    );
+
+    // ── Extension badges ──────────────────────────────────────
+    const GLYPH: Record<string, string> = {
+      "cleave":        "⚡",
+      "openspec":      "◎",
+      "version-check": "↑",
+      "version":       "↑",
+      "design-tree":   "◈",
+      "dashboard":     "◐",
+    };
+
+    const extStatuses = this.footerData.getExtensionStatuses();
+    const badges = Array.from(extStatuses.entries())
+      .filter(([name]) => name !== "memory")
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, text]) => {
+        const glyph = GLYPH[name] ?? "▸";
+        return theme.fg("accent", glyph) + " " + theme.fg("dim", sanitizeStatusText(text));
+      });
+
+    if (badges.length > 0) {
+      lines.push(truncateToWidth(
+        `  ${badges.join(theme.fg("dim", "  ·  "))}`,
+        width, "…",
+      ));
+    }
+
+    return lines;
+  }
+
+  /**
+   * Assemble the full HUD footer zone from the three named sections.
+   * Sections collapse when they have no data to show.
    */
   private buildFooterZone(width: number): string[] {
+    // Keep token cache current (not called in compact mode — intentional).
+    this._updateTokenCache();
+
     const zone: string[] = [];
 
-    const raisedMeta = this.buildRaisedMetaLine(width);
-    if (raisedMeta) zone.push(raisedMeta);
+    const contextLines = this.buildHudContextLines(width);
+    if (contextLines.length > 0) {
+      zone.push(this.buildHudSectionDivider("context", width));
+      zone.push(...contextLines);
+    }
 
-    const memLine = this.buildConsolidatedMemoryLine(width);
-    if (memLine) zone.push(memLine);
+    const memLine = this.buildHudMemoryLine(width);
+    if (memLine) {
+      zone.push(this.buildHudSectionDivider("memory", width));
+      zone.push(memLine);
+    }
 
-    zone.push(...this.renderFooterData(width));
+    const systemLines = this.buildHudSystemLines(width);
+    if (systemLines.length > 0) {
+      zone.push(this.buildHudSectionDivider("system", width));
+      zone.push(...systemLines);
+    }
 
     return zone;
   }
@@ -803,78 +1009,7 @@ export class DashboardFooter implements Component {
     return lines;
   }
 
-  private buildRaisedMetaLine(width: number): string {
-    const theme = this.theme;
-    const wide = width >= 120;
-    const barWidth = wide ? 20 : 16;
-    const gauge = this.buildContextGauge(barWidth);
-    const parts: string[] = [];
-
-    if (gauge) {
-      parts.push(theme.fg("dim", "Context ") + gauge);
-    }
-
-    const model = this.ctxRef?.model;
-    if (model) {
-      const multiProvider = this.footerData.getAvailableProviderCount() > 1;
-      const driverLabel = multiProvider ? model.provider : "default";
-      parts.push(theme.fg("dim", "Driver ") + theme.fg("muted", driverLabel));
-      parts.push(theme.fg("dim", "Model ") + theme.fg("muted", model.id));
-
-      if (model.reasoning) {
-        const thinkColor: ThemeColor = this.cachedThinkingLevel === "high" ? "accent"
-          : this.cachedThinkingLevel === "medium" ? "muted"
-          : this.cachedThinkingLevel === "low" || this.cachedThinkingLevel === "minimal" ? "dim"
-          : "dim";
-        const thinkIcon = this.cachedThinkingLevel === "off" ? "○" : "◉";
-        parts.push(theme.fg("dim", "Think ") + theme.fg(thinkColor, `${thinkIcon} ${this.cachedThinkingLevel}`));
-      }
-    }
-
-    return parts.length > 0 ? truncateToWidth(parts.join(theme.fg("dim", "  ·  ")), width, "…") : "";
-  }
-
-  private buildMemoryAuditLine(width: number): string {
-    const theme = this.theme;
-    // Even on wide layouts, keep this compact so it reads as a footer audit
-    // line rather than a third content column competing with the dashboard.
-    const summary = formatMemoryAuditSummary(sharedState.lastMemoryInjection, { wide: width >= 180 });
-    return truncateToWidth(theme.fg("dim", summary), width, "…");
-  }
-
-  /**
-   * Consolidated memory line: combines total stored fact count (from "memory"
-   * extension status) with live injection metrics from sharedState.
-   * Format: ⌗ N total · M injected · wm:X · ep:X · global:X · ~Xtok
-   */
-  private buildConsolidatedMemoryLine(width: number): string {
-    const theme = this.theme;
-    const extStatuses = this.footerData.getExtensionStatuses();
-    const memStatus = extStatuses.get("memory") ?? "";
-    const totalMatch = memStatus.match(/(\d+)\s+facts/);
-    const totalFacts = totalMatch ? parseInt(totalMatch[1], 10) : null;
-
-    const metrics = sharedState.lastMemoryInjection;
-    if (!metrics && totalFacts === null) return "";
-
-    const parts: string[] = [];
-    if (totalFacts !== null) {
-      parts.push(theme.fg("accent", "⌗") + theme.fg("dim", ` ${totalFacts} total`));
-    }
-    if (metrics) {
-      parts.push(theme.fg("dim", `${metrics.projectFactCount} injected`));
-      if (metrics.workingMemoryFactCount > 0) parts.push(theme.fg("dim", `wm:${metrics.workingMemoryFactCount}`));
-      if (metrics.episodeCount > 0) parts.push(theme.fg("dim", `ep:${metrics.episodeCount}`));
-      if (metrics.globalFactCount > 0) parts.push(theme.fg("dim", `global:${metrics.globalFactCount}`));
-      parts.push(theme.fg("dim", `~${metrics.estimatedTokens} tok`));
-    } else {
-      parts.push(theme.fg("dim", "pending injection"));
-    }
-
-    return truncateToWidth(parts.join(theme.fg("dim", " · ")), width, "…");
-  }
-
-  // ── Context Gauge (from status-bar) ───────────────────────────
+  // ── Context Gauge (compact mode only) ────────────────────────
 
   private buildContextGauge(barWidth: number): string {
     const theme = this.theme;
@@ -949,114 +1084,4 @@ export class DashboardFooter implements Component {
     } catch { /* session may not be ready */ }
   }
 
-  // ── Original Footer Data ──────────────────────────────────────
-
-  private renderFooterData(width: number): string[] {
-    debug("dashboard", "renderFooterData:enter", {
-      width,
-      hasCtx: !!this.ctxRef,
-      hasTheme: !!this.theme,
-      hasBranch: !!this.footerData?.getGitBranch?.(),
-    });
-    const theme = this.theme;
-    const ctx = this.ctxRef;
-    const lines: string[] = [];
-    const raised = this.dashState.mode === "raised";
-
-    // ── Line 1: pwd + git branch + session ──
-    let pwd = process.cwd();
-    const home = process.env.HOME || process.env.USERPROFILE;
-    if (home && pwd.startsWith(home)) {
-      pwd = `~${pwd.slice(home.length)}`;
-    }
-
-    let pwdLine = theme.fg("dim", "⌂ ") + theme.fg("muted", pwd);
-
-    // In raised mode the branch tree above already shows all branches — skip
-    // the redundant inline branch here to avoid duplication. Compact/stacked
-    // footer still shows the current branch for quick orientation.
-    if (!raised) {
-      const branch = this.footerData.getGitBranch();
-      if (branch) {
-        const branchColor: ThemeColor = /^(main|master)$/.test(branch) ? "success"
-          : branch.startsWith("feature/") ? "accent"
-          : branch.startsWith("fix/") || branch.startsWith("hotfix/") ? "warning"
-          : branch.startsWith("refactor/") ? "accent"
-          : "muted";
-        pwdLine += theme.fg("dim", "  ") + theme.fg(branchColor, branch);
-      }
-    }
-
-    const sessionName = ctx?.sessionManager?.getSessionName?.();
-    if (sessionName) {
-      pwdLine += theme.fg("dim", " • ") + theme.fg("muted", sessionName);
-    }
-
-    lines.push(truncateToWidth(pwdLine, width, "…"));
-
-    // ── Line 2: token stats + cost │ model + thinking ──
-    // In raised mode this row is omitted: buildRaisedMetaLine() already shows
-    // the context gauge, driver, model, and thinking level in the pinned bottom
-    // block. Emitting it again here would create a duplicate generic footer row
-    // that contradicts the "one coherent dashboard" layout contract.
-    if (!raised && ctx) {
-      this._updateTokenCache();
-
-      // Left side: simplified context usage as requested (X%/tokens)
-      const usage = ctx.getContextUsage();
-      const statsLeft = usage
-        ? theme.fg("dim", `${Math.round(usage.percent ?? 0)}%/${formatTokens(usage.contextWindow ?? 0)}`)
-        : theme.fg("dim", "0%");
-
-      // Right side: provider + model + thinking level badge
-      const model = ctx.model;
-      const modelName = model?.id || "no-model";
-      const rightParts: string[] = [];
-
-      // Multi-provider indicator
-      if (this.footerData.getAvailableProviderCount() > 1 && model) {
-        rightParts.push(theme.fg("dim", `(${model.provider})`));
-      }
-
-      rightParts.push(theme.fg("muted", modelName));
-
-      // Thinking level badge with semantic color
-      if (model?.reasoning) {
-        const thinkColor: ThemeColor = this.cachedThinkingLevel === "high" ? "accent"
-          : this.cachedThinkingLevel === "medium" ? "muted"
-          : this.cachedThinkingLevel === "low" || this.cachedThinkingLevel === "minimal" ? "dim"
-          : "dim";
-        const thinkIcon = this.cachedThinkingLevel === "off" ? "○" : "◉";
-        rightParts.push(theme.fg("dim", "•") + " " +
-          theme.fg(thinkColor, `${thinkIcon} ${this.cachedThinkingLevel}`));
-      }
-
-      const rightSide = rightParts.join(" ");
-
-      // Layout: left-align stats, right-align model via leftRight()
-      lines.push(leftRight(statsLeft, rightSide, width));
-    } else if (raised && ctx) {
-      // In raised mode, still update the token cache so compact mode stays current,
-      // but do not emit a redundant stats line.
-      this._updateTokenCache();
-    }
-
-    // ── Extension statuses — raised mode only ──
-    if (raised) {
-      const extensionStatuses = this.footerData.getExtensionStatuses();
-      if (extensionStatuses.size > 0) {
-        const sortedStatuses = Array.from(extensionStatuses.entries())
-          .filter(([name]) => name !== "memory")  // covered by consolidated memory line
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([_name, text]) => {
-            const cleanText = sanitizeStatusText(text);
-            return theme.fg("dim", "▪ ") + theme.fg("muted", cleanText);
-          });
-        const statusLine = sortedStatuses.join(theme.fg("dim", "  "));
-        lines.push(truncateToWidth(statusLine, width, "…"));
-      }
-    }
-
-    return lines;
-  }
 }

@@ -1,7 +1,7 @@
 ---
 id: dash-visual-sugar
 title: Raised Dashboard Visual Polish — Box Layout + Memory Consolidation
-status: exploring
+status: implemented
 parent: unified-dashboard
 open_questions: []
 ---
