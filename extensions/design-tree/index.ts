@@ -29,8 +29,8 @@ import { sharedState } from "../shared-state.ts";
 
 import { emitDesignTreeState } from "./dashboard-state.ts";
 import { emitConstraintCandidates, emitDecisionCandidates } from "./lifecycle-emitter.ts";
-import { resolveNodeOpenSpecBinding, resolveDesignSpecBinding } from "../openspec/archive-gate.ts";
-import { resolveLifecycleSummary, getAssessmentStatus, getChange } from "../openspec/spec.ts";
+import { resolveNodeOpenSpecBinding, resolveDesignSpecBinding, type DesignSpecBinding } from "../openspec/archive-gate.ts";
+import { resolveLifecycleSummary, getAssessmentStatus, getChange, getOpenSpecDir } from "../openspec/spec.ts";
 import { evaluateLifecycleReconciliation } from "../openspec/reconcile.ts";
 import type { LifecycleSummary } from "../openspec/spec.ts";
 
@@ -66,6 +66,16 @@ import {
 	parseFrontmatter,
 } from "./tree.ts";
 import { getSharedBridge, buildSlashCommandResult } from "../lib/slash-command-bridge.ts";
+
+// ─── Design Spec Archive Gate ─────────────────────────────────────────────────
+
+/**
+ * Result of checking whether a node's design-phase OpenSpec change is archived.
+ *
+ * - archived: true  → change exists in openspec/archive/<ts>-<name>/
+ * - archived: false, active: true → change exists in openspec/changes/<name>/
+ * - archived: false, active: false → no change found in either location
+ */
 
 // ─── Extension ───────────────────────────────────────────────────────────────
 
@@ -429,9 +439,13 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 
 				case "ready": {
 					// Nodes with status='decided' where every dependency is 'implemented'
+					// AND design-phase OpenSpec change is archived.
 					const readyNodes = Array.from(tree.nodes.values())
 						.filter((n) => {
 							if (n.status !== "decided") return false;
+							// Hard gate: design spec must be archived
+							const specBinding = resolveDesignSpecBinding(ctx.cwd, n.id);
+							if (!specBinding.archived) return false;
 							return n.dependencies.every((depId) => {
 								const dep = tree.nodes.get(depId);
 								return dep?.status === "implemented";
@@ -464,6 +478,16 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 
 				case "blocked": {
 					// Nodes explicitly blocked OR whose dependencies are not yet 'implemented'
+					// OR whose design-phase OpenSpec change is missing/not-archived.
+
+					// Pre-compute spec bindings once for all decided nodes to avoid double I/O.
+					const specBindingCache = new Map<string, ReturnType<typeof resolveDesignSpecBinding>>();
+					for (const n of tree.nodes.values()) {
+						if (n.status === "decided") {
+							specBindingCache.set(n.id, resolveDesignSpecBinding(ctx.cwd, n.id));
+						}
+					}
+
 					const blockedNodes = Array.from(tree.nodes.values())
 						.filter((n) => {
 							if (n.status === "implemented") return false;
@@ -472,7 +496,12 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 							// seed/deferred nodes are intentionally parked — flagging them as
 							// blocked would be misleading noise.
 							if (n.status === "seed" || n.status === "deferred") return false;
-							// deciding/exploring nodes with at least one non-implemented dependency
+							// decided nodes: also block if design spec is not archived
+							if (n.status === "decided") {
+								const specBinding = specBindingCache.get(n.id)!;
+								if (!specBinding.archived) return true;
+							}
+							// exploring/deciding nodes with at least one non-implemented dependency
 							return n.dependencies.some((depId) => {
 								const dep = tree.nodes.get(depId);
 								return !dep || dep.status !== "implemented";
@@ -492,6 +521,32 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 										status: dep?.status ?? "missing",
 									};
 								});
+
+							// Determine blocking_reason and inject synthetic design-spec dep when needed
+							let blockingReason: "design-spec-not-archived" | "dependencies" | "explicit";
+							let allBlockingDeps = [...blockingDeps];
+
+							if (n.status === "blocked") {
+								blockingReason = "explicit";
+							} else if (n.status === "decided") {
+								const specBinding = specBindingCache.get(n.id)!;
+								if (!specBinding.archived) {
+									blockingReason = "design-spec-not-archived";
+									allBlockingDeps = [
+										{
+											id: "design-spec-missing",
+											title: "Design spec not archived",
+											status: "missing",
+										},
+										...allBlockingDeps,
+									];
+								} else {
+									blockingReason = "dependencies";
+								}
+							} else {
+								blockingReason = "dependencies";
+							}
+
 							return {
 								id: n.id,
 								title: n.title,
@@ -500,7 +555,8 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 								issue_type: n.issue_type ?? null,
 								tags: n.tags,
 								openspec_change: n.openspec_change ?? null,
-								blocking_deps: blockingDeps,
+								blocking_reason: blockingReason,
+								blocking_deps: allBlockingDeps,
 							};
 						});
 
@@ -773,6 +829,22 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 					const updated = addOpenQuestion(node, params.question);
 					tree.nodes.set(updated.id, updated);
+					// Emit memory fact for the open question
+					(sharedState.lifecycleCandidateQueue ??= []).push({
+						source: "design-tree",
+						context: `Open question added to node '${node.id}'`,
+						candidates: [{
+							sourceKind: "design-decision",
+							authority: "explicit",
+							section: "Specs",
+							content: `OPEN [${node.id}]: ${params.question}`,
+							artifactRef: {
+								type: "design-node",
+								path: node.filePath,
+								subRef: node.id,
+							},
+						}],
+					});
 					emitCurrentState();
 					mirrorOpenQuestionsToDesignSpec(ctx.cwd, updated);
 					return {
@@ -792,11 +864,28 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 					const updated = removeOpenQuestion(node, params.question);
 					tree.nodes.set(updated.id, updated);
+					// Schedule archival of the corresponding memory fact by content prefix.
+					// Check whether add_question ever emitted a fact for this question so the
+					// caller gets explicit feedback when no matching fact exists (e.g. question
+					// was added before this extension version was deployed).
+					const factContentPrefix = `OPEN [${node.id}]: ${params.question}`;
+					const emittedFacts = (sharedState.lifecycleCandidateQueue ?? [])
+						.flatMap((m) => m.candidates)
+						.filter((c) => c.section === "Specs" && c.content === factContentPrefix);
+					const factWasEmitted = emittedFacts.length > 0;
+					(sharedState.factArchiveQueue ??= []).push(factContentPrefix);
 					emitCurrentState();
 					mirrorOpenQuestionsToDesignSpec(ctx.cwd, updated);
 					return {
-						content: [{ type: "text", text: `Removed question from '${node.title}'` }],
-						details: { id: node.id, remainingQuestions: updated.open_questions.length },
+						content: [
+							{
+								type: "text",
+								text: factWasEmitted
+									? `Removed question from '${node.title}'`
+									: `Removed question from '${node.title}' (note: no corresponding memory fact found — question may have been added before fact-emission was deployed)`,
+							},
+						],
+						details: { id: node.id, remainingQuestions: updated.open_questions.length, factWasEmitted },
 					};
 				}
 
