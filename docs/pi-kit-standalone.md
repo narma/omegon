@@ -1,7 +1,7 @@
 ---
 id: pi-kit-standalone
 title: Make pi-kit Standalone — Subsume the pi Harness
-status: decided
+status: implemented
 tags: [architecture, fork, standalone, strategic]
 open_questions: []
 ---
