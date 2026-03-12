@@ -28,6 +28,9 @@ import { buildAssessBridgeResult } from "./bridge.ts";
 import {
 	assessDirective,
 	PATTERNS,
+	runDesignStructuralCheck,
+	buildDesignAssessmentPrompt,
+	parseDesignAssessmentFindings,
 	type AssessCompletion,
 	type AssessEffect,
 	type AssessLifecycleHint,
@@ -36,6 +39,8 @@ import {
 	type AssessSpecScenarioResult,
 	type AssessSpecSummary,
 	type AssessStructuredResult,
+	type DesignAssessmentResult,
+	type DesignAssessmentFinding,
 } from "./assessment.ts";
 import { detectConflicts, parseTaskResult } from "./conflicts.ts";
 import { emitResolvedBugCandidate } from "./lifecycle-emitter.ts";
@@ -1375,12 +1380,271 @@ async function executeAssessComplexity(args: string): Promise<AssessStructuredRe
 	});
 }
 
+async function runDesignAssessmentSubprocess(
+	repoPath: string,
+	nodeId: string,
+	modelId?: string,
+): Promise<{ findings: DesignAssessmentFinding[]; nodeTitle: string; structuralPass: boolean }> {
+	const prompt = [
+		"You are performing a read-only design-tree node assessment.",
+		"Operate in read-only plan mode. Never call edit, write, or any workspace-mutating command.",
+		"",
+		`## Task`,
+		"",
+		`1. Call design_tree with action='node', node_id='${nodeId}' to load the node.`,
+		"2. Run the structural pre-check:",
+		"   - open_questions must be empty — if not, emit a structural finding for each",
+		"   - decisions must have at least one entry — if not, emit a structural finding",
+		"   - acceptanceCriteria must have at least one scenario, falsifiability, or constraint — if not, emit a structural finding",
+		"3. If structural pre-check fails, output ONLY the JSON result below and stop.",
+		"4. Otherwise, evaluate each acceptance criterion against the document body:",
+		"   - For each Scenario (Given/When/Then): does the document body address the Then clause?",
+		"   - For each Falsifiability condition: is it addressed, ruled out, or acknowledged as a known risk?",
+		"   - For each Constraint: is it satisfied by the document content?",
+		"",
+		"## Output Format",
+		"",
+		"Output ONLY a single JSON object (no prose, no markdown, no code blocks):",
+		"{",
+		'  "nodeTitle": "<title from node>",',
+		'  "structuralPass": true|false,',
+		'  "findings": [',
+		'    {"type":"scenario"|"falsifiability"|"constraint"|"structural","index":N,"pass":true|false,"finding":"<reason>"}',
+		"  ]",
+		"}",
+	].join("\n");
+
+	const args = ["--mode", "json", "--plan", "-p", "--no-session"];
+	if (modelId) args.push("--model", modelId);
+
+	return await new Promise<{ findings: DesignAssessmentFinding[]; nodeTitle: string; structuralPass: boolean }>(
+		(resolve, reject) => {
+			const proc = spawn("pi", args, {
+				cwd: repoPath,
+				shell: false,
+				stdio: ["pipe", "pipe", "pipe"],
+				env: { ...process.env, PI_CHILD: "1", TERM: process.env.TERM ?? "dumb" },
+			});
+			let buffer = "";
+			let assistantText = "";
+			let settled = false;
+			const settleReject = (error: Error) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				reject(error);
+			};
+			const settleResolve = (value: { findings: DesignAssessmentFinding[]; nodeTitle: string; structuralPass: boolean }) => {
+				if (settled) return;
+				settled = true;
+				clearTimeout(timer);
+				resolve(value);
+			};
+			const timer = setTimeout(() => {
+				proc.kill("SIGTERM");
+				setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 5_000);
+				settleReject(new Error(`Timed out after 120s while assessing design node ${nodeId}.`));
+			}, 120_000);
+			const processLine = (line: string) => {
+				if (!line.trim()) return;
+				let event: unknown;
+				try { event = JSON.parse(line); } catch { return; }
+				if (!event || typeof event !== "object") return;
+				const typed = event as { type?: string; message?: { role?: string; content?: unknown } };
+				if (typed.type === "message_end" && typed.message?.role === "assistant") {
+					assistantText = extractAssistantText(typed.message.content);
+				}
+			};
+			proc.stdout.on("data", (data) => {
+				buffer += (data as Buffer).toString();
+				const lines = buffer.split("\n");
+				buffer = lines.pop() || "";
+				for (const line of lines) processLine(line);
+			});
+			let stderr = "";
+			proc.stderr.on("data", (data) => { stderr += (data as Buffer).toString(); });
+			proc.on("error", (error) => settleReject(error));
+			proc.on("close", (code) => {
+				if (buffer.trim()) processLine(buffer.trim());
+				if ((code ?? 1) !== 0) {
+					settleReject(new Error(stderr.trim() || `Design assessment subprocess exited with code ${code ?? 1}.`));
+					return;
+				}
+				const jsonText = extractJsonObject(assistantText || buffer);
+				if (!jsonText) {
+					settleReject(new Error(`Design assessment subprocess did not return parseable JSON.\n${stderr}`));
+					return;
+				}
+				try {
+					const parsed = JSON.parse(jsonText) as { nodeTitle?: string; structuralPass?: boolean; findings?: DesignAssessmentFinding[] };
+					settleResolve({
+						nodeTitle: parsed.nodeTitle ?? nodeId,
+						structuralPass: parsed.structuralPass ?? true,
+						findings: Array.isArray(parsed.findings) ? parsed.findings : [],
+					});
+				} catch (err) {
+					settleReject(new Error(`Design assessment JSON was invalid: ${String(err)}`));
+				}
+			});
+			proc.stdin.write(prompt + "\n");
+			proc.stdin.end();
+		},
+	);
+}
+
+async function executeAssessDesign(
+	pi: ExtensionAPI,
+	ctx: AssessExecutionContext,
+	args: string,
+): Promise<AssessStructuredResult> {
+	const cwd = ctx.cwd;
+	const nodeId = args.trim() || null;
+
+	if (!nodeId) {
+		const humanText = "Usage: `/assess design <node-id>`\n\nProvide a design-tree node ID. Set a focused node via `design_tree_update` with action 'focus', then run `/assess design` without arguments.";
+		return makeAssessResult({
+			subcommand: "design",
+			args,
+			ok: false,
+			summary: "Missing node-id for design assessment",
+			humanText,
+			data: { reason: "missing_node_id" },
+			effects: [{ type: "view", content: humanText }],
+		});
+	}
+
+	// Build the interactive follow-up prompt
+	const interactivePrompt = [
+		`## Design Assessment: \`${nodeId}\``,
+		"",
+		"Assess this design-tree node for readiness to be marked as 'decided'.",
+		"",
+		"### Steps",
+		"",
+		`1. Call \`design_tree\` with \`action='node'\`, \`node_id='${nodeId}'\` to load the node and its document body.`,
+		"2. **Structural pre-check** (fail fast with specific finding per gap):",
+		"   - If `open_questions.length > 0`: FAIL — list each unresolved question",
+		"   - If `decisions.length === 0`: FAIL — no decisions recorded",
+		"   - If `acceptanceCriteria` has no scenarios, falsifiability, or constraints: FAIL — empty acceptance criteria",
+		"   - If any structural check fails, stop here and report findings.",
+		"3. **Acceptance criteria evaluation** (against the document body):",
+		"   - For each **Scenario** (Given/When/Then): does the document body address the Then clause?",
+		"   - For each **Falsifiability** condition: is it addressed, ruled out, or noted as a known risk?",
+		"   - For each **Constraint**: is it satisfied by the document content?",
+		"4. **Write `assessment.json`** to `openspec/design/${nodeId}/assessment.json` with structure:",
+		"   ```json",
+		`   {"nodeId":"${nodeId}","pass":true|false,"structuralPass":true|false,"findings":[...]}`,
+		"   ```",
+		"   Each finding: `{\"type\":\"scenario\"|\"falsifiability\"|\"constraint\"|\"structural\",\"index\":N,\"pass\":true|false,\"finding\":\"<reason>\"}`",
+		"5. **Report** overall PASS/FAIL with per-finding details.",
+		"   - If PASS: suggest `design_tree_update` with `set_status(decided)` for this node.",
+		"   - If FAIL: list each failing finding with an actionable fix.",
+	].join("\n");
+
+	if (isInteractiveAssessContext(ctx)) {
+		const introText = `Running design assessment for node \`${nodeId}\`…`;
+		return makeAssessResult({
+			subcommand: "design",
+			args,
+			ok: true,
+			summary: `Prepared design assessment for ${nodeId}`,
+			humanText: introText,
+			data: { nodeId },
+			effects: [
+				{ type: "view", content: introText },
+				{ type: "follow_up", content: interactivePrompt },
+			],
+			nextSteps: ["Evaluate acceptance criteria", "Write assessment.json", "Set status to decided if pass"],
+			completion: { completed: false, completedInBand: false, requiresFollowUp: true },
+		});
+	}
+
+	// Bridged / subprocess mode
+	let subResult: { findings: DesignAssessmentFinding[]; nodeTitle: string; structuralPass: boolean };
+	try {
+		subResult = await runDesignAssessmentSubprocess(cwd, nodeId, ctx.model?.id);
+	} catch (err) {
+		const msg = `Design assessment subprocess failed: ${String(err)}`;
+		return makeAssessResult({
+			subcommand: "design",
+			args,
+			ok: false,
+			summary: msg,
+			humanText: msg,
+			data: { reason: "subprocess_failed", nodeId },
+			effects: [{ type: "view", content: msg }],
+		});
+	}
+
+	const { findings, nodeTitle, structuralPass } = subResult;
+	const overallPass = structuralPass && findings.length > 0 && findings.every((f) => f.pass);
+
+	const result: DesignAssessmentResult = { nodeId, pass: overallPass, structuralPass, findings };
+
+	// Write assessment.json
+	await writeDesignAssessment(cwd, nodeId, result);
+
+	// Build human text
+	const failFindings = findings.filter((f) => !f.pass);
+	const passFindings = findings.filter((f) => f.pass);
+	const humanLines: string[] = [
+		`## Design Assessment: ${nodeTitle} (${nodeId})`,
+		"",
+		overallPass
+			? `**✅ PASS** — ${passFindings.length}/${findings.length} criteria satisfied. Ready to set status → decided.`
+			: structuralPass
+				? `**❌ FAIL** — ${failFindings.length}/${findings.length} criteria not satisfied.`
+				: "**❌ Structural pre-check failed** — resolve these issues before assessing.",
+		"",
+	];
+	if (failFindings.length > 0) {
+		humanLines.push("### Issues to Resolve");
+		for (const f of failFindings) humanLines.push(`- [${f.type}#${f.index}] ${f.finding}`);
+		humanLines.push("");
+	}
+	if (passFindings.length > 0) {
+		humanLines.push("### Satisfied");
+		for (const f of passFindings) humanLines.push(`- ✓ [${f.type}#${f.index}] ${f.finding}`);
+	}
+
+	const humanText = humanLines.join("\n");
+	const nextSteps = overallPass
+		? [`Run design_tree_update with action 'set_status', node_id '${nodeId}', status 'decided'`]
+		: failFindings.map((f) => f.finding.split(".")[0] ?? f.finding);
+
+	return makeAssessResult({
+		subcommand: "design",
+		args,
+		ok: overallPass,
+		summary: overallPass
+			? `Design node '${nodeId}' passed — ready to decide`
+			: `Design node '${nodeId}' failed — ${failFindings.length} issue(s) to resolve`,
+		humanText,
+		data: result,
+		effects: [{ type: "view", content: humanText }],
+		nextSteps,
+	});
+}
+
+async function writeDesignAssessment(cwd: string, nodeId: string, result: DesignAssessmentResult): Promise<void> {
+	try {
+		const { mkdir, writeFile } = await import("node:fs/promises");
+		const { join } = await import("node:path");
+		const dir = join(cwd, "openspec", "design", nodeId);
+		await mkdir(dir, { recursive: true });
+		await writeFile(join(dir, "assessment.json"), JSON.stringify(result, null, 2), "utf8");
+	} catch {
+		// non-fatal — assessment result still returned to caller
+	}
+}
+
 export function createAssessStructuredExecutors(pi: ExtensionAPI, overrides?: AssessExecutorOverrides) {
 	return {
 		cleave: (args: string, ctx: AssessExecutionContext) => executeAssessCleave(pi, ctx, args),
 		diff: (args: string, ctx: AssessExecutionContext) => executeAssessDiff(pi, ctx, args),
 		spec: (args: string, ctx: AssessExecutionContext) => executeAssessSpec(pi, ctx, args, overrides),
 		complexity: (args: string) => executeAssessComplexity(args),
+		design: (args: string, ctx: AssessExecutionContext) => executeAssessDesign(pi, ctx, args),
 	} as const;
 }
 
@@ -1458,8 +1722,9 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 			"Call cleave_assess before starting any multi-system or cross-cutting task to determine if decomposition is needed",
 			"If decision is 'execute', proceed directly. If 'cleave', use /cleave to decompose. If 'needs_assessment', proceed directly — it means no pattern matched but the task is likely simple enough for in-session execution.",
 			"Complexity formula: (1 + systems) × (1 + 0.5 × modifiers). Threshold default: 2.0.",
-			"The /assess command provides code assessment: `/assess cleave` (adversarial review + auto-fix), `/assess diff [ref]` (review only), `/assess spec [change]` (validate against OpenSpec scenarios).",
+			"The /assess command provides code assessment: `/assess cleave` (adversarial review + auto-fix), `/assess diff [ref]` (review only), `/assess spec [change]` (validate against OpenSpec scenarios), `/assess design [node-id]` (evaluate design-tree node readiness before set_status(decided)).",
 			"When the repo has openspec/ with active changes, suggest `/assess spec` after implementation and before `/opsx:archive`.",
+			"Run `/assess design <node-id>` before calling design_tree_update with set_status(decided) to verify acceptance criteria are satisfied.",
 		],
 
 		parameters: Type.Object({
@@ -1487,6 +1752,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 		{ value: "diff", label: "diff", description: "Assess uncommitted or recent changes for issues" },
 		{ value: "spec", label: "spec", description: "Assess implementation against OpenSpec scenarios" },
 		{ value: "complexity", label: "complexity", description: "Assess directive complexity (cleave_assess)" },
+		{ value: "design", label: "design", description: "Assess design-tree node readiness before set_status(decided)" },
 	];
 	const assessExecutors = createAssessStructuredExecutors(pi);
 	const slashCommandBridge = getSharedBridge();
@@ -1547,6 +1813,8 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 					return toBridgeAssessResult(parts, await assessExecutors.spec(rest, assessCtx));
 				case "complexity":
 					return toBridgeAssessResult(parts, await assessExecutors.complexity(rest));
+				case "design":
+					return toBridgeAssessResult(parts, await assessExecutors.design(rest, assessCtx));
 				default:
 					return buildSlashCommandResult("assess", parts, {
 						ok: false,

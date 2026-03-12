@@ -15,6 +15,9 @@ import {
 	detectFlags,
 	PATTERNS,
 	MODIFIERS,
+	runDesignStructuralCheck,
+	buildDesignAssessmentPrompt,
+	parseDesignAssessmentFindings,
 } from "./assessment.ts";
 
 // ─── Pattern Library ────────────────────────────────────────────────────────
@@ -325,5 +328,153 @@ describe("assessDirective", () => {
 		const r = assessDirective("Add OAuth login flow with JWT tokens and password hashing");
 		assert.ok(r.reasoning.length > 0);
 		assert.ok(r.reasoning.includes("Formula:") || r.reasoning.includes("Heuristic"));
+	});
+});
+
+// ─── Design Assessment ──────────────────────────────────────────────────────
+
+const EMPTY_AC = { scenarios: [], falsifiability: [], constraints: [] };
+
+describe("runDesignStructuralCheck", () => {
+	const goodSections = {
+		openQuestions: [],
+		decisions: [{ title: "Use X", status: "decided", rationale: "Because X is better" }],
+		acceptanceCriteria: {
+			scenarios: [{ title: "Basic flow", given: "g", when: "w", then: "t" }],
+			falsifiability: [],
+			constraints: [],
+		},
+	};
+
+	it("returns empty findings for a valid node", () => {
+		const findings = runDesignStructuralCheck("test-node", goodSections);
+		assert.equal(findings.length, 0);
+	});
+
+	it("fires before LLM — reports open questions as structural finding", () => {
+		const sections = { ...goodSections, openQuestions: ["What about caching?", "Schema TBD"] };
+		const findings = runDesignStructuralCheck("test-node", sections);
+		assert.ok(findings.length > 0, "expected structural findings");
+		assert.equal(findings[0].type, "structural");
+		assert.equal(findings[0].pass, false);
+		assert.ok(findings[0].finding.includes("2"), "should mention count");
+	});
+
+	it("reports missing decisions as structural finding", () => {
+		const sections = { ...goodSections, decisions: [] };
+		const findings = runDesignStructuralCheck("test-node", sections);
+		assert.ok(findings.some((f) => f.type === "structural" && f.finding.includes("decision")));
+	});
+
+	it("reports empty acceptance criteria as structural finding", () => {
+		const sections = { ...goodSections, acceptanceCriteria: EMPTY_AC };
+		const findings = runDesignStructuralCheck("test-node", sections);
+		assert.ok(findings.some((f) => f.type === "structural" && f.finding.includes("Acceptance Criteria")));
+	});
+
+	it("reports all three gaps independently", () => {
+		const sections = {
+			openQuestions: ["Q1"],
+			decisions: [],
+			acceptanceCriteria: EMPTY_AC,
+		};
+		const findings = runDesignStructuralCheck("test-node", sections);
+		assert.equal(findings.length, 3);
+		assert.ok(findings.every((f) => f.type === "structural" && !f.pass));
+	});
+});
+
+describe("parseDesignAssessmentFindings", () => {
+	it("parses valid JSON lines", () => {
+		const llmOutput = [
+			'{"type":"scenario","index":0,"pass":true,"finding":"The document addresses the authentication flow."}',
+			'{"type":"falsifiability","index":1,"pass":false,"finding":"No mention of failure case handling."}',
+			'{"type":"constraint","index":0,"pass":true,"finding":"Constraint satisfied by design."}',
+		].join("\n");
+		const findings = parseDesignAssessmentFindings(llmOutput);
+		assert.equal(findings.length, 3);
+		assert.equal(findings[0].type, "scenario");
+		assert.equal(findings[0].pass, true);
+		assert.equal(findings[1].type, "falsifiability");
+		assert.equal(findings[1].pass, false);
+		assert.equal(findings[2].type, "constraint");
+	});
+
+	it("skips non-JSON lines", () => {
+		const llmOutput = [
+			"Here are my findings:",
+			'{"type":"scenario","index":0,"pass":true,"finding":"OK"}',
+			"That's all.",
+		].join("\n");
+		const findings = parseDesignAssessmentFindings(llmOutput);
+		assert.equal(findings.length, 1);
+	});
+
+	it("skips malformed JSON objects", () => {
+		const llmOutput = [
+			'{"type":"scenario","index":0,"pass":true,"finding":"OK"}',
+			'{"type":"scenario"}',
+			'not-json',
+		].join("\n");
+		// Second line parses but missing required fields — should be skipped
+		const findings = parseDesignAssessmentFindings(llmOutput);
+		assert.equal(findings.length, 1);
+	});
+
+	it("returns empty array for empty input", () => {
+		assert.equal(parseDesignAssessmentFindings("").length, 0);
+	});
+});
+
+describe("buildDesignAssessmentPrompt", () => {
+	it("includes node id and title", () => {
+		const prompt = buildDesignAssessmentPrompt("my-node", "My Node Title", "body content", EMPTY_AC);
+		assert.ok(prompt.includes("my-node"));
+		assert.ok(prompt.includes("My Node Title"));
+	});
+
+	it("includes document body", () => {
+		const prompt = buildDesignAssessmentPrompt("n", "T", "## Overview\nsome content", EMPTY_AC);
+		assert.ok(prompt.includes("## Overview\nsome content"));
+	});
+
+	it("includes scenarios section when present", () => {
+		const ac = {
+			scenarios: [{ title: "Login flow", given: "user exists", when: "they login", then: "they get a token" }],
+			falsifiability: [],
+			constraints: [],
+		};
+		const prompt = buildDesignAssessmentPrompt("n", "T", "body", ac);
+		assert.ok(prompt.includes("Login flow"));
+		assert.ok(prompt.includes("user exists"));
+		assert.ok(prompt.includes("they get a token"));
+	});
+
+	it("includes falsifiability section when present", () => {
+		const ac = {
+			scenarios: [],
+			falsifiability: [{ condition: "What if the DB is unavailable?" }],
+			constraints: [],
+		};
+		const prompt = buildDesignAssessmentPrompt("n", "T", "body", ac);
+		assert.ok(prompt.includes("What if the DB is unavailable?"));
+	});
+
+	it("includes constraints section when present", () => {
+		const ac = {
+			scenarios: [],
+			falsifiability: [],
+			constraints: [{ text: "Must use TypeScript strict mode", checked: false }],
+		};
+		const prompt = buildDesignAssessmentPrompt("n", "T", "body", ac);
+		assert.ok(prompt.includes("Must use TypeScript strict mode"));
+	});
+
+	it("per-finding output structure instruction is present", () => {
+		const prompt = buildDesignAssessmentPrompt("n", "T", "body", EMPTY_AC);
+		assert.ok(prompt.includes('"type"'));
+		assert.ok(prompt.includes('"index"'));
+		assert.ok(prompt.includes('"pass"'));
+		assert.ok(prompt.includes('"finding"'));
 	});
 });

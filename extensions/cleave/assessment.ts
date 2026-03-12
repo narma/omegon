@@ -7,7 +7,7 @@
 
 import type { AssessmentFlags, AssessmentResult, PatternDefinition, PatternMatch } from "./types.ts";
 
-export type AssessStructuredSubcommand = "cleave" | "diff" | "spec" | "complexity" | "session" | "freeform";
+export type AssessStructuredSubcommand = "cleave" | "diff" | "spec" | "complexity" | "session" | "freeform" | "design";
 export type AssessEffect =
 	| { type: "view"; content: string; display?: boolean }
 	| { type: "follow_up"; content: string }
@@ -579,4 +579,176 @@ export function assessDirective(
 			(decision === "cleave" ? ` Exceeds threshold ${threshold} — recommending decomposition.` : ""),
 		skipInterrogation: false,
 	};
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DESIGN ASSESSMENT — Structural + LLM evaluation of design-tree nodes
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type DesignFindingType = "scenario" | "falsifiability" | "constraint" | "structural";
+
+export interface DesignAssessmentFinding {
+	type: DesignFindingType;
+	index: number;
+	pass: boolean;
+	finding: string;
+}
+
+export interface DesignAssessmentResult {
+	nodeId: string;
+	pass: boolean;
+	structuralPass: boolean;
+	findings: DesignAssessmentFinding[];
+}
+
+/**
+ * Run the structural pre-check for a design node.
+ * Returns findings[] — empty means structural pass.
+ */
+export function runDesignStructuralCheck(
+	nodeId: string,
+	sections: {
+		openQuestions: string[];
+		decisions: Array<{ title: string; status: string; rationale: string }>;
+		acceptanceCriteria: {
+			scenarios: unknown[];
+			falsifiability: unknown[];
+			constraints: unknown[];
+		};
+	},
+): DesignAssessmentFinding[] {
+	const findings: DesignAssessmentFinding[] = [];
+
+	if (sections.openQuestions.length > 0) {
+		findings.push({
+			type: "structural",
+			index: 0,
+			pass: false,
+			finding: `Node has ${sections.openQuestions.length} unresolved open question(s): ${sections.openQuestions.map((q) => `"${q}"`).join(", ")}. Resolve all open questions before assessing.`,
+		});
+	}
+
+	if (sections.decisions.length === 0) {
+		findings.push({
+			type: "structural",
+			index: 1,
+			pass: false,
+			finding: "No decisions recorded. Add at least one decision in the Decisions section before assessing.",
+		});
+	}
+
+	const ac = sections.acceptanceCriteria;
+	const hasAnyCriteria =
+		ac.scenarios.length > 0 || ac.falsifiability.length > 0 || ac.constraints.length > 0;
+	if (!hasAnyCriteria) {
+		findings.push({
+			type: "structural",
+			index: 2,
+			pass: false,
+			finding: "Acceptance Criteria section is empty. Add at least one scenario, falsifiability condition, or constraint.",
+		});
+	}
+
+	return findings;
+}
+
+/**
+ * Build the LLM prompt for design assessment.
+ * The LLM evaluates each acceptance criterion against the document body.
+ */
+export function buildDesignAssessmentPrompt(
+	nodeId: string,
+	nodeTitle: string,
+	documentBody: string,
+	acceptanceCriteria: {
+		scenarios: Array<{ title: string; given: string; when: string; then: string }>;
+		falsifiability: Array<{ condition: string }>;
+		constraints: Array<{ text: string; checked: boolean }>;
+	},
+): string {
+	const lines: string[] = [
+		`You are assessing design node "${nodeId}" (${nodeTitle}) for readiness to be marked as 'decided'.`,
+		"",
+		"## Document Body",
+		"",
+		documentBody,
+		"",
+		"## Assessment Task",
+		"",
+		"Evaluate each acceptance criterion below against the document body.",
+		"For each item, output a JSON object on its own line with exactly these fields:",
+		'  {"type":"scenario"|"falsifiability"|"constraint","index":N,"pass":true|false,"finding":"<reason>"}',
+		"",
+		"Rules:",
+		"- pass=true if the document body addresses or satisfies the criterion",
+		"- pass=false if the criterion is unaddressed, contradicted, or underspecified",
+		"- finding must be a concrete, actionable sentence (not just 'yes' or 'no')",
+		"- Output ONLY the JSON lines, nothing else",
+		"",
+	];
+
+	if (acceptanceCriteria.scenarios.length > 0) {
+		lines.push("## Scenarios (Given/When/Then)");
+		lines.push("");
+		acceptanceCriteria.scenarios.forEach((s, i) => {
+			lines.push(`### Scenario ${i}: ${s.title}`);
+			lines.push(`- Given: ${s.given}`);
+			lines.push(`- When: ${s.when}`);
+			lines.push(`- Then: ${s.then}`);
+			lines.push("");
+		});
+	}
+
+	if (acceptanceCriteria.falsifiability.length > 0) {
+		lines.push("## Falsifiability Conditions");
+		lines.push("Each condition must be explicitly addressed, ruled out, or acknowledged as a known risk.");
+		lines.push("");
+		acceptanceCriteria.falsifiability.forEach((f, i) => {
+			lines.push(`${i}. ${f.condition}`);
+		});
+		lines.push("");
+	}
+
+	if (acceptanceCriteria.constraints.length > 0) {
+		lines.push("## Constraints");
+		lines.push("Each constraint must be satisfied by the document content.");
+		lines.push("");
+		acceptanceCriteria.constraints.forEach((c, i) => {
+			lines.push(`${i}. [${c.checked ? "x" : " "}] ${c.text}`);
+		});
+		lines.push("");
+	}
+
+	return lines.join("\n");
+}
+
+/**
+ * Parse LLM output into DesignAssessmentFinding[].
+ * Each line should be a JSON object; non-JSON lines are skipped.
+ */
+export function parseDesignAssessmentFindings(llmOutput: string): DesignAssessmentFinding[] {
+	const findings: DesignAssessmentFinding[] = [];
+	for (const line of llmOutput.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed.startsWith("{")) continue;
+		try {
+			const obj = JSON.parse(trimmed) as {
+				type: DesignFindingType;
+				index: number;
+				pass: boolean;
+				finding: string;
+			};
+			if (
+				typeof obj.type === "string" &&
+				typeof obj.index === "number" &&
+				typeof obj.pass === "boolean" &&
+				typeof obj.finding === "string"
+			) {
+				findings.push({ type: obj.type, index: obj.index, pass: obj.pass, finding: obj.finding });
+			}
+		} catch {
+			// skip malformed lines
+		}
+	}
+	return findings;
 }
