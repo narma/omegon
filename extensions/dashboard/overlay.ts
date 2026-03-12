@@ -3,7 +3,7 @@
  *
  * Right-anchored sidepanel with three tabs:
  *   [1] Design Tree — node list with status icons, expand to show questions
- *   [2] OpenSpec    — change list with stage/progress
+ *   [2] Implementation — change list with stage/progress
  *   [3] Cleave      — dispatch children with status/elapsed
  *
  * Keyboard:

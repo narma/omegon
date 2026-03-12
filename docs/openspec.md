@@ -16,20 +16,25 @@ openspec_baselines:
 last_updated: 2026-03-10
 ---
 
-# OpenSpec
+# Implementation Layer (OpenSpec)
 
-> Spec-driven development lifecycle — propose changes, write Given/When/Then specs, generate plans, verify implementations, and archive with delta-merge to baseline.
+> Spec-driven implementation lifecycle — write Given/When/Then specs, generate plans, verify implementations, and archive with delta-merge to baseline.
 
 ## What It Does
 
-OpenSpec manages the full lifecycle of code changes through specifications:
+The Implementation layer (OpenSpec) manages the full lifecycle of code changes through specifications. The primary entry point is **`design_tree_update(implement)`** from a decided design node — `/opsx:propose` is for untracked/throwaway changes only.
 
-1. **Propose** (`/opsx:propose`): Create a change with intent and scope
+**Primary path (tracked work):**
+1. **Implement gate** (`design_tree_update(implement)`): Scaffolds `openspec/changes/<id>/` from a decided design node — requires the design-phase OpenSpec to be archived
 2. **Spec** (`/opsx:spec` or `generate_spec`): Define behavioral contracts as Given/When/Then scenarios
 3. **Fast-forward** (`/opsx:ff`): Generate `design.md` and `tasks.md` from specs
 4. **Execute**: `/cleave` parallelizes task execution with spec scenario assignment per child
 5. **Verify** (`/assess spec`): Run specs against implementation, report pass/fail per scenario
 6. **Archive** (`/opsx:archive`): Delta-merge passing specs into `openspec/baseline/`, archive the change
+
+**Untracked path (throwaway/exploratory changes only):**
+1. **Propose** (`/opsx:propose`): Create a change with intent and scope (no design-tree binding)
+2. Continue from step 2 above
 
 The `openspec_manage` tool provides agent access to all lifecycle operations. Assessment results are structured JSON with per-scenario verdicts and reconciliation support.
 

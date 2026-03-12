@@ -17,6 +17,8 @@ export interface ReconciliationIssue {
 	code: ReconciliationIssueCode;
 	message: string;
 	suggestedAction: string;
+	isError?: boolean;
+	severity?: "error" | "warning" | "info";
 }
 
 export interface LifecycleReconciliationStatus {
@@ -56,8 +58,10 @@ export function evaluateLifecycleReconciliation(cwd: string, changeName: string)
 	if (boundNodes.length === 0) {
 		issues.push({
 			code: "missing_design_binding",
-			message: `OpenSpec change '${changeName}' is not bound to any design-tree node via openspec_change or matching node ID.`,
+			message: `OpenSpec change '${changeName}' is not bound to any design-tree node via openspec_change or matching node ID. (Legacy node — binding is guaranteed by construction for new nodes created via design_tree_update implement.)`,
 			suggestedAction: "Bind the change to a decided/implementing design node before archive so lifecycle tracking stays traceable.",
+			isError: false,
+			severity: "info",
 		});
 	}
 

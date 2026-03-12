@@ -162,6 +162,74 @@ design_tree(action="blocked")
 → [{ id: "...", blocking_deps: [{ id: "...", status: "exploring" }] }]
 ```
 
+## Dual-Lifecycle Pipeline
+
+The design-tree and OpenSpec work together as two complementary lifecycle layers:
+
+```
+seed → exploring → [design spec scaffolded] → /assess design → decided
+                                                                    ↓
+                                                           implement gate
+                                                       (design OpenSpec archived)
+                                                                    ↓
+                                               openspec/changes/<id>/ scaffolded
+                                                                    ↓
+                                                                /cleave
+                                                                    ↓
+                                                             /assess spec
+                                                                    ↓
+                                                              implemented
+```
+
+**Layer 1 — Design Phase** (`openspec/design/<id>/`):
+- Scaffolded automatically when a node enters `exploring` status
+- Contains Acceptance Criteria: Scenarios, Falsifiability tests, Constraints
+- `/assess design` validates the design spec before the node can become `decided`
+- Acts as a gate: `design_tree_update(implement)` requires design OpenSpec to be archived
+
+**Layer 2 — Implementation Phase** (`openspec/changes/<id>/`):
+- Scaffolded by `design_tree_update(implement)` on a decided node
+- Contains proposal.md, design.md, tasks.md and Given/When/Then specs
+- `/cleave` executes tasks in parallel with spec scenario assignment per child
+- `/assess spec` validates implementation against behavioral contracts
+- Archive merges passing scenarios into `openspec/baseline/`
+
+### Acceptance Criteria Section Format
+
+Design nodes include an `## Acceptance Criteria` section with three subsections:
+
+**Scenarios** — Observable behaviors the implementation must satisfy:
+```markdown
+## Acceptance Criteria
+
+### Scenarios
+- Given a decided node, when implement is called, then openspec/changes/<id>/ is scaffolded
+- Given an unarchived design OpenSpec, when implement is called, then it is rejected with a clear error
+```
+
+**Falsifiability** — Conditions that would prove the design is wrong:
+```markdown
+### Falsifiability
+- If the implement gate can be bypassed without archiving the design spec, the design is falsified
+- If cleave produces output that contradicts a passing scenario, the design is falsified
+```
+
+**Constraints** — Hard requirements that bound the implementation:
+```markdown
+### Constraints
+- Must not modify files outside the declared scope
+- Command names /opsx:* and internal variable names must remain unchanged
+```
+
+### `ready` and `blocked` Queries — Design Spec Gate
+
+The `ready` query surfaces nodes that are dependency-resolved and lifecycle-ready. For nodes in the dual-lifecycle pipeline, a node is only `ready` to implement when:
+1. All declared dependencies are `implemented`
+2. The node status is `decided`
+3. (For new nodes) the design-phase OpenSpec has been archived
+
+The `blocked` query will surface nodes where the design spec gate has not been cleared, indicating the design phase needs completion before implementation can proceed.
+
 ## Key Files
 
 | File | Role |

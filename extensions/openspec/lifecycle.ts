@@ -34,16 +34,17 @@ export type { LifecycleSummary };
 export function buildLifecycleSummary(repoPath: string, change: ChangeInfo): LifecycleSummary {
 	const assessment = getAssessmentStatus(repoPath, change.name);
 	const reconciliation = evaluateLifecycleReconciliation(repoPath, change.name);
-	const archiveBlockedReason = reconciliation.issues.length > 0
-		? reconciliation.issues.map((issue) => issue.suggestedAction).join(" ")
+	const blockingIssues = reconciliation.issues.filter((issue) => issue.isError !== false);
+	const archiveBlockedReason = blockingIssues.length > 0
+		? blockingIssues.map((issue) => issue.suggestedAction).join(" ")
 		: null;
 	return resolveLifecycleSummary({
 		change,
 		record: assessment.record,
 		freshness: assessment.freshness,
-		archiveBlocked: reconciliation.issues.length > 0,
+		archiveBlocked: blockingIssues.length > 0,
 		archiveBlockedReason,
-		archiveBlockedIssueCodes: reconciliation.issues.map((issue) => issue.code),
+		archiveBlockedIssueCodes: blockingIssues.map((issue) => issue.code),
 		boundNodeIds: reconciliation.boundNodeIds,
 	});
 }
