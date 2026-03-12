@@ -136,14 +136,15 @@ function buildInlineShell(): string {
 // ── Routing ───────────────────────────────────────────────────────────────────
 
 const SLICE_ROUTES: Record<string, keyof Omit<ControlPlaneState, "schemaVersion">> = {
-  "/api/session":     "session",
-  "/api/dashboard":   "dashboard",
-  "/api/design-tree": "designTree",
-  "/api/openspec":    "openspec",
-  "/api/cleave":      "cleave",
-  "/api/models":      "models",
-  "/api/memory":      "memory",
-  "/api/health":      "health",
+  "/api/session":          "session",
+  "/api/dashboard":        "dashboard",
+  "/api/design-tree":      "designTree",
+  "/api/openspec":         "openspec",
+  "/api/cleave":           "cleave",
+  "/api/models":           "models",
+  "/api/memory":           "memory",
+  "/api/health":           "health",
+  "/api/design-pipeline":  "designPipeline",
 };
 
 function jsonResponse(
