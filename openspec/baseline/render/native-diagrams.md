@@ -2,7 +2,7 @@
 
 ### Requirement: Native diagrams are generated from constrained motif-based specs
 
-pi-kit must provide a native diagram backend for document-bound technical diagrams that accepts constrained structured specs instead of raw drawing geometry.
+Omegon must provide a native diagram backend for document-bound technical diagrams that accepts constrained structured specs instead of raw drawing geometry.
 
 #### Scenario: Motif-based spec compiles to native scene output
 Given an agent wants to generate a document-bound architecture diagram
@@ -25,7 +25,7 @@ And it can optionally produce a PNG artifact without using Playwright or Chromiu
 The new backend must coexist with D2 and Excalidraw tooling so operators can choose the best output path per diagram type.
 
 #### Scenario: Render extension exposes native diagram generation without removing existing tools
-Given pi-kit has existing D2 and Excalidraw render tools
+Given Omegon has existing D2 and Excalidraw render tools
 When the native backend is added
 Then the render extension registers a new native diagram tool alongside them
 And the existing D2 and Excalidraw tools remain available

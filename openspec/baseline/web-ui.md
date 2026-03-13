@@ -2,21 +2,21 @@
 
 ### Requirement: Start a localhost-only web UI server
 
-pi-kit SHALL provide a first-party web UI extension that can start a browser-facing HTTP server bound to localhost for the current session.
+Omegon SHALL provide a first-party web UI extension that can start a browser-facing HTTP server bound to localhost for the current session.
 
 #### Scenario: Start server on localhost
 
-Given pi-kit is running in a repository session
+Given Omegon is running in a repository session
 When the operator starts the web UI server
-Then pi-kit starts an HTTP server bound to `127.0.0.1`
-And pi-kit reports the local URL including the chosen port
+Then Omegon starts an HTTP server bound to `127.0.0.1`
+And Omegon reports the local URL including the chosen port
 And the server does not bind to `0.0.0.0` by default
 
 #### Scenario: Stop server cleanly
 
 Given the web UI server is running
 When the operator stops the web UI server
-Then pi-kit terminates the server it started for that session
+Then Omegon terminates the server it started for that session
 And subsequent HTTP requests to the previous port fail
 
 ### Requirement: Serve a read-only dashboard shell
@@ -47,10 +47,10 @@ And the body contains top-level sections `session`, `dashboard`, `designTree`, `
 #### Scenario: Snapshot is derived from live process state
 
 Given the web UI server is running
-And pi-kit subsystem state changes during the session
+And Omegon subsystem state changes during the session
 When a browser requests `GET /api/state` after the change
 Then the returned snapshot reflects the latest live shared state and on-demand scanned lifecycle data
-And pi-kit does not require a separate browser history database to serve the update
+And Omegon does not require a separate browser history database to serve the update
 
 ### Requirement: Expose read-only slice routes for debugging and composition
 
@@ -62,7 +62,7 @@ Given the web UI server is running
 When a browser requests `GET /api/design-tree`, `GET /api/openspec`, `GET /api/cleave`, `GET /api/models`, `GET /api/memory`, and `GET /api/health`
 Then each route returns status `200`
 And each route returns JSON only for its documented slice
-And none of the routes mutate pi-kit state
+And none of the routes mutate Omegon state
 
 ### Requirement: Reject unsupported mutation routes in MVP
 
@@ -73,7 +73,7 @@ The first web UI release SHALL not expose browser-driven mutation or command exe
 Given the web UI server is running
 When a client sends `POST` to `/api/state`
 Then the server responds with a non-success status
-And the request does not trigger a pi-kit command or state mutation
+And the request does not trigger a Omegon command or state mutation
 
 #### Scenario: Unknown mutation route is absent
 
@@ -103,14 +103,14 @@ The web UI extension SHALL provide an operator command surface for starting, ins
 
 Given the web UI server is not running
 When the operator requests web UI status
-Then pi-kit reports that the server is stopped
+Then Omegon reports that the server is stopped
 And no browser is opened implicitly
 
 #### Scenario: Open server in browser
 
 Given the web UI server is running
 When the operator requests the web UI to open in a browser
-Then pi-kit opens the localhost URL using the platform browser launcher
+Then Omegon opens the localhost URL using the platform browser launcher
 And the URL points to the running local server
 
 ### Requirement: HTML shell delivery strategy

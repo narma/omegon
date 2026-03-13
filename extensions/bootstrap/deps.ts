@@ -14,7 +14,7 @@ export interface Dep {
 	id: string;
 	/** Human-readable name */
 	name: string;
-	/** What it does in pi-kit context */
+	/** What it does in Omegon context */
 	purpose: string;
 	/** Which extensions use it */
 	usedBy: string[];
@@ -247,7 +247,7 @@ export function formatReport(statuses: DepStatus[]): string {
 		optional: "Optional (niche / platform-specific)",
 	};
 
-	const lines: string[] = ["# pi-kit Dependencies\n"];
+	const lines: string[] = ["# Omegon Dependencies\n"];
 
 	for (const tier of tiers) {
 		const group = statuses.filter((s) => s.dep.tier === tier);

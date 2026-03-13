@@ -71,23 +71,23 @@ User wants the branch display to look like an actual git branch tree — not a f
 
 Zero branches:
 ```
-⌂ ~/workspace/ai/pi-kit  main
+⌂ ~/workspace/ai/Omegon  main
 ```
 
 One branch:
 ```
-⌂ ~/workspace/ai/pi-kit  main ─── feature/dash-raised-layout
+⌂ ~/workspace/ai/Omegon  main ─── feature/dash-raised-layout
 ```
 
 Two+ branches (fork shape — line 2 indented to align with fork point):
 ```
-⌂ ~/workspace/ai/pi-kit  main ─┬─ feature/dash-raised-layout
+⌂ ~/workspace/ai/Omegon  main ─┬─ feature/dash-raised-layout
                                 └─ feature/skill-aware-dispatch
 ```
 
 Three+ branches (middle rows use ├, last uses └):
 ```
-⌂ ~/workspace/ai/pi-kit  main ─┬─ feature/dash-raised-layout
+⌂ ~/workspace/ai/Omegon  main ─┬─ feature/dash-raised-layout
                                 ├─ feature/skill-aware-dispatch  
                                 └─ refactor/something-else
 ```
@@ -107,7 +107,7 @@ Since the raised view is the expanded state, the git branch section is a first-c
 **Proposed structure:**
 
 ```
-pi-kit ─┬─ ● main
+Omegon ─┬─ ● main
         ├─ feature/dash-raised-layout   ◈ Raised Dashboard: Horizontal Split Layout
         └─ feature/skill-aware-dispatch ◈ Skill-Aware Dispatch
 ```

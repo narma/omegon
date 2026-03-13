@@ -2,7 +2,7 @@
 
 ### Requirement: Provider-aware tier resolution uses abstract capability tiers
 
-pi-kit SHALL keep planning-time model tiers abstract while resolving execution to concrete provider models at runtime.
+Omegon SHALL keep planning-time model tiers abstract while resolving execution to concrete provider models at runtime.
 
 #### Scenario: Abstract tier resolves through provider preference
 Given the session routing policy prefers providers in the order "openai", "anthropic", "local"
@@ -58,7 +58,7 @@ Then the spawned review process receives "--model claude-opus-4-6"
 
 ### Requirement: Session routing policy is operator-driven and lightweight
 
-pi-kit SHALL store a session-scoped routing policy that captures operator budget posture without requiring exact quota accounting.
+Omegon SHALL store a session-scoped routing policy that captures operator budget posture without requiring exact quota accounting.
 
 #### Scenario: Session policy stores provider order and flags
 Given the operator sets a routing policy preferring "openai" then "anthropic"
@@ -77,7 +77,7 @@ And future model resolution skips Anthropic unless no acceptable alternative exi
 
 ### Requirement: Large Cleave runs request budget posture before dispatch
 
-When a Cleave run is likely to consume significant cloud budget, pi-kit SHALL ask the operator for current provider posture before dispatching children.
+When a Cleave run is likely to consume significant cloud budget, Omegon SHALL ask the operator for current provider posture before dispatching children.
 
 #### Scenario: Large run triggers preflight prompt
 Given Cleave is about to dispatch a run that exceeds the large-run threshold
@@ -94,17 +94,17 @@ And routing uses the existing session policy
 
 ### Requirement: Operator-facing labels use Servitor/Adept/Magos/Archmagos names
 
-pi-kit SHALL present provider-neutral tier labels in operator-facing UX while preserving internal compatibility in phase 1.
+Omegon SHALL present provider-neutral tier labels in operator-facing UX while preserving internal compatibility in phase 1.
 
 #### Scenario: Model-budget status uses thematic tier labels
 Given the active model tier is "haiku"
-When pi-kit displays the current tier to the operator
+When Omegon displays the current tier to the operator
 Then the display label is "Adept"
 And the display does not require Anthropic product names
 
 #### Scenario: Deep tier uses Archmagos label
 Given the active model tier is "opus"
-When pi-kit displays the current tier to the operator
+When Omegon displays the current tier to the operator
 Then the display label is "Archmagos"
 
 #### Scenario: Internal compatibility remains intact
@@ -120,12 +120,12 @@ Background routing SHALL prefer inexpensive cloud models over local inference wh
 #### Scenario: Extraction prefers cheap cloud when configured
 Given the session routing policy prefers cheap cloud over local
 And an OpenAI model satisfies the configured extraction tier
-When pi-kit selects a model for extraction work
+When Omegon selects a model for extraction work
 Then it chooses the OpenAI model instead of a local model
 
 #### Scenario: Offline or unavailable cloud falls back safely
 Given the session routing policy prefers cheap cloud over local
 And no configured cloud provider has a matching available model
 And a local model is available
-When pi-kit selects a model for extraction work
+When Omegon selects a model for extraction work
 Then it falls back to the local model

@@ -445,7 +445,7 @@ if (skillMatch) {
 ## Open Threads
 
 - Should `matchSkillsToChild` also scan the task *description* for skill signals? ("Set up pytest fixtures" → python skill even if scope is empty)
-- How to handle skills that are project-local vs pi-kit-global? The skill paths differ.
+- How to handle skills that are project-local vs omegon-global? The skill paths differ.
 - Should the orchestrator report which skills were matched per child in the progress output?
 - How does the review agent access test results? Does the execute agent run tests, or does the review agent trigger them?
 - Should review feedback accumulate across iterations (review 2 sees review 1's feedback + fix diff)?

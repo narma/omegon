@@ -1,7 +1,7 @@
 // @secret HF_TOKEN "HuggingFace token (gated model access for FLUX.1)"
 // @config DIFFUSION_CLI_DIR "Path to uv project with mflux installed" [default: ~/diffusion-cli]
 // @config PI_VISUALS_DIR "Output directory for generated images and diagrams" [default: ~/.pi/visuals]
-// @config EXCALIDRAW_RENDER_DIR "Path to Excalidraw render pipeline (uv + playwright)" [default: <pi-kit>/extensions/render/excalidraw-renderer]
+// @config EXCALIDRAW_RENDER_DIR "Path to Excalidraw render pipeline (uv + playwright)" [default: <omegon>/extensions/render/excalidraw-renderer]
 
 /**
  * render — Visual rendering extension for pi

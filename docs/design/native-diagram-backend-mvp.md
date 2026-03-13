@@ -29,7 +29,7 @@ Implement a tightly scoped native diagram backend inside extensions/render that 
 ### Decision: Use a native SVG backend with Node-native rasterization
 
 **Status:** decided
-**Rationale:** Producing SVG directly gives pi-kit deterministic geometry and testable output, while Node-native rasterization avoids browser/Playwright dependencies for the new backend.
+**Rationale:** Producing SVG directly gives Omegon deterministic geometry and testable output, while Node-native rasterization avoids browser/Playwright dependencies for the new backend.
 
 ## Open Questions
 

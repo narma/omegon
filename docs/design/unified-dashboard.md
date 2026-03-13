@@ -3,7 +3,7 @@ id: unified-dashboard
 title: Unified Live Dashboard for Cleave + Design Tree + OpenSpec
 status: implemented
 related: [dashboard-cleanup]
-tags: [tui, ux, dashboard, pi-kit]
+tags: [tui, ux, dashboard, Omegon]
 open_questions: []
 ---
 
@@ -153,7 +153,7 @@ footer                   ← setFooter() or built-in FooterComponent
 ### Inter-Extension Communication Mechanisms
 
 1. **`sharedState` (globalThis singleton)** — Synchronous, zero overhead. Already in use (status-bar reads `memoryTokenEstimate` written by project-memory). Module-level import. Any extension can read/write.
-2. **`pi.events` (EventBus)** — `emit(channel, data)` / `on(channel, handler)` returning unsubscribe fn. Simple pub/sub. Not currently used by any pi-kit extension.
+2. **`pi.events` (EventBus)** — `emit(channel, data)` / `on(channel, handler)` returning unsubscribe fn. Simple pub/sub. Not currently used by any Omegon extension.
 3. **Lifecycle events** — `tool_execution_end`, `agent_end`, `turn_end` etc. fire for ALL extensions. Each extension can observe events from any tool.
 4. **Widget key ownership** — Multiple extensions can own different widget keys in the same zone. They render in insertion order (Map iteration order).
 
@@ -310,7 +310,7 @@ Use `setFooter()` to create a multi-line footer that can expand/collapse between
 ### How It Would Work
 ```
 LOWERED (default):
-  ◈ D:3/4 ◎ OS:2 ⚡ idle  │  T3 ▓▓████░░░░ 28%  │  ~/workspace/pi-kit (main)
+  ◈ D:3/4 ◎ OS:2 ⚡ idle  │  T3 ▓▓████░░░░ 28%  │  ~/workspace/Omegon (main)
 
 RAISED (toggle via shortcut):
   ◈ Design Tree  3/4 decided · 1 exploring · 6?
@@ -319,7 +319,7 @@ RAISED (toggle via shortcut):
     ✓ scenario-first 16/16  ◦ skill-aware 0/31 [specs]
   ⚡ Cleave  idle
   ─────────────────────────────────────────────────
-  T3 ▓▓████░░░░ 28%  │  ~/workspace/pi-kit (main)
+  T3 ▓▓████░░░░ 28%  │  ~/workspace/Omegon (main)
 ```
 
 ### Pros

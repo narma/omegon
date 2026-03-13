@@ -19,7 +19,7 @@ With tsc --noEmit now green, we have a deterministic oracle that can answer "is 
 
 ### Feature Lifecycle Phases and Current Guardrail Coverage
 
-The pi-kit feature lifecycle has 7 distinct phases where code is produced or evaluated. Currently, deterministic checks (tsc, tests) exist but are **never automatically invoked** — they depend entirely on the agent remembering to run them.
+The Omegon feature lifecycle has 7 distinct phases where code is produced or evaluated. Currently, deterministic checks (tsc, tests) exist but are **never automatically invoked** — they depend entirely on the agent remembering to run them.
 
 | Phase | What happens | Current guardrails | Gap |
 |-------|-------------|-------------------|-----|
@@ -35,7 +35,7 @@ The pi-kit feature lifecycle has 7 distinct phases where code is produced or eva
 
 ### Proposed Integration Architecture — Guardrail Registry + Automatic Gates
 
-**Core concept: A project-level guardrail registry** — a declarative config (in package.json or a dedicated file) that lists deterministic checks the project requires. The pi-kit infrastructure then invokes these checks automatically at the right lifecycle points.
+**Core concept: A project-level guardrail registry** — a declarative config (in package.json or a dedicated file) that lists deterministic checks the project requires. The Omegon infrastructure then invokes these checks automatically at the right lifecycle points.
 
 ```jsonc
 // package.json or .pi/guardrails.json
@@ -72,7 +72,7 @@ The pi-kit feature lifecycle has 7 distinct phases where code is produced or eva
 
 **I7: Commit-time directive reinforcement** — When the agent is about to commit (detected by the git skill or a pre-commit pattern), the skill directive should explicitly say "run `npm run typecheck` and include the output." This is the last line of defense.
 
-**Why registry, not hardcoded?** Different projects have different checks — a Python project needs mypy+ruff, a Rust project needs clippy+cargo test. The registry pattern means the guardrail infrastructure works for any pi-kit project, not just this one.
+**Why registry, not hardcoded?** Different projects have different checks — a Python project needs mypy+ruff, a Rust project needs clippy+cargo test. The registry pattern means the guardrail infrastructure works for any Omegon project, not just this one.
 
 ### Implementation Effort and Priority Ordering
 

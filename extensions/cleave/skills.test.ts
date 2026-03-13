@@ -224,7 +224,7 @@ describe("resolveSkillPath", () => {
 	beforeEach(() => { dir = tmpDir(); });
 	afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
-	it("finds SKILL.md in pi-kit skills directory", () => {
+	it("finds SKILL.md in Omegon skills directory", () => {
 		const skillDir = path.join(dir, "skills", "python");
 		fs.mkdirSync(skillDir, { recursive: true });
 		fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# Python Skill");

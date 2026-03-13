@@ -10,7 +10,7 @@ open_questions: []
 
 ## Overview
 
-pi-kit ships 25+ extensions and 12 skills. Many are context-inappropriate for a given project — the Rust skill in a Python project, the vault extension when there's no Obsidian vault, the OCI skill in a library repo, etc. We need a system that detects project context and activates an appropriate subset of tools/skills, either automatically at session start or via an explicit `/init` or `/profile` command.
+Omegon ships 25+ extensions and 12 skills. Many are context-inappropriate for a given project — the Rust skill in a Python project, the vault extension when there's no Obsidian vault, the OCI skill in a library repo, etc. We need a system that detects project context and activates an appropriate subset of tools/skills, either automatically at session start or via an explicit `/init` or `/profile` command.
 
 Key tensions:
 - **Tools** can be toggled at runtime via `pi.setActiveTools(names[])` / `pi.getActiveTools()`
@@ -24,7 +24,7 @@ The practical lever is **tool activation** — disable tools for extensions that
 
 ### Tool Inventory & Control Surface
 
-**pi-kit registers ~30 tools**, plus MCP bridge tools (scribe: ~30 more). Total: ~60 tools in context window.
+**Omegon registers ~30 tools**, plus MCP bridge tools (scribe: ~30 more). Total: ~60 tools in context window.
 
 **Runtime control levers:**
 - `pi.getActiveTools()` / `pi.setActiveTools(names[])` — toggle tool availability at runtime
@@ -63,7 +63,7 @@ The practical lever is **tool activation** — disable tools for extensions that
 | `local-ai` | ollama installed | ask_local_model, list_local_models, manage_ollama | — |
 | `web` | (always for now) | web_search, view | — |
 | `scribe` | scribe MCP configured | all mcp_scribe_* tools | — |
-| `pi-dev` | cwd is pi-kit or has pi.extensions in pkg.json | all tools | — |
+| `pi-dev` | cwd is Omegon or has pi.extensions in pkg.json | all tools | — |
 
 **Detection at session_start:**
 1. Scan `cwd` for language/framework markers

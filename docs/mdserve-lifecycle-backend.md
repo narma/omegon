@@ -13,7 +13,7 @@ priority: 1
 
 ## Overview
 
-> Parent: [pi-kit Rendering Engine — Lifecycle Visualization & Project Intelligence Layer](markdown-viewport.md)
+> Parent: [Omegon Rendering Engine — Lifecycle Visualization & Project Intelligence Layer](markdown-viewport.md)
 > Spawned from: "What is the right decomposition into implementation child nodes?"
 
 *To be explored.*

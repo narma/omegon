@@ -9,7 +9,7 @@ description: OpenSpec lifecycle for spec-driven development. Use when proposing 
 
 ## Overview
 
-OpenSpec is pi-kit's specification layer for spec-and-test-driven development. It ensures that every non-trivial change follows the lifecycle:
+OpenSpec is Omegon's specification layer for spec-and-test-driven development. It ensures that every non-trivial change follows the lifecycle:
 
 ```
 propose → spec → plan → implement → verify → archive

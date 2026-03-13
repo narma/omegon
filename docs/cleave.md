@@ -15,7 +15,7 @@ last_updated: 2026-03-10
 
 ## What It Does
 
-Cleave is pi-kit's parallel execution system. Given a directive (or an OpenSpec change with tasks.md), it:
+Cleave is Omegon's parallel execution system. Given a directive (or an OpenSpec change with tasks.md), it:
 
 1. **Assesses** complexity via `cleave_assess` — pattern matching against multi-system indicators
 2. **Plans** decomposition into child tasks with scope, dependencies, and skill annotations

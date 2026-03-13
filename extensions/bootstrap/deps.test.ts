@@ -42,7 +42,7 @@ describe("bootstrap/deps", () => {
 			{ dep: DEPS[DEPS.length - 1], available: false },
 		];
 		const report = formatReport(statuses);
-		assert.ok(report.includes("# pi-kit Dependencies"));
+		assert.ok(report.includes("# Omegon Dependencies"));
 		assert.ok(report.includes("✅") || report.includes("❌"));
 		// Missing dep should show install hint
 		assert.ok(report.includes("→"), "missing dep should show install command");

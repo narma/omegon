@@ -1,6 +1,6 @@
 # Design Tree
 
-Structured design exploration documents for pi-kit.
+Structured design exploration documents for Omegon.
 
 Documents are markdown files with YAML frontmatter tracking status, dependencies, and open questions. The agent creates and manages these via the `design_tree` and `design_tree_update` tools, or via `/design` commands.
 

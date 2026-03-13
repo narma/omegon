@@ -20,7 +20,7 @@ A non-existent method (ctx.say) survived authoring, review, testing, and deploym
 
 **Layer 1: Authoring** — AI generated `ctx.say()` which doesn't exist on `ExtensionCommandContext`. The SDK types define `ctx.ui.notify()`. No static analysis ran at write time.
 
-**Layer 2: No tsconfig.json** — pi-kit has NO TypeScript compiler dependency and NO tsconfig. Extensions are transpiled at runtime by jiti, which strips types without checking them. There is literally no type-checking step anywhere in the pipeline.
+**Layer 2: No tsconfig.json** — Omegon has NO TypeScript compiler dependency and NO tsconfig. Extensions are transpiled at runtime by jiti, which strips types without checking them. There is literally no type-checking step anywhere in the pipeline.
 
 **Layer 3: Test coverage gap** — `extensions/bootstrap/deps.test.ts` tests the dep-checking logic (pure functions) but never exercises the command handlers that call `ctx.say`. No integration test ever constructs a real or mock `ExtensionCommandContext` and calls the `/refresh` handler.
 

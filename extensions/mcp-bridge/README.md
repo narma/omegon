@@ -211,7 +211,7 @@ Project config: `.pi/mcp.json`
 - `@sinclair/typebox` — provided by pi (virtual module)
 - `@mariozechner/pi-coding-agent` — provided by pi (virtual module)
 
-The SDK is declared in `package.json` and installed by pi's package manager (`npm install` at the pi-kit root after `git pull`).
+The SDK is declared in `package.json` and installed by pi's package manager (`npm install` at the Omegon root after `git pull`).
 
 ## Known limitations
 

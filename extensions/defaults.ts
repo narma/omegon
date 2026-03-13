@@ -1,11 +1,11 @@
 /**
- * defaults — Auto-configure pi-kit defaults on first install
+ * defaults — Auto-configure Omegon defaults on first install
  *
  * - Sets theme to "default" if no theme is configured
  * - Deploys global AGENTS.md to ~/.pi/agent/ for cross-project directives
  *
  * Guards:
- * - Only writes settings/AGENTS.md if not already present or if managed by pi-kit
+ * - Only writes settings/AGENTS.md if not already present or if managed by Omegon
  * - Never overwrites a user-authored AGENTS.md (detected by absence of marker comment)
  */
 
@@ -22,13 +22,14 @@ const AGENT_DIR = path.join(
 const SETTINGS_PATH = path.join(AGENT_DIR, "settings.json");
 const GLOBAL_AGENTS_PATH = path.join(AGENT_DIR, "AGENTS.md");
 
-/** Marker embedded in the deployed AGENTS.md to identify pi-kit ownership */
-const PIKIT_MARKER = "<!-- managed by pi-kit -->";
+/** Marker embedded in the deployed AGENTS.md to identify Omegon ownership */
+const PIKIT_MARKER = "<!-- managed by omegon -->";
+const PIKIT_MARKER_LEGACY = "<!-- managed by pi-kit -->"; // legacy — still treated as owned
 
 /** Hash file tracks the last content we deployed, so we detect user edits */
 const HASH_PATH = path.join(AGENT_DIR, ".agents-md-hash");
 
-/** Path to the template shipped with the pi-kit package */
+/** Path to the template shipped with the Omegon package */
 const TEMPLATE_PATH = path.join(import.meta.dirname, "..", "config", "AGENTS.md");
 
 function contentHash(content: string): string {
@@ -52,7 +53,7 @@ export default function (pi: ExtensionAPI) {
       if (changed) {
         fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", "utf8");
         if (ctx.hasUI) {
-          ctx.ui.notify("pi-kit: set theme to default (restart to apply)", "info");
+          ctx.ui.notify("Omegon: set theme to default (restart to apply)", "info");
         }
       }
     } catch {
@@ -69,7 +70,7 @@ export default function (pi: ExtensionAPI) {
       if (fs.existsSync(GLOBAL_AGENTS_PATH)) {
         const existing = fs.readFileSync(GLOBAL_AGENTS_PATH, "utf8");
 
-        if (existing.includes(PIKIT_MARKER)) {
+        if (existing.includes(PIKIT_MARKER) || existing.includes(PIKIT_MARKER_LEGACY)) {
           // We own this file — check if user has edited it since last deploy
           if (existing !== deployContent) {
             const lastHash = fs.existsSync(HASH_PATH) ? fs.readFileSync(HASH_PATH, "utf8").trim() : null;
@@ -81,7 +82,7 @@ export default function (pi: ExtensionAPI) {
               fs.writeFileSync(HASH_PATH, existingHash, "utf8");
               if (ctx.hasUI) {
                 ctx.ui.notify(
-                  "pi-kit: AGENTS.md template updated. Changes will apply on next session start.",
+                  "Omegon: AGENTS.md template updated. Changes will apply on next session start.",
                   "info",
                 );
               }
@@ -89,7 +90,7 @@ export default function (pi: ExtensionAPI) {
               // File was modified externally — warn, don't overwrite
               if (ctx.hasUI) {
                 ctx.ui.notify(
-                  "pi-kit: ~/.pi/agent/AGENTS.md has local edits. Remove the pi-kit marker to keep them, or delete the file to re-deploy.",
+                  "Omegon: ~/.pi/agent/AGENTS.md has local edits. Remove the omegon marker to keep them, or delete the file to re-deploy.",
                   "warning",
                 );
               }
@@ -106,7 +107,7 @@ export default function (pi: ExtensionAPI) {
         fs.writeFileSync(GLOBAL_AGENTS_PATH, deployContent, "utf8");
         fs.writeFileSync(HASH_PATH, contentHash(deployContent), "utf8");
         if (ctx.hasUI) {
-          ctx.ui.notify("pi-kit: deployed global directives to ~/.pi/agent/AGENTS.md", "info");
+          ctx.ui.notify("Omegon: deployed global directives to ~/.pi/agent/AGENTS.md", "info");
         }
       }
     } catch {

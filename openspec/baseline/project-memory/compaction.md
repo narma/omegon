@@ -5,7 +5,7 @@
 Routine context compaction must avoid local-first behavior when the available local chat models are materially high-latency. Default compaction behavior should prefer non-local routing for normal sessions and reserve local compaction for explicit opt-in or fallback after cloud failure.
 
 #### Scenario: Default compaction does not intercept with local-first policy
-Given pi-kit is using the default project-memory configuration
+Given Omegon is using the default project-memory configuration
 When a session compaction is initiated during a normal session
 Then the project-memory extension does not require local-first compaction by default
 And cloud or provider-routed compaction remains the first attempted path unless a retry or explicit local policy applies

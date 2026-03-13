@@ -62,7 +62,7 @@ Evaluate pi 0.57.0's non-capturing overlay API (OverlayOptions.nonCapturing, Ove
 - ⚠️ iTerm2 — partial CSI u support (check version)
 - ❌ tmux — needs `extended-keys` option enabled
 
-**Impact**: This is NOT a bug in pi-kit. It's a terminal capability issue. `ctrl+shift+b` is the correct registration, but it will **silently fail on terminals without Kitty protocol support**. The `/dashboard` command works everywhere because it's a text command, not a keybind.
+**Impact**: This is NOT a bug in Omegon. It's a terminal capability issue. `ctrl+shift+b` is the correct registration, but it will **silently fail on terminals without Kitty protocol support**. The `/dashboard` command works everywhere because it's a text command, not a keybind.
 
 **Mitigation options**:
 1. Keep `ctrl+shift+b` for capable terminals, document the requirement
@@ -142,7 +142,7 @@ pi-tui overlays are composited on top of the terminal buffer — the overlay is 
 ### Decision: ctrl+shift+b intercepted by Kitty — must change keybind
 
 **Status:** decided
-**Rationale:** Kitty's default keymap maps ctrl+shift+b to move_window_backward, consuming it before pi receives any input. This is terminal-level interception, not fixable in pi-kit. Free ctrl+shift letters in Kitty defaults: a, d, i, j, m, p, r, x, y. Of those, ctrl+shift+d is consumed by pi-tui's hardcoded debug handler. Best candidate: ctrl+shift+d with `alt+d` as a universal legacy fallback that works on all terminals. Also register a second bind so at least one always works regardless of terminal.
+**Rationale:** Kitty's default keymap maps ctrl+shift+b to move_window_backward, consuming it before pi receives any input. This is terminal-level interception, not fixable in Omegon. Free ctrl+shift letters in Kitty defaults: a, d, i, j, m, p, r, x, y. Of those, ctrl+shift+d is consumed by pi-tui's hardcoded debug handler. Best candidate: ctrl+shift+d with `alt+d` as a universal legacy fallback that works on all terminals. Also register a second bind so at least one always works regardless of terminal.
 
 ### Decision: Use ctrl+shift+p as primary keybind, document Kitty collision issue
 

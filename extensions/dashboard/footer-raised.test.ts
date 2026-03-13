@@ -23,7 +23,7 @@ function makeFooterData() {
 
 function makeContext() {
   return {
-    cwd: "/Users/cwilson/workspace/ai/pi-kit",
+    cwd: "/Users/cwilson/workspace/ai/omegon",
     model: {
       provider: "openai-codex",
       id: "gpt-5.4",
@@ -522,14 +522,14 @@ describe("buildBranchTreeLines", () => {
   const theme = makeTheme() as any;
 
   it("zero branches returns just repoName", () => {
-    const lines = buildBranchTreeLines({ repoName: "pi-kit", currentBranch: null, allBranches: [] }, theme);
+    const lines = buildBranchTreeLines({ repoName: "omegon", currentBranch: null, allBranches: [] }, theme);
     assert.equal(lines.length, 1);
-    assert.ok(lines[0]!.includes("pi-kit"));
+    assert.ok(lines[0]!.includes("omegon"));
     assert.ok(!lines[0]!.includes("─"), "should have no connectors");
   });
 
   it("single branch uses ─── connector", () => {
-    const lines = buildBranchTreeLines({ repoName: "pi-kit", currentBranch: "main", allBranches: ["main"] }, theme);
+    const lines = buildBranchTreeLines({ repoName: "omegon", currentBranch: "main", allBranches: ["main"] }, theme);
     assert.equal(lines.length, 1);
     assert.ok(lines[0]!.includes("───"), lines[0]);
     assert.ok(!lines[0]!.includes("┬"), lines[0]);
@@ -537,7 +537,7 @@ describe("buildBranchTreeLines", () => {
 
   it("two branches use ─┬─ on first line, └─ on second", () => {
     const lines = buildBranchTreeLines({
-      repoName: "pi-kit",
+      repoName: "omegon",
       currentBranch: "main",
       allBranches: ["main", "feature/foo"],
     }, theme);
@@ -549,7 +549,7 @@ describe("buildBranchTreeLines", () => {
 
   it("three branches use ─┬─, ├─, └─", () => {
     const lines = buildBranchTreeLines({
-      repoName: "pi-kit",
+      repoName: "omegon",
       currentBranch: "main",
       allBranches: ["main", "feature/foo", "feature/bar"],
     }, theme);
@@ -561,7 +561,7 @@ describe("buildBranchTreeLines", () => {
 
   it("indent on continuation lines equals visibleWidth(repoName + ' ─')", () => {
     const { visibleWidth: vw } = require("@cwilson613/pi-tui");
-    const repoName = "pi-kit";
+    const repoName = "omegon";
     const lines = buildBranchTreeLines({
       repoName,
       currentBranch: "main",
@@ -575,7 +575,7 @@ describe("buildBranchTreeLines", () => {
 
   it("annotation appears for a branch matching a design node's branches[]", () => {
     const lines = buildBranchTreeLines({
-      repoName: "pi-kit",
+      repoName: "omegon",
       currentBranch: "main",
       allBranches: ["main", "feature/my-work"],
       designNodes: [{ branches: ["feature/my-work"], title: "My Work Node" }],
@@ -588,7 +588,7 @@ describe("buildBranchTreeLines", () => {
 
   it("current branch is placed first regardless of sort order", () => {
     const lines = buildBranchTreeLines({
-      repoName: "pi-kit",
+      repoName: "omegon",
       currentBranch: "feature/current",
       allBranches: ["main", "feature/current", "feature/other"],
     }, theme);

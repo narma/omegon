@@ -649,7 +649,7 @@ export class DashboardFooter implements Component {
 
   /**
    * HUD system section — one or two lines:
-   *   ⌂ ~/workspace/ai/pi-kit                       ◦ my-session
+   *   ⌂ ~/workspace/ai/omegon                       ◦ my-session
    *   ⚡ dispatch 3/8  ·  ◎ 2 active  ·  ↑ ok
    *
    * Extension badges reuse the established content-section glyphs so the

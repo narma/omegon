@@ -1,8 +1,8 @@
-# pi-kit Rendering Engine — Lifecycle Visualization & Project Intelligence Layer
+# Omegon Rendering Engine — Lifecycle Visualization & Project Intelligence Layer
 
 ## Intent
 
-Extend the existing mdserve fork into a full project intelligence portal for pi-kit workflows. Three-layer architecture: document (wikilinks, live-reload), lifecycle (design tree graph, OpenSpec funnel, kanban), and intelligence (traceability, memory graph, health scoring). Dioxus WASM frontend for lifecycle/intelligence views; axum backend serves both document layer (minijinja) and a JSON API. Single Rust binary with embedded WASM bundle. Nix flake distribution following styrened pattern.
+Extend the existing mdserve fork into a full project intelligence portal for Omegon workflows. Three-layer architecture: document (wikilinks, live-reload), lifecycle (design tree graph, OpenSpec funnel, kanban), and intelligence (traceability, memory graph, health scoring). Dioxus WASM frontend for lifecycle/intelligence views; axum backend serves both document layer (minijinja) and a JSON API. Single Rust binary with embedded WASM bundle. Nix flake distribution following styrened pattern.
 
 ## Decisions Made
 

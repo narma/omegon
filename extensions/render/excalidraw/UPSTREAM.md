@@ -78,4 +78,4 @@ Key things that could break:
 
 - **Date:** 2026-03-03
 - **Upstream version:** 1.1.0
-- **By:** cwilson (pi-kit session)
+- **By:** cwilson (omegon session)

@@ -16,7 +16,7 @@ export type SchemaVersion = typeof SCHEMA_VERSION;
 export interface SessionSnapshot {
   /** ISO 8601 timestamp when the snapshot was generated. */
   capturedAt: string;
-  /** pi-kit package version (from package.json). */
+  /** Omegon package version (from package.json). */
   piKitVersion: string;
   /** Absolute path of the repository root (process.cwd() at extension load). */
   repoRoot: string;

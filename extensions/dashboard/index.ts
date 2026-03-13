@@ -312,9 +312,9 @@ export default function (pi: ExtensionAPI) {
       tui?.requestRender();
     });
 
-    // Non-blocking capability health check — probes pi-kit's own runtime deps
+    // Non-blocking capability health check — probes Omegon's own runtime deps
     // (ollama, d2, pandoc, etc.) using the bootstrap DEPS registry.
-    // This is NOT a project linter — it tells the user which pi-kit features
+    // This is NOT a project linter — it tells the user which Omegon features
     // won't work in the current environment.
     setTimeout(async () => {
       try {
@@ -325,11 +325,11 @@ export default function (pi: ExtensionAPI) {
 
         const summary = missing.map(d => d.name).join(", ");
         const details = missing.map(d => `• ${d.name} — ${d.purpose}`).join("\n");
-        ctx.ui.notify(`Missing pi-kit deps: ${summary}`, "info");
+        ctx.ui.notify(`Missing Omegon deps: ${summary}`, "info");
         pi.sendMessage({
           customType: "guardrail-health-check",
-          content: `[pi-kit startup check] Missing runtime dependencies: ${summary}.\n\n`
-            + `These pi-kit features may not work:\n${details}\n\n`
+          content: `[omegon startup check] Missing runtime dependencies: ${summary}.\n\n`
+            + `These Omegon features may not work:\n${details}\n\n`
             + `Run \`/bootstrap\` to install interactively.`,
           display: true,
         });

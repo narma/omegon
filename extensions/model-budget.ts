@@ -103,7 +103,7 @@ const TIER_CAPABILITY_COPY: Record<TierName, string> = {
 export function buildSetModelTierDescription(): string {
   return (
     "Switch the active capability tier based on task complexity. " +
-    "pi-kit resolves the requested tier through the active provider routing policy, so the backing model may come from Anthropic, OpenAI, or local inference. " +
+    "Omegon resolves the requested tier through the active provider routing policy, so the backing model may come from Anthropic, OpenAI, or local inference. " +
     "Use 'local' for on-device work, 'haiku' for simple lookups and boilerplate, 'sonnet' for routine coding and execution, and 'opus' for deep reasoning and architecture."
   );
 }

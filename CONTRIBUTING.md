@@ -1,4 +1,4 @@
-# Contributing to pi-kit
+# Contributing to Omegon
 
 Guidelines for branching, merging, and collaborating on this repository.
 

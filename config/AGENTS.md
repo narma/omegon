@@ -77,7 +77,7 @@ If yes, guide them to set up request/response validation middleware that loads t
    - **Rust/Actix:** `paperclip` or `utoipa` with validation layers
    - **.NET:** `NSwag` or `Swashbuckle` with request validation middleware
 
-pi-kit takes **no position** on language, framework, or specific library choices. The directive is: if the user wants runtime enforcement, the contract must be loaded from the spec file — not reconstructed from code annotations.
+Omegon takes **no position** on language, framework, or specific library choices. The directive is: if the user wants runtime enforcement, the contract must be loaded from the spec file — not reconstructed from code annotations.
 
 ### Key principle
 
@@ -92,7 +92,7 @@ Specs define **what must be true** — they are the source of truth for correctn
 
 ## Memory Sync Rules
 
-Every project using pi-kit has a `.pi/memory/facts.jsonl` file that is git-tracked and uses `merge=union` in `.gitattributes`. These rules apply to ALL repositories:
+Every project using Omegon has a `.pi/memory/facts.jsonl` file that is git-tracked and uses `merge=union` in `.gitattributes`. These rules apply to ALL repositories:
 
 1. **Never `git rebase` a branch that touches `.pi/memory/facts.jsonl`** — the file uses `merge=union` which only works with merge commits. Rebase replays one side's version, silently losing the other's facts.
 2. **Never resolve `facts.jsonl` conflicts manually** — `merge=union` keeps all lines from both sides automatically. If it fails, concatenate both versions. Redundant lines are harmlessly deduplicated by `importFromJsonl()` on next session start.

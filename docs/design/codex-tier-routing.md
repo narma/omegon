@@ -12,7 +12,7 @@ openspec_change: codex-tier-routing
 
 ## Overview
 
-Explore how pi-kit should represent abstract model tiers while allowing Codex/OpenAI-backed execution in Cleave, effort controls, and related tooling without hard-coding Claude-specific tier names throughout the codebase.
+Explore how Omegon should represent abstract model tiers while allowing Codex/OpenAI-backed execution in Cleave, effort controls, and related tooling without hard-coding Claude-specific tier names throughout the codebase.
 
 ## Research
 

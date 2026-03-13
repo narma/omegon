@@ -198,7 +198,7 @@ function renderCompact(
   }
 
   // Footer data lines
-  lines.push(fg("dim", `~/workspace/ai/pi-kit`) + "  " +
+  lines.push(fg("dim", `~/workspace/ai/omegon`) + "  " +
     fg("magenta", "feature/unified-dashboard") + "  " +
     fg("dim", "claude-sonnet-4") + " " + fg("yellow", "◆med"));
   lines.push(fg("dim", `In:${formatTokens(45200)} Out:${formatTokens(12800)} $0.12  5 ext ok  3 providers`));
@@ -281,7 +281,7 @@ function renderRaised(
   }
 
   // Footer data (last 2 lines, same as compact)
-  lines.push(fg("dim", `~/workspace/ai/pi-kit`) + "  " +
+  lines.push(fg("dim", `~/workspace/ai/omegon`) + "  " +
     fg("magenta", "feature/unified-dashboard") + "  " +
     fg("dim", "claude-sonnet-4") + " " + fg("yellow", "◆med"));
 

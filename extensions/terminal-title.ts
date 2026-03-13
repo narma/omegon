@@ -12,14 +12,14 @@ import type { CleaveState } from "./dashboard/types.ts";
  * Format: π <project> [<status>] <activity> <flags>
  *
  * Examples:
- *   π pi-kit ✦                           — idle, awaiting input
- *   π pi-kit ◆ fixing auth bug           — thinking about user's request
- *   π pi-kit ⚙ Bash                      — executing a tool
- *   π pi-kit ⚙ Read → Edit              — tool chain (last 2)
- *   π pi-kit ◆ fixing auth bug ✦         — done, awaiting next input
- *   π pi-kit ⚡ cleave 3/5               — cleave dispatch in progress
- *   π pi-kit ⚡ cleave ✓                 — cleave complete
- *   π pi-kit T4 ◆ refactoring types      — turn 4, thinking
+ *   π omegon ✦                           — idle, awaiting input
+ *   π omegon ◆ fixing auth bug           — thinking about user's request
+ *   π omegon ⚙ Bash                      — executing a tool
+ *   π omegon ⚙ Read → Edit              — tool chain (last 2)
+ *   π omegon ◆ fixing auth bug ✦         — done, awaiting next input
+ *   π omegon ⚡ cleave 3/5               — cleave dispatch in progress
+ *   π omegon ⚡ cleave ✓                 — cleave complete
+ *   π omegon T4 ◆ refactoring types      — turn 4, thinking
  */
 export default function (pi: ExtensionAPI) {
   const project = basename(process.cwd());

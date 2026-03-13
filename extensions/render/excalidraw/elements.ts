@@ -159,7 +159,7 @@ function measureTextApprox(
 }
 
 // ---------------------------------------------------------------------------
-// Semantic palette helpers (pi-kit addition)
+// Semantic palette helpers (omegon addition)
 // ---------------------------------------------------------------------------
 
 /**

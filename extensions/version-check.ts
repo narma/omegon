@@ -1,5 +1,5 @@
 /**
- * version-check — Polls GitHub for new pi-kit releases and notifies the operator.
+ * version-check — Polls GitHub for new Omegon releases and notifies the operator.
  *
  * Checks on session start, then hourly. Compares the installed version
  * (from package.json) against the latest GitHub release tag. If a newer
@@ -14,7 +14,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_OWNER = "cwilson613";
-const REPO_NAME = "pi-kit";
+const REPO_NAME = "omegon";
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -70,7 +70,7 @@ export default function versionCheck(pi: ExtensionAPI) {
     notifiedVersion = latest;
     pi.sendMessage({
       customType: "view",
-      content: `**pi-kit update available:** v${installed} → v${latest}\n\nRun \`pi update\` to upgrade.`,
+      content: `**Omegon update available:** v${installed} → v${latest}\n\nRun \`pi update\` to upgrade.`,
       display: true,
     });
   }

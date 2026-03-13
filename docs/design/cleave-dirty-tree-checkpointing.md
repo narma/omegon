@@ -35,7 +35,7 @@ Without preflight handling, `/cleave` treats all of that as the same kind of fai
 
 ### Preflight behavior
 
-When `/cleave` sees a dirty tree, pi-kit classifies the changed paths before doing any git mutation.
+When `/cleave` sees a dirty tree, Omegon classifies the changed paths before doing any git mutation.
 
 ### Classification buckets
 
@@ -59,15 +59,15 @@ The preflight step offers explicit choices:
 - **proceed-without-cleave**
 - **cancel**
 
-The important property is that pi-kit performs the mechanics after the operator makes one policy decision; the operator should not need to manually juggle git commands.
+The important property is that Omegon performs the mechanics after the operator makes one policy decision; the operator should not need to manually juggle git commands.
 
 ### Checkpoint policy
 
 Checkpointing is intentionally conservative.
 
-- pi-kit may prepare a scoped staged set from confidently related files
-- pi-kit may suggest a conventional commit message scoped to the active change
-- pi-kit must **not create the commit until the operator explicitly approves it**
+- Omegon may prepare a scoped staged set from confidently related files
+- Omegon may suggest a conventional commit message scoped to the active change
+- Omegon must **not create the commit until the operator explicitly approves it**
 - low-confidence or unknown files are excluded from the checkpoint scope by default
 
 That means checkpointing is assisted, not automatic.
@@ -86,7 +86,7 @@ Expected handling:
 
 Dirty-tree preflight still matters when there is no active OpenSpec change.
 
-In that case, pi-kit should still:
+In that case, Omegon should still:
 
 - separate volatile from non-volatile changes
 - summarize what it can classify generically from git state
@@ -99,7 +99,7 @@ The classification is less informed, so the system should bias even harder towar
 ### Decision: Add an explicit cleave preflight checkpoint phase
 
 **Status:** decided
-**Rationale:** Before `/cleave` runs, pi-kit should detect dirty-tree state and treat it as a first-class workflow step, not just a hard error. The operator should be offered structured choices to checkpoint current work, stash unrelated work, or continue in-session without cleave.
+**Rationale:** Before `/cleave` runs, Omegon should detect dirty-tree state and treat it as a first-class workflow step, not just a hard error. The operator should be offered structured choices to checkpoint current work, stash unrelated work, or continue in-session without cleave.
 
 ### Decision: Checkpointing should be tied to lifecycle milestones, not only archive
 

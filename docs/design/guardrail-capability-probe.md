@@ -1,17 +1,17 @@
 ---
 id: guardrail-capability-probe
-title: Guardrails as Capability Probes — pi-kit runtime dependency checks
+title: Guardrails as Capability Probes — Omegon runtime dependency checks
 status: implemented
 related: [operator-capability-profile]
 tags: [guardrails, dx, ux, capabilities]
 open_questions: []
 ---
 
-# Guardrails as Capability Probes — pi-kit runtime dependency checks
+# Guardrails as Capability Probes — Omegon runtime dependency checks
 
 ## Overview
 
-Guardrails exist to tell users at session start which pi-kit features won't work in their current environment. They are NOT project linters. The correct scope is: "is the tooling pi-kit depends on available?" — ollama for local inference, d2 for diagram rendering, pandoc for document viewing, etc. Skill-frontmatter-driven project checks (mypy, tsc against user dirs) were a wrong abstraction and should be removed.
+Guardrails exist to tell users at session start which Omegon features won't work in their current environment. They are NOT project linters. The correct scope is: "is the tooling Omegon depends on available?" — ollama for local inference, d2 for diagram rendering, pandoc for document viewing, etc. Skill-frontmatter-driven project checks (mypy, tsc against user dirs) were a wrong abstraction and should be removed.
 
 ## Decisions
 

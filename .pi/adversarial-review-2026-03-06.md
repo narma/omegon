@@ -1,4 +1,4 @@
-# pi-kit Adversarial Code Review
+# Omegon Adversarial Code Review
 
 **Date:** 2026-03-06  
 **Scope:** All 49 extension source files (~20,500 lines)  

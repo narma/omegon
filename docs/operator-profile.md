@@ -15,7 +15,7 @@ last_updated: 2026-03-10
 
 ## What It Does
 
-The operator profile system captures durable preferences about which providers and models the operator wants pi-kit to use. It separates two concerns:
+The operator profile system captures durable preferences about which providers and models the operator wants Omegon to use. It separates two concerns:
 
 1. **Capability discovery**: What providers are authenticated? What local models are available? What hardware (GPU, RAM) exists?
 2. **Routing preferences**: Which providers are preferred for each capability role? When should fallback be blocked vs. allowed?
@@ -37,7 +37,7 @@ Bootstrap runs on first session start, probing dependencies (d2, pandoc, pdftopp
 - **Profile gates fallbacks, not just advertises capabilities**: A provider must be in the operator's preference list to receive fallback traffic. Silent cross-provider fallback is blocked by default.
 - **Schema maps semantic roles to ordered concrete candidates**: Each role (driver, extraction, compaction, review) has an ordered list of acceptable model candidates.
 - **Provider/source and role/tier are separate axes**: "Use Anthropic for driver" and "use opus tier" are independent choices.
-- **Default profile is safe without setup**: Without configuration, pi-kit uses the authenticated provider's defaults — no fallback, no local inference unless explicitly enabled.
+- **Default profile is safe without setup**: Without configuration, Omegon uses the authenticated provider's defaults — no fallback, no local inference unless explicitly enabled.
 - **Fixed 5-minute cooldown for transient provider failures in v1**: Simple timer-based cooldown before retrying a failed provider.
 
 ## Behavioral Contracts

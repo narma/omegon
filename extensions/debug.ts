@@ -1,9 +1,9 @@
 /**
- * Shared debug logging for pi-kit extensions.
+ * Shared debug logging for Omegon extensions.
  *
- * Output goes to a log file (~/.pi/agent/pi-kit-debug.log) so it doesn't
+ * Output goes to a log file (~/.pi/agent/omegon-debug.log) so it doesn't
  * corrupt the TUI. Tail the file in a separate terminal to watch live:
- *   tail -f ~/.pi/agent/pi-kit-debug.log
+ *   tail -f ~/.pi/agent/omegon-debug.log
  *
  * Controlled by PI_DEBUG environment variable:
  *   PI_DEBUG=1           — all extensions
@@ -24,7 +24,7 @@ const debugScopes = new Set(
 );
 
 const LOG_DIR = join(homedir(), ".pi", "agent");
-const LOG_PATH = join(LOG_DIR, "pi-kit-debug.log");
+const LOG_PATH = join(LOG_DIR, "omegon-debug.log");
 let dirEnsured = false;
 
 function ensureDir(): void {
@@ -47,7 +47,7 @@ function isEnabled(scope: string): boolean {
 export const DEBUG_LOG_PATH = LOG_PATH;
 
 /**
- * Log a debug message to the pi-kit debug log file.
+ * Log a debug message to the Omegon debug log file.
  *
  * @param scope - Extension name (e.g. "dashboard", "openspec", "cleave")
  * @param tag - Sub-tag for the message (e.g. "render", "emitState", "session_start")

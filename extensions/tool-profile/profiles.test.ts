@@ -121,8 +121,8 @@ describe("detectProfiles", () => {
     assert.ok(detected.includes("web"));
   });
 
-  it("detects pi-dev for pi-kit itself", () => {
-    // This test runs inside pi-kit which has pi.extensions in package.json
+  it("detects pi-dev for Omegon itself", () => {
+    // This test runs inside Omegon which has pi.extensions in package.json
     const detected = detectProfiles(process.cwd());
     assert.ok(detected.includes("pi-dev"));
   });

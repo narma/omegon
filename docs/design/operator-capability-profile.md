@@ -13,7 +13,7 @@ openspec_change: operator-capability-profile
 
 ## Overview
 
-Add a durable operator capability profile so pi-kit can choose models according to operator intent instead of falling back only on raw technical availability. The profile captures preferred candidates for public capability roles and the policy boundaries that determine whether cross-provider or cross-source fallback is allowed, confirmation-gated, or denied.
+Add a durable operator capability profile so Omegon can choose models according to operator intent instead of falling back only on raw technical availability. The profile captures preferred candidates for public capability roles and the policy boundaries that determine whether cross-provider or cross-source fallback is allowed, confirmation-gated, or denied.
 
 ## Research
 
@@ -97,14 +97,14 @@ The important boundary is upstream-to-local transitions that materially change U
 
 ### Default behavior without setup
 
-If setup is skipped, pi-kit synthesizes a safe default profile instead of leaving routing undefined. The default posture is:
+If setup is skipped, Omegon synthesizes a safe default profile instead of leaving routing undefined. The default posture is:
 - prefer upstream candidates,
 - allow same-role cross-provider fallback,
 - require confirmation or deny silent upstream-to-heavy-local fallback.
 
 ### Dynamic upstream failure handling
 
-Transient upstream failures such as Anthropic 429s and OpenAI session-limit exhaustion are treated as temporary capability loss. pi-kit records a fixed 5-minute runtime cooldown for the failed upstream provider/candidate and re-runs resolution through the same policy boundaries.
+Transient upstream failures such as Anthropic 429s and OpenAI session-limit exhaustion are treated as temporary capability loss. Omegon records a fixed 5-minute runtime cooldown for the failed upstream provider/candidate and re-runs resolution through the same policy boundaries.
 
 That means:
 - same-role cross-provider retry can happen automatically when policy allows it,
@@ -125,7 +125,7 @@ Current guidance is:
 ### Decision: Profile should gate fallbacks, not just advertise capabilities
 
 **Status:** decided
-**Rationale:** The profile must participate in routing decisions so pi-kit can refuse or require confirmation for harmful fallbacks instead of merely listing what is technically available.
+**Rationale:** The profile must participate in routing decisions so Omegon can refuse or require confirmation for harmful fallbacks instead of merely listing what is technically available.
 
 ### Decision: Schema should map semantic roles to ordered concrete candidates
 

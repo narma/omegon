@@ -11,7 +11,7 @@ last_updated: 2026-03-10
 
 ## What It Does
 
-The secrets extension manages provider API keys and credentials needed by pi-kit's model routing layer. It supports three input modes:
+The secrets extension manages provider API keys and credentials needed by Omegon's model routing layer. It supports three input modes:
 
 1. **Clipboard-based**: Copy the secret, run `/secrets configure`, confirm by length — value never displayed on screen
 2. **1Password references**: Store `op://vault/item/field` references that resolve at runtime via 1Password CLI

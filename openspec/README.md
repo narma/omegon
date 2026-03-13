@@ -1,6 +1,6 @@
 # OpenSpec
 
-Spec-driven development artifacts for pi-kit.
+Spec-driven development artifacts for Omegon.
 
 ## Structure
 

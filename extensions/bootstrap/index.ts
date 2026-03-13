@@ -1,5 +1,5 @@
 /**
- * bootstrap — First-time setup and dependency management for pi-kit.
+ * bootstrap — First-time setup and dependency management for Omegon.
  *
  * On first session start after install, presents a friendly checklist of
  * external dependencies grouped by tier (core / recommended / optional).
@@ -14,7 +14,7 @@
  *   /update-pi --dry-run — Check for update without installing
  *
  * Guards:
- *   - First-run detection via ~/.pi/agent/pi-kit-bootstrap-done marker
+ *   - First-run detection via ~/.pi/agent/omegon-bootstrap-done marker (checks pi-kit-bootstrap-done as legacy fallback)
  *   - Re-running /bootstrap is always safe (idempotent checks)
  *   - Never auto-installs anything — always asks or requires explicit command
  */
@@ -38,7 +38,8 @@ import { getDefaultPolicy, type ProviderRoutingPolicy } from "../lib/model-routi
 import { DEPS, checkAll, formatReport, bestInstallCmd, sortByRequires, type DepStatus, type DepTier } from "./deps.ts";
 
 const AGENT_DIR = join(homedir(), ".pi", "agent");
-const MARKER_PATH = join(AGENT_DIR, "pi-kit-bootstrap-done");
+const MARKER_PATH = join(AGENT_DIR, "omegon-bootstrap-done");
+const MARKER_PATH_LEGACY = join(AGENT_DIR, "pi-kit-bootstrap-done"); // legacy — treat as done if present
 const MARKER_VERSION = "2"; // bump to re-trigger bootstrap after adding operator profile capture
 
 export type { OperatorCapabilityProfile } from "../lib/operator-profile.ts";
@@ -75,13 +76,17 @@ interface CommandContext {
 }
 
 function isFirstRun(): boolean {
-	if (!existsSync(MARKER_PATH)) return true;
-	try {
-		const version = readFileSync(MARKER_PATH, "utf8").trim();
-		return version !== MARKER_VERSION;
-	} catch {
-		return true;
+	// Check new marker first, then legacy pi-kit marker (omegon renamed from pi-kit) (migration: existing installs skip re-run)
+	if (existsSync(MARKER_PATH)) {
+		try {
+			const version = readFileSync(MARKER_PATH, "utf8").trim();
+			return version !== MARKER_VERSION;
+		} catch {
+			return true;
+		}
 	}
+	if (existsSync(MARKER_PATH_LEGACY)) return false;
+	return true;
 }
 
 function markDone(): void {
@@ -245,7 +250,7 @@ async function ensureOperatorProfile(pi: ExtensionAPI, ctx: CommandContext): Pro
 	ctx.ui.notify(`Operator capability setup — ${formatProviderSetupSummary(readiness)}`, "info");
 	const proceed = await ctx.ui.confirm(
 		"Configure operator capability profile?",
-		"This captures cloud/local fallback preferences so pi-kit avoids unsafe automatic model switches.",
+		"This captures cloud/local fallback preferences so Omegon avoids unsafe automatic model switches.",
 	);
 	if (!proceed) {
 		const fallback = synthesizeSafeDefaultProfile(readiness);
@@ -269,11 +274,11 @@ async function ensureOperatorProfile(pi: ExtensionAPI, ctx: CommandContext): Pro
 			: "anthropic";
 	const allowCloudCrossProviderFallback = await ctx.ui.confirm(
 		"Allow same-role cloud fallback?",
-		"If your preferred cloud provider is unavailable, may pi-kit retry the same capability role with another cloud provider?",
+		"If your preferred cloud provider is unavailable, may Omegon retry the same capability role with another cloud provider?",
 	);
 	const automaticLightLocalFallback = await ctx.ui.confirm(
 		"Allow automatic light local fallback?",
-		"Allow pi-kit to use local models automatically for lightweight work when cloud options are unavailable?",
+		"Allow Omegon to use local models automatically for lightweight work when cloud options are unavailable?",
 	);
 	const heavyLocalSelection = await ctx.ui.select(
 		"Heavy local fallback policy:",
@@ -320,7 +325,7 @@ export default function (pi: ExtensionAPI) {
 		const coreMissing = missing.filter((s) => s.dep.tier === "core");
 		const recMissing = missing.filter((s) => s.dep.tier === "recommended");
 
-		let msg = "Welcome to pi-kit! ";
+		let msg = "Welcome to Omegon! ";
 		if (coreMissing.length > 0) {
 			msg += `${coreMissing.length} core dep${coreMissing.length > 1 ? "s" : ""} missing. `;
 		}
@@ -336,7 +341,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("bootstrap", {
-		description: "First-time setup — check/install pi-kit dependencies and capture operator fallback preferences",
+		description: "First-time setup — check/install Omegon dependencies and capture operator fallback preferences",
 		handler: async (args, ctx) => {
 			const sub = args.trim().toLowerCase();
 			const cmdCtx: CommandContext = {

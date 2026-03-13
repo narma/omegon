@@ -47,7 +47,7 @@ Sampled 5 representative implemented docs. Consistent structure via frontmatter 
 
 ### What Future Agents Actually Need
 
-When a future agent session starts and needs to work on pi-kit, it needs to answer:
+When a future agent session starts and needs to work on Omegon, it needs to answer:
 
 1. **"What does this subsystem do?"** — Concise description, not an exploration journal
 2. **"What files implement it?"** — File scope, entry points, key exports

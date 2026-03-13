@@ -2,7 +2,7 @@
 
 ### Requirement: Canonical lifecycle resolver produces shared change summaries
 
-pi-kit MUST provide a canonical lifecycle resolver that computes shared OpenSpec/design lifecycle summaries from one code path instead of re-deriving overlapping truth separately in each consumer.
+Omegon MUST provide a canonical lifecycle resolver that computes shared OpenSpec/design lifecycle summaries from one code path instead of re-deriving overlapping truth separately in each consumer.
 
 #### Scenario: resolver computes shared lifecycle summary for a change
 Given an OpenSpec change with tasks, assessment state, and design binding information

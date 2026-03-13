@@ -54,7 +54,7 @@ function scanAnnotations(): {
   // Extension directories to scan
   const extensionDirs = [
     join(homedir(), ".pi", "agent", "extensions"),
-    join(homedir(), ".pi", "agent", "git"),  // pi-kit and other git packages
+    join(homedir(), ".pi", "agent", "git"),  // Omegon and other git packages
   ];
 
   // Also scan project-local extensions

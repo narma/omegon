@@ -62,7 +62,7 @@ function buildInlineShell(): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>pi-kit dashboard</title>
+  <title>omegon dashboard</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Menlo', 'Monaco', monospace; background: #0d1117; color: #c9d1d9; padding: 1rem; }
@@ -76,7 +76,7 @@ function buildInlineShell(): string {
   </style>
 </head>
 <body>
-  <h1>pi-kit dashboard</h1>
+  <h1>omegon dashboard</h1>
   <div id="status">Loading…</div>
   <div id="root"></div>
   <script>

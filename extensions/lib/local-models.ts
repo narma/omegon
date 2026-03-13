@@ -1,5 +1,5 @@
 /**
- * Canonical local model registry for pi-kit.
+ * Canonical local model registry for Omegon.
  *
  * Single source of truth consumed by: offline-driver, effort, cleave, project-memory.
  * Update this file as new models are released — all preference logic reads from here.

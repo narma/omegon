@@ -2,7 +2,7 @@
   "name": "dashboard-test",
   "version": "0.1.0",
   "private": true,
-  "description": "Example project for testing the pi-kit unified dashboard",
+  "description": "Example project for testing the Omegon unified dashboard",
   "keywords": ["pi-package"],
   "pi": {
     "extensions": [

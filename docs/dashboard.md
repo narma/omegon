@@ -18,7 +18,7 @@ last_updated: 2026-03-10
 
 ## What It Does
 
-The dashboard extension replaces pi's default footer with a multi-mode persistent display that unifies state from across all pi-kit subsystems. It provides four display modes:
+The dashboard extension replaces pi's default footer with a multi-mode persistent display that unifies state from across all Omegon subsystems. It provides four display modes:
 
 - **Compact** (3 lines): Context gauge, token stats, model/thinking indicator, git branch — always-visible summary
 - **Raised** (up to 10 lines): Adds design tree focus, OpenSpec changes, live cleave dispatch progress

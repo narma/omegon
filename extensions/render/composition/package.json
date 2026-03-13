@@ -1,5 +1,5 @@
 {
-  "name": "@pi-kit/composition",
+  "name": "@omegon/composition",
   "version": "0.1.0",
   "description": "Browser-free React → video/image renderer using Satori + resvg + gifenc",
   "type": "module",

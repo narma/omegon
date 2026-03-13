@@ -22,7 +22,7 @@ function makeFooterData() {
 
 function makeContext() {
   return {
-    cwd: "/Users/cwilson/workspace/ai/pi-kit",
+    cwd: "/Users/cwilson/workspace/ai/omegon",
     model: {
       provider: "openai-codex",
       id: "gpt-5.4",

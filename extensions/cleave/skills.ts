@@ -164,7 +164,7 @@ export function matchSkillsToAllChildren(
 /**
  * Well-known skill search paths, in priority order.
  *
- * 1. Package-local skills (relative to pi-kit root)
+ * 1. Package-local skills (relative to Omegon root)
  * 2. User-installed skills under ~/.pi/agent/
  */
 function getSkillSearchPaths(piKitRoot?: string): string[] {

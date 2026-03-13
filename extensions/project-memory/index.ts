@@ -519,7 +519,7 @@ export default function (pi: ExtensionAPI) {
       }
     } catch (err: any) {
       const hint = /DLOPEN|NODE_MODULE_VERSION|compiled against/.test(err.message)
-        ? "\nFix: run `npm rebuild better-sqlite3` in the pi-kit directory, then restart."
+        ? "\nFix: run `npm rebuild better-sqlite3` in the Omegon directory, then restart."
         : "";
       ctx.ui.notify(
         `[project-memory] Failed to open project database: ${err.message}${hint}`,
@@ -534,7 +534,7 @@ export default function (pi: ExtensionAPI) {
       globalStore = new FactStore(globalMemoryDir, { decay: GLOBAL_DECAY, dbName: "global.db" });
     } catch (err: any) {
       const hint = /DLOPEN|NODE_MODULE_VERSION|compiled against/.test(err.message)
-        ? "\nFix: run `npm rebuild better-sqlite3` in the pi-kit directory, then restart."
+        ? "\nFix: run `npm rebuild better-sqlite3` in the Omegon directory, then restart."
         : "";
       ctx.ui.notify(
         `[project-memory] Failed to open global database: ${err.message}${hint}`,

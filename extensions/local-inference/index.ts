@@ -594,7 +594,7 @@ export default function (pi: ExtensionAPI) {
     }),
     execute: async (_toolCallId, params, signal, _onUpdate, _ctx) => {
       if (!hasOllama()) {
-        return toolResult("Ollama is not installed. The user should run `/bootstrap` to set up pi-kit dependencies.");
+        return toolResult("Ollama is not installed. The user should run `/bootstrap` to set up Omegon dependencies.");
       }
 
       switch (params.action) {
@@ -665,7 +665,7 @@ export default function (pi: ExtensionAPI) {
       const sub = parts[0]?.toLowerCase() || "";
 
       if (!hasOllama()) {
-        ctx.ui.notify("`ollama` is not installed. Run `/bootstrap` to set up pi-kit dependencies.", "warning");
+        ctx.ui.notify("`ollama` is not installed. Run `/bootstrap` to set up Omegon dependencies.", "warning");
         return;
       }
 

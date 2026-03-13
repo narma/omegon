@@ -2,7 +2,7 @@
 id: repo-consolidation-hardening
 title: Repo Consolidation, Security Hardening, and Lifecycle Normalization
 status: implemented
-tags: [architecture, security, lifecycle, consolidation, pi-kit]
+tags: [architecture, security, lifecycle, consolidation, Omegon]
 open_questions: []
 ---
 
@@ -10,7 +10,7 @@ open_questions: []
 
 ## Overview
 
-Reduce internal sprawl across major extensions, tighten process safety around subprocess and shell usage, normalize lifecycle state across design-tree/OpenSpec/dashboard, and improve presentation/data-model coherence for pi-kit as it matures into a platform.
+Reduce internal sprawl across major extensions, tighten process safety around subprocess and shell usage, normalize lifecycle state across design-tree/OpenSpec/dashboard, and improve presentation/data-model coherence for Omegon as it matures into a platform.
 
 ## Research
 

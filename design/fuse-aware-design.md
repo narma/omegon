@@ -68,7 +68,7 @@ The sacrificial fuse model isn't specific to security. It's a systems design pri
 
 This is essentially what resilience engineering calls "graceful degradation" and what Nassim Taleb calls "antifragility" at the boundary layer — but with a mechanical engineering metaphor that's more precise. A fuse doesn't get stronger from stress (antifragile). It breaks predictably and protectably. The SYSTEM gets stronger because the fuse absorbed what would have been catastrophic.
 
-### Potential Integration Points in pi-kit
+### Potential Integration Points in Omegon
 
 - **cleave_assess** — undefined failure modes at system boundaries increase complexity score (hidden risk)
 - **cleave_run** — child tasks declare load-bearing vs. decorative; failed decorative children don't block merge

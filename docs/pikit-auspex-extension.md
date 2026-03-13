@@ -1,19 +1,19 @@
 ---
 id: pikit-auspex-extension
-title: "pi-kit: auspex extension — visualization daemon bridge"
+title: "Omegon: auspex extension — visualization daemon bridge"
 status: seed
 parent: markdown-viewport
 dependencies: []
-tags: [pi-kit, extension, auspex, bridge]
+tags: [Omegon, extension, auspex, bridge]
 open_questions: []
 issue_type: feature
 ---
 
-# pi-kit: auspex extension — visualization daemon bridge
+# Omegon: auspex extension — visualization daemon bridge
 
 ## Overview
 
-The pi-kit side of the integration. A small extension in this repo (extensions/auspex/) that provides: `/auspex open` — spawns the mdserve binary pointed at the project root, opens the browser to /dashboard; `/auspex stop` — kills the daemon; optionally a footer/widget showing when the daemon is running and the local URL. Checks for the binary on PATH, surfaces a helpful error if not found (points to Nix install instructions). This is the only piece that lives in pi-kit rather than the mdserve fork repo.
+The Omegon side of the integration. A small extension in this repo (extensions/auspex/) that provides: `/auspex open` — spawns the mdserve binary pointed at the project root, opens the browser to /dashboard; `/auspex stop` — kills the daemon; optionally a footer/widget showing when the daemon is running and the local URL. Checks for the binary on PATH, surfaces a helpful error if not found (points to Nix install instructions). This is the only piece that lives in Omegon rather than the mdserve fork repo.
 
 ## Open Questions
 

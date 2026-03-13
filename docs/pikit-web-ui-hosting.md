@@ -1,26 +1,26 @@
 ---
 id: pikit-web-ui-hosting
-title: pi-kit self-hosted web UI
+title: Omegon self-hosted web UI
 status: implemented
 parent: repo-consolidation-hardening
 open_questions: []
 openspec_change: localhost-web-ui-mvp
 ---
 
-# pi-kit self-hosted web UI
+# Omegon self-hosted web UI
 
 ## Overview
 
 > Parent: [Repo Consolidation, Security Hardening, and Lifecycle Normalization](repo-consolidation-hardening.md)
-> Spawned from: "How could pi-kit host its own web UI for status, lifecycle visibility, and operator control?"
+> Spawned from: "How could Omegon host its own web UI for status, lifecycle visibility, and operator control?"
 
-Implement a first-party localhost-only, read-only web UI for pi-kit that exposes a versioned control-plane snapshot and a lightweight polling dashboard shell without adding mutation routes or a separate persistence layer.
+Implement a first-party localhost-only, read-only web UI for Omegon that exposes a versioned control-plane snapshot and a lightweight polling dashboard shell without adding mutation routes or a separate persistence layer.
 
 ## Research
 
 ### Current web-capable surface already in repo
 
-pi-kit already hosts one browser-facing surface through `extensions/vault/index.ts`, which spawns `mdserve` on localhost and opens a browser view for markdown docs and graph navigation. That proves the package can manage a local companion web process today, but it is document-oriented rather than app-oriented: there is no generic HTTP API, no websocket/SSE event stream, and no reusable browser state model. A future web UI can either (A) extend this companion-process pattern, or (B) add a first-party local HTTP server extension inside pi-kit.
+Omegon already hosts one browser-facing surface through `extensions/vault/index.ts`, which spawns `mdserve` on localhost and opens a browser view for markdown docs and graph navigation. That proves the package can manage a local companion web process today, but it is document-oriented rather than app-oriented: there is no generic HTTP API, no websocket/SSE event stream, and no reusable browser state model. A future web UI can either (A) extend this companion-process pattern, or (B) add a first-party local HTTP server extension inside Omegon.
 
 ### Most natural first architecture options
 
@@ -60,12 +60,12 @@ The MVP should bind only to `127.0.0.1` by default, choose a configurable high p
 ### Decision: Use a first-party localhost HTTP extension instead of extending mdserve
 
 **Status:** decided
-**Rationale:** mdserve proves the companion-process pattern but is optimized for document rendering, not control-plane APIs or live status composition. A first-party localhost HTTP extension keeps pi-kit in control of the API contract, security defaults, and browser UI evolution while still allowing docs to link out to mdserve where helpful.
+**Rationale:** mdserve proves the companion-process pattern but is optimized for document rendering, not control-plane APIs or live status composition. A first-party localhost HTTP extension keeps Omegon in control of the API contract, security defaults, and browser UI evolution while still allowing docs to link out to mdserve where helpful.
 
 ### Decision: Adopt a versioned ControlPlaneState and read-only HTTP surface for MVP
 
 **Status:** decided
-**Rationale:** A versioned normalized snapshot gives pi-kit one browser-facing contract that can also discipline the TUI data model. Starting with `GET /`, `GET /api/state`, and small read-only slice routes keeps implementation simple, avoids premature write-authority design, and still delivers immediate value for lifecycle visibility and operator awareness.
+**Rationale:** A versioned normalized snapshot gives Omegon one browser-facing contract that can also discipline the TUI data model. Starting with `GET /`, `GET /api/state`, and small read-only slice routes keeps implementation simple, avoids premature write-authority design, and still delivers immediate value for lifecycle visibility and operator awareness.
 
 ### Decision: Compute MVP web state from live sharedState plus on-demand scans, not a separate history store
 

@@ -48,4 +48,4 @@ The parent repo-consolidation-hardening topic is still proposal-only and spans a
 ### Constraints
 
 - Prefer explicit executable plus argv subprocess dispatch over shell-string command construction in helper flows.
-- Do not terminate unrelated Ollama processes when no managed child is tracked by pi-kit.
+- Do not terminate unrelated Ollama processes when no managed child is tracked by Omegon.

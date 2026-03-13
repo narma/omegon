@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: TypeScript development conventions for pi-kit. Covers strict typing, async patterns, error handling, Node.js API usage, and testing with node:test. Use when creating or modifying TypeScript code.
+description: TypeScript development conventions for Omegon. Covers strict typing, async patterns, error handling, Node.js API usage, and testing with node:test. Use when creating or modifying TypeScript code.
 guardrails:
   - name: typecheck
     cmd: npx tsc --noEmit
@@ -10,7 +10,7 @@ guardrails:
 
 # TypeScript Development Skill
 
-Conventions for TypeScript code in pi-kit and related projects.
+Conventions for TypeScript code in Omegon and related projects.
 
 ## Strict Typing
 
@@ -151,7 +151,7 @@ function hasOllama(): boolean {
 
 ## Testing with `node:test`
 
-pi-kit uses the built-in Node.js test runner. Run with: `npx tsx --test extensions/**/*.test.ts`
+Omegon uses the built-in Node.js test runner. Run with: `npx tsx --test extensions/**/*.test.ts`
 
 ```typescript
 import { describe, it } from "node:test";

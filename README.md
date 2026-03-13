@@ -1,10 +1,10 @@
-# pi-kit
+# Omegon
 
 A batteries-included extension package for the pi coding agent. Adds persistent project memory, spec-driven development, local LLM inference, image generation, web search, parallel task decomposition, a live dashboard, and quality-of-life tools — all loadable with a single install.
 
 ## Installation
 
-pi-kit runs on top of a patched fork of the pi coding agent (`@cwilson613/pi-coding-agent`). The fork is published to npm and tracks upstream [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono) daily, adding targeted fixes for OAuth login reliability and bracketed-paste input handling.
+Omegon runs on top of a patched fork of the pi coding agent (`@cwilson613/pi-coding-agent`). The fork is published to npm and tracks upstream [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono) daily, adding targeted fixes for OAuth login reliability and bracketed-paste input handling.
 
 **Step 1 — Install the pi binary from the patched fork:**
 
@@ -12,10 +12,10 @@ pi-kit runs on top of a patched fork of the pi coding agent (`@cwilson613/pi-cod
 npm install -g @cwilson613/pi-coding-agent
 ```
 
-**Step 2 — Install pi-kit extensions:**
+**Step 2 — Install Omegon extensions:**
 
 ```bash
-pi install https://github.com/cwilson613/pi-kit
+pi install https://github.com/cwilson613/omegon
 ```
 
 **Step 3 — First-time setup:**
@@ -29,22 +29,22 @@ pi          # start pi in any project directory
 
 | What to update | How |
 |----------------|-----|
-| **pi-kit extensions** | `/update` or `pi update` (tracks `main` branch) |
+| **Omegon extensions** | `/update` or `pi update` (tracks `main` branch) |
 | **pi binary** | `/update-pi` — checks npm for latest `@cwilson613/pi-coding-agent`, prompts before installing |
 
 > The patched fork syncs from upstream daily via GitHub Actions. Bug fixes and new AI provider support land automatically. If a sync PR has conflicts, they are surfaced for manual review before merging — upstream changes are never silently dropped.
 
-> **Note:** `pi install` and `pi update` track the `main` branch. The version-check extension notifies you when a new pi-kit release is available.
+> **Note:** `pi install` and `pi update` track the `main` branch. The version-check extension notifies you when a new Omegon release is available.
 
 ## Architecture
 
-![pi-kit Architecture](docs/img/architecture.png)
+![Omegon Architecture](docs/img/architecture.png)
 
-pi-kit extends `@cwilson613/pi-coding-agent` with **27 extensions**, **12 skills**, and **4 prompt templates** — loaded automatically on session start.
+Omegon extends `@cwilson613/pi-coding-agent` with **27 extensions**, **12 skills**, and **4 prompt templates** — loaded automatically on session start.
 
 ### Development Methodology
 
-pi-kit enforces **spec-first development** for non-trivial changes:
+Omegon enforces **spec-first development** for non-trivial changes:
 
 ![Spec-Driven Pipeline](docs/img/spec-pipeline.png)
 
@@ -228,7 +228,7 @@ Connect external MCP (Model Context Protocol) servers as native pi tools.
 | `terminal-title` | Dynamic tab titles showing active cleave runs and git branch |
 | `spinner-verbs` | Warhammer 40K-themed loading messages |
 | `style` | Verdant design system reference (`/style`) |
-| `version-check` | Polls GitHub releases hourly, notifies when a new pi-kit release is available |
+| `version-check` | Polls GitHub releases hourly, notifies when a new Omegon release is available |
 | `web-ui` | Localhost-only read-only HTTP dashboard and JSON control-plane endpoints (`/web-ui [start|stop|status|open]`) |
 
 ## Skills
@@ -243,7 +243,7 @@ Skills provide specialized instructions the agent loads on-demand when a task ma
 | `oci` | Container and artifact best practices — Containerfile authoring, multi-arch builds, registry auth |
 | `python` | Project setup (src/ layout, pyproject.toml), pytest, ruff, mypy, packaging, venv |
 | `rust` | Cargo, clippy, rustfmt, Zellij WASM plugin development |
-| `typescript` | Strict typing, async patterns, error handling, node:test conventions for pi-kit |
+| `typescript` | Strict typing, async patterns, error handling, node:test conventions for Omegon |
 | `pi-extensions` | pi extension API — `registerCommand`, `registerTool`, event handlers, TUI context, common pitfalls |
 | `pi-tui` | TUI component patterns — `Component` interface, overlays, keyboard handling, theming, footer/widget APIs |
 | `security` | Input escaping, injection prevention, path traversal, process safety, secrets management |
@@ -276,7 +276,7 @@ Run `/bootstrap` after install to check dependencies and configure preferences.
 
 ## Why a Patched Fork?
 
-Upstream [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono) is the canonical pi coding agent. pi-kit depends on a fork rather than the upstream package for two reasons:
+Upstream [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono) is the canonical pi coding agent. Omegon depends on a fork rather than the upstream package for two reasons:
 
 1. **OAuth login reliability** — upstream had no fetch timeout on OAuth token exchange calls. A slow or unreachable endpoint would hang the login UI indefinitely with no recovery path. Fixed in [`packages/ai/src/utils/oauth/`](https://github.com/cwilson613/pi-mono/tree/main/packages/ai/src/utils/oauth).
 

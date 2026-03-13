@@ -19,7 +19,7 @@ Surface upstream driver/provider failures to the agent and operator, classify ob
 
 ### Existing recovery primitives and current gap
 
-pi core already persists assistant error turns and has one built-in automatic recovery path for context overflow in agent-session.js: it removes the last error message, compacts, and retries once. pi-kit also already records transient provider/model cooldowns in extensions/model-budget.ts via turn_end -> getAssistantErrorMessage() -> recordTransientFailureForModel(), but today that path only notifies the operator. The agent/harness does not receive a structured recovery event, so an upstream Codex/server_error remains opaque to the agent even when pi-kit can classify it as transient or route around it.
+pi core already persists assistant error turns and has one built-in automatic recovery path for context overflow in agent-session.js: it removes the last error message, compacts, and retries once. Omegon also already records transient provider/model cooldowns in extensions/model-budget.ts via turn_end -> getAssistantErrorMessage() -> recordTransientFailureForModel(), but today that path only notifies the operator. The agent/harness does not receive a structured recovery event, so an upstream Codex/server_error remains opaque to the agent even when Omegon can classify it as transient or route around it.
 
 ### Useful existing routing hooks
 
@@ -66,7 +66,7 @@ extensions/lib/model-routing.ts already classifies transient failures with patte
 - Automatic offline handoff must return structured target metadata (provider/model/automatic flag) so the controller and dashboard can describe what changed without scraping human-facing status text.
 - Authentication, quota exhaustion, malformed tool results, and context-overflow paths must not be treated as generic transient retry cases.
 - The recovery controller usually piggybacks on pi core auto-retry: rate-limit/backoff recovery switches the selected model during `turn_end`, then core `agent_end` retry continues on the newly selected route.
-- When a provider surfaces a retryable upstream failure only through a structured code string such as `server_error` (for example Codex JSON error envelopes that do not match pi core's textual retry regex), pi-kit schedules one extension-driven same-message retry so recovery still occurs.
+- When a provider surfaces a retryable upstream failure only through a structured code string such as `server_error` (for example Codex JSON error envelopes that do not match pi core's textual retry regex), Omegon schedules one extension-driven same-message retry so recovery still occurs.
 - Recovery state is stored in both `sharedState.latestRecoveryEvent` (raw harness event) and `sharedState.recovery` (dashboard projection) so status surfaces do not need to derive UI state from prose.
-- pi-kit now schedules one extension-driven same-message retry when a retryable upstream failure is encoded only as a structured code string such as Codex JSON server_error and therefore does not match pi core's built-in textual retry regex.
+- Omegon now schedules one extension-driven same-message retry when a retryable upstream failure is encoded only as a structured code string such as Codex JSON server_error and therefore does not match pi core's built-in textual retry regex.
 - Bounded same-model retries are ledgered per request fingerprint plus provider/model and the retry ledger is cleared after the next successful assistant turn to avoid indefinite loops across extension-driven retries.

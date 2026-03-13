@@ -109,7 +109,7 @@ function spawnMdserve(dir: string, port: number, options?: { silent?: boolean })
 		`Use \`/vault stop\` to stop.`;
 }
 
-const NOT_INSTALLED = "`mdserve` is not installed. Run `/bootstrap` to set up pi-kit dependencies.";
+const NOT_INSTALLED = "`mdserve` is not installed. Run `/bootstrap` to set up Omegon dependencies.";
 
 export default function (pi: ExtensionAPI) {
 	

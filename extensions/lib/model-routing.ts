@@ -1,5 +1,5 @@
 /**
- * Shared provider-aware model resolver for pi-kit.
+ * Shared provider-aware model resolver for Omegon.
  *
  * Keeps canonical compatibility tiers (local|haiku|sonnet|opus) stable while
  * also supporting public operator capability roles

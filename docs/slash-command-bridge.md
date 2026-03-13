@@ -15,7 +15,7 @@ last_updated: 2026-03-10
 
 ## What It Does
 
-The SlashCommandBridge provides a structured interface between the agent tool layer (`execute_slash_command`) and pi-kit's slash commands. Each bridged command declares:
+The SlashCommandBridge provides a structured interface between the agent tool layer (`execute_slash_command`) and Omegon's slash commands. Each bridged command declares:
 
 - **`agentCallable`**: Whether the agent can invoke it (false for interactive-only commands like `/dash`)
 - **`sideEffectClass`**: read, write, or destructive — enables confirmation gating
@@ -46,7 +46,7 @@ See `openspec/baseline/harness/slash-command-bridge.md` and `openspec/baseline/h
 ## Constraints & Known Limitations
 
 - Only `/assess` is fully agent-callable via the bridge; `/opsx:*` commands use `openspec_manage` tool as a workaround
-- The bridge is a pi-kit concept — pi core's `execute_slash_command` tool delegates to it
+- The bridge is a Omegon concept — pi core's `execute_slash_command` tool delegates to it
 - Commands not registered with the bridge return an "unknown command" error from `execute_slash_command`
 
 ## Related Subsystems
