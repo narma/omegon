@@ -26,7 +26,7 @@ export interface MemoryConfig {
   /** Max lines in active memory before extraction prunes */
   maxLines: number;
   /** Embedding backend used for semantic retrieval */
-  embeddingProvider: "openai" | "ollama";
+  embeddingProvider: "voyage" | "openai" | "openai-compatible";
   /** Embedding model to use for fact and episode vectors */
   embeddingModel: string;
   /** Minimum total message tokens before first extraction */
@@ -75,8 +75,8 @@ export interface MemoryConfig {
 
 export const DEFAULT_CONFIG: MemoryConfig = {
   maxLines: 50,
-  embeddingProvider: "openai",
-  embeddingModel: "text-embedding-3-small",
+  embeddingProvider: "voyage",
+  embeddingModel: "voyage-3-lite",
   minimumTokensToInit: 10_000,
   minimumTokensBetweenUpdate: 5_000,
   toolCallsBetweenUpdates: 8,

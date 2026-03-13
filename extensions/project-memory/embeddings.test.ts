@@ -141,16 +141,16 @@ describe("vectorToBlob / blobToVector roundtrip", () => {
 describe("MODEL_DIMS", () => {
   it("maps known models to expected dimensions", () => {
     assert.equal(MODEL_DIMS["text-embedding-3-small"], 1536);
-    assert.equal(MODEL_DIMS["qwen3-embedding:0.6b"], 1024);
-    assert.equal(MODEL_DIMS["qwen3-embedding:4b"], 2048);
+    assert.equal(MODEL_DIMS["voyage-3-lite"], 512);
+    assert.equal(MODEL_DIMS["voyage-3"], 1024);
   });
 });
 
 describe("cloud embedding defaults", () => {
-  it("defaults project-memory to cheap GPT extraction and cloud embeddings", () => {
+  it("defaults project-memory to Voyage AI embeddings (Anthropic-aligned provider)", () => {
     assert.equal(DEFAULT_CONFIG.extractionModel, "gpt-5.3-codex-spark");
-    assert.equal(DEFAULT_CONFIG.embeddingProvider, "openai");
-    assert.equal(DEFAULT_CONFIG.embeddingModel, "text-embedding-3-small");
+    assert.equal(DEFAULT_CONFIG.embeddingProvider, "voyage");
+    assert.equal(DEFAULT_CONFIG.embeddingModel, "voyage-3-lite");
   });
 
   it("reports cloud embeddings available when openai returns an embedding", async () => {

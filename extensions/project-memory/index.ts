@@ -48,7 +48,7 @@ import { StringEnum } from "../lib/typebox-helpers";
 import { Type } from "@sinclair/typebox";
 import { Container, type SelectItem, SelectList, Text } from "@cwilson613/pi-tui";
 import { FactStore, parseExtractionOutput, GLOBAL_DECAY, type MindRecord, type Fact } from "./factstore.ts";
-import { embed, isEmbeddingAvailable, MODEL_DIMS, type EmbeddingProvider } from "./embeddings.ts";
+import { embed, isEmbeddingAvailable, resolveEmbeddingProvider, MODEL_DIMS, type EmbeddingProvider } from "./embeddings.ts";
 import { DEFAULT_CONFIG, type MemoryConfig, type LifecycleMemoryCandidate } from "./types.ts";
 import { sanitizeCompactionText, shouldInterceptCompaction } from "./compaction-policy.ts";
 import { writeJsonlIfChanged } from "./jsonl-io.ts";
@@ -623,9 +623,17 @@ export default function (pi: ExtensionAPI) {
     // which fires before ours (effort is registered earlier in package.json).
     config = { ...DEFAULT_CONFIG };
 
-    const envEmbeddingProvider = process.env.MEMORY_EMBEDDING_PROVIDER;
-    if (envEmbeddingProvider === "openai" || envEmbeddingProvider === "ollama") {
+    // Auto-detect embedding provider from env vars (Voyage > OpenAI > custom > FTS5)
+    // MEMORY_EMBEDDING_PROVIDER can override if user wants to force a specific provider.
+    const envEmbeddingProvider = process.env.MEMORY_EMBEDDING_PROVIDER as EmbeddingProvider | undefined;
+    if (envEmbeddingProvider === "voyage" || envEmbeddingProvider === "openai" || envEmbeddingProvider === "openai-compatible") {
       config.embeddingProvider = envEmbeddingProvider;
+    } else {
+      const detected = resolveEmbeddingProvider();
+      if (detected) {
+        config.embeddingProvider = detected.provider;
+        config.embeddingModel = detected.model;
+      }
     }
     const envEmbeddingModel = process.env.MEMORY_EMBEDDING_MODEL?.trim();
     if (envEmbeddingModel) config.embeddingModel = envEmbeddingModel;
