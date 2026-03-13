@@ -50,7 +50,7 @@ const ansiColors: Record<number, string> = {
   8:  v.dimFg!,         // bright-black — dim text
   9:  "#e04040",        // bright-red   — lighter error
   10: "#20d890",        // bright-green — lighter success
-  11: "#d4aa30",        // bright-yellow — lighter warning
+  11: "#a0d030",        // bright-yellow — lighter hydra warning
   12: v.primary!,       // bright-blue  — primary accent (ceramite teal)
   13: "#8080d0",        // bright-magenta — lighter purple
   14: v.primaryBright!, // bright-cyan  — silver-teal shimmer
