@@ -15,7 +15,7 @@ last_updated: 2026-03-10
 
 The render extension provides multiple image generation backends:
 
-- **D2 diagrams** (`render_diagram` tool): Renders D2 source to inline PNG via the d2 CLI. Uses elk layout engine, dark theme (200), with Verdant semantic colors.
+- **D2 diagrams** (`render_diagram` tool): Renders D2 source to inline PNG via the d2 CLI. Uses elk layout engine, dark theme (200), with Alpharius semantic colors.
 - **FLUX.1 images** (`generate_image_local` tool): Text-to-image generation on Apple Silicon via MLX. Presets: schnell (fast), dev (quality), diagram, portrait, wide. Quantization support (3-8 bit).
 - **Excalidraw** (`render_excalidraw` tool): Renders `.excalidraw` JSON files to PNG via Playwright + headless Chromium.
 - **Native SVG diagrams**: Programmatic SVG generation for architecture diagrams, flowcharts, and visual arguments without external dependencies.
@@ -42,7 +42,7 @@ Output persisted to `~/.pi/visuals/` for reuse.
 - **D2 over Mermaid**: D2 produces better layouts with elk engine and supports the dark theme natively. Mermaid not supported.
 - **On-device FLUX.1 via MLX**: Zero API cost image generation. Quantization to 4-8 bits reduces memory pressure on shared Apple Silicon GPU.
 - **Native SVG as fallback**: When d2 isn't installed, programmatic SVG generation provides basic diagramming without external dependencies.
-- **Verdant semantic colors**: Consistent color system across D2, Excalidraw, and native diagrams. Primary (#3b82f6), start (#c2410c), end (#047857), decision (#b45309), AI (#6d28d9).
+- **Alpharius semantic colors**: Consistent color system across D2, Excalidraw, and native diagrams. Primary (#3b82f6), start (#c2410c), end (#047857), decision (#b45309), AI (#6d28d9).
 
 ## Constraints & Known Limitations
 

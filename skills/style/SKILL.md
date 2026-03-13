@@ -1,6 +1,6 @@
 ---
 name: style
-description: Unified visual style guide. Defines the Verdant color system, typography, spacing, and semantic palette shared across pi TUI theme, Excalidraw diagrams, D2 diagrams, and generated images. Use when creating any visual output to ensure consistency.
+description: Unified visual style guide. Defines the Alpharius color system, typography, spacing, and semantic palette shared across pi TUI theme, Excalidraw diagrams, D2 diagrams, and generated images. Use when creating any visual output to ensure consistency.
 ---
 
 # Style Guide
@@ -9,11 +9,11 @@ Canonical design system for all visual output. Every diagram, theme, and generat
 
 ## Design Philosophy
 
-**Verdant** — dark, organic, high-contrast. Forest canopy at night: deep backgrounds, teal-green accents, warm semantic signals. Clean lines, zero roughness, monospace text. Professional but not sterile.
+**Alpharius** — dark, cold, precise. Deep void backgrounds with iridescent ceramite teal, silver-chrome highlights, and muted brass-gold signal warmth. The aesthetic of the XX Legion: disciplined, mercurial, beautiful in its deception. Every surface gleams like polished power armour under starlight.
 
 Principles:
 1. **Semantic color, not decorative** — every color communicates purpose
-2. **Contrast over subtlety** — dark backgrounds demand bright, readable foregrounds
+2. **Contrast over subtlety** — void backgrounds demand bright, readable foregrounds
 3. **Consistency across mediums** — same palette whether it's a TUI, an Excalidraw diagram, or a D2 chart
 4. **Hierarchy through scale and weight** — not through color proliferation
 5. **Document survivability matters** — technical diagrams are often embedded in documents and scaled down, so composition must preserve text and relationship legibility at page-fit sizes
@@ -24,30 +24,30 @@ Principles:
 
 ### Core Palette
 
-Derived from `themes/default.json`. These are the ground-truth tokens.
+Derived from `themes/alpharius.json`. These are the ground-truth tokens.
 
 | Token | Hex | Role |
 |-------|-----|------|
-| `primary` | `#3dc9b0` | Brand accent, interactive elements, focus |
-| `primaryMuted` | `#4a9e90` | Secondary accent, labels, links |
-| `primaryBright` | `#8ac4b8` | Headings, highlighted text |
-| `fg` | `#d4e8e4` | Primary text on dark backgrounds |
-| `mutedFg` | `#8a9a96` | Secondary text, tool output, muted content |
-| `dimFg` | `#5c6b67` | Tertiary text, comments, inactive elements |
-| `bg` | `#0c0e12` | Main background |
-| `cardBg` | `#151c20` | Elevated surface (cards, panels) |
-| `surfaceBg` | `#1a2428` | Secondary surface |
-| `borderColor` | `#2d4a47` | Standard borders |
-| `borderDim` | `#1e3533` | Subtle borders, separators |
+| `primary` | `#2ab4c8` | Brand accent, interactive elements, focus — iridescent ceramite |
+| `primaryMuted` | `#1a8898` | Secondary accent, labels, links |
+| `primaryBright` | `#6ecad8` | Headings, highlighted text — silver-teal shimmer |
+| `fg` | `#c4d8e4` | Primary text — cool silver-white |
+| `mutedFg` | `#607888` | Secondary text, tool output, muted content |
+| `dimFg` | `#344858` | Tertiary text, comments, inactive elements |
+| `bg` | `#06080e` | Main background — the void |
+| `cardBg` | `#0e1622` | Elevated surface (cards, panels) |
+| `surfaceBg` | `#131e2e` | Secondary surface |
+| `borderColor` | `#1a3448` | Standard borders |
+| `borderDim` | `#0e1e30` | Subtle borders, separators |
 
 ### Signal Colors
 
 | Signal | Hex | Usage |
 |--------|-----|-------|
-| `green` | `#34d399` | Success, completion, positive |
-| `red` | `#f44747` | Error, destructive, critical |
-| `orange` | `#e98100` | Warning, attention needed |
-| `yellow` | `#e9c400` | Caution, numbers, highlights |
+| `green` | `#1ab878` | Success, completion, positive — hydra emerald |
+| `red` | `#c83030` | Error, destructive, critical — blood of the false emperor |
+| `orange` | `#c86418` | Warning, attention needed — hot metal |
+| `yellow` | `#b89020` | Caution, numbers, highlights — tarnished brass |
 
 ### Excalidraw Semantic Palette
 
@@ -55,26 +55,23 @@ For diagram elements. Maps purpose → fill/stroke pairs. Defined in `extensions
 
 | Purpose | Fill | Stroke | When to Use |
 |---------|------|--------|-------------|
-| `primary` | `#3b82f6` | `#1e3a5f` | Default components, neutral nodes |
-| `secondary` | `#60a5fa` | `#1e3a5f` | Supporting/related components |
-| `tertiary` | `#93c5fd` | `#1e3a5f` | Third-level, background detail |
-| `start` | `#fed7aa` | `#c2410c` | Entry points, triggers, inputs |
-| `end` | `#a7f3d0` | `#047857` | Outputs, completion, results |
-| `decision` | `#fef3c7` | `#b45309` | Conditionals, branches, choices |
-| `ai` | `#ddd6fe` | `#6d28d9` | AI/LLM components, inference |
-| `warning` | `#fee2e2` | `#dc2626` | Warnings, degraded states |
-| `error` | `#fecaca` | `#b91c1c` | Error states, failures |
-| `evidence` | `#1e293b` | `#334155` | Code snippets, data samples, dark blocks |
-| `inactive` | `#dbeafe` | `#1e40af` | Disabled, inactive, future-state |
+| `primary` | `#1a4a6e` | `#2ab4c8` | Default components, neutral nodes |
+| `secondary` | `#1a3a5a` | `#1a8898` | Supporting/related components |
+| `tertiary` | `#0e2a40` | `#344858` | Third-level, background detail |
+| `start` | `#0e2e20` | `#1ab878` | Entry points, triggers, inputs |
+| `end` | `#2e2010` | `#b89020` | Outputs, completion, results |
+| `decision` | `#2a1010` | `#c83030` | Conditionals, branches, choices |
+| `ai` | `#1a1040` | `#6060c0` | AI/LLM components, inference |
+| `warning` | `#2a1808` | `#c86418` | Warnings, degraded states |
+| `error` | `#2e0e0e` | `#c83030` | Error states, failures |
+| `evidence` | `#06080e` | `#1a3448` | Code snippets, data samples, dark blocks |
+| `inactive` | `#0e1622` | `#344858` | Disabled, inactive, future-state |
 
-**Text on semantic fills:**
-- Light fills (`start`, `end`, `decision`, `warning`, `error`, `inactive`): use `#374151` (dark gray)
-- Dark fills (`primary`, `secondary`, `evidence`): use `#ffffff` (white)
-- The element factories handle this automatically via luminance calculation
+**Text on all semantic fills:** use `#c4d8e4` (Alpharius silver-white foreground) — all fills are dark enough to support it.
 
 ### D2 Diagram Styling
 
-When using `render_diagram` (D2), apply Verdant colors via `style` blocks.
+When using `render_diagram` (D2), apply Alpharius colors via `style` blocks.
 
 **Document-fit guidance for technical capability diagrams:**
 - Assume the diagram may be embedded in a document and scaled down to fit a page column or page width.
@@ -86,9 +83,9 @@ When using `render_diagram` (D2), apply Verdant colors via `style` blocks.
 ```d2
 component: API Server {
   style: {
-    fill: "#3b82f6"
-    stroke: "#1e3a5f"
-    font-color: "#ffffff"
+    fill: "#1a4a6e"
+    stroke: "#2ab4c8"
+    font-color: "#c4d8e4"
     border-radius: 8
   }
 }
@@ -100,8 +97,8 @@ component: API Server {
 ```d2
 a -> b: label {
   style: {
-    stroke: "#3dc9b0"
-    font-color: "#d4e8e4"
+    stroke: "#2ab4c8"
+    font-color: "#c4d8e4"
   }
 }
 ```
@@ -110,9 +107,9 @@ a -> b: label {
 ```d2
 group: Infrastructure {
   style: {
-    fill: "#0c0e12"
-    stroke: "#2d4a47"
-    font-color: "#8ac4b8"
+    fill: "#06080e"
+    stroke: "#1a3448"
+    font-color: "#6ecad8"
   }
 
   db: Database
@@ -136,18 +133,17 @@ group: Infrastructure {
 
 | Level | Size | Color | Use |
 |-------|------|-------|-----|
-| Title | 28px | `#1e40af` | Diagram titles, section headers |
-| Subtitle | 20px | `#3b82f6` | Sub-sections, group labels |
-| Body | 16px | `#64748b` | Default text, labels |
-| Small | 12px | `#8a9a96` | Annotations, fine print |
+| Title | 28px | `#2ab4c8` | Diagram titles, section headers |
+| Subtitle | 20px | `#1a8898` | Sub-sections, group labels |
+| Body | 16px | `#607888` | Default text, labels |
+| Small | 12px | `#344858` | Annotations, fine print |
 
 ### Text on Backgrounds
 
 | Background | Text Color | Example |
 |------------|------------|---------|
-| Dark (`bg`, `cardBg`, evidence fills) | `#ffffff` or `#d4e8e4` | White/light green on black |
-| Light (start, end, decision fills) | `#374151` | Dark gray on pastel |
-| Transparent / no fill | Stroke color or `#64748b` | Inherits from context |
+| Dark (all Alpharius fills) | `#c4d8e4` | Silver-white on void |
+| Transparent / no fill | Stroke color or `#607888` | Inherits from context |
 
 ---
 
@@ -188,7 +184,7 @@ group: Infrastructure {
 - `--theme 200` — dark theme
 - `--layout elk` — ELK layered algorithm (cleaner than dagre for most diagrams)
 - `--pad 40` — comfortable padding
-- Apply Verdant colors via style blocks (see D2 Diagram Styling above)
+- Apply Alpharius colors via style blocks (see D2 Diagram Styling above)
 - D2 is the default tool for straightforward structural diagrams with regular graph layout
 - When the target is a document, prefer compact page-friendly compositions over panoramic or skyscraper aspect ratios
 - Treat readability at reduced size as a first-class constraint for node labels and edge relationships
@@ -202,7 +198,7 @@ group: Infrastructure {
 - `strokeStyle: "solid"` — default; use `"dashed"` for optional/future
 - `roundness: { type: 3 }` — adaptive corners on rectangles
 - `fontFamily: 3` — Cascadia (monospace)
-- `viewBackgroundColor: "#ffffff"` — white canvas (prints well; dark theme elements still pop)
+- `viewBackgroundColor: "#06080e"` — void black canvas
 - Prefer Excalidraw for layout-sensitive capability maps, trust boundaries, phased flows, and other diagrams where local spacing and connector routing matter more than pure graph regularity
 - When generating Excalidraw programmatically, keep it minimal and hand-crafted; prefer the native SVG backend for repeatable canonical document diagrams
 - Use canonical layouts (`pipeline`, `fanout`, `converge`, `grid`) as the starting grammar for repeated architecture diagrams
@@ -212,7 +208,7 @@ group: Infrastructure {
 - Use `diagram` preset (1024×768) for technical visuals
 - Use `schnell` for iteration, `dev` for finals
 - Quantize to `4` bits on 16GB machines
-- Prompts should reference the palette by description: "dark teal-green accent on deep charcoal background"
+- Prompts should reference the palette by description: "iridescent blue-green ceramite on deep void-black background, silver chrome highlights, alpha legion aesthetic"
 
 ---
 
@@ -220,20 +216,20 @@ group: Infrastructure {
 
 ```
 BACKGROUNDS          ACCENTS              SIGNALS
-bg:       #0c0e12    primary:    #3dc9b0  green:  #34d399
-cardBg:   #151c20    primaryMu:  #4a9e90  red:    #f44747
-surfaceBg:#1a2428    primaryBr:  #8ac4b8  orange: #e98100
-                                          yellow: #e9c400
+bg:       #06080e    primary:    #2ab4c8  green:  #1ab878
+cardBg:   #0e1622    primaryMu:  #1a8898  red:    #c83030
+surfaceBg:#131e2e    primaryBr:  #6ecad8  orange: #c86418
+                                          yellow: #b89020
 
 TEXT                 BORDERS
-fg:       #d4e8e4    border:     #2d4a47
-mutedFg:  #8a9a96    borderDim:  #1e3533
-dimFg:    #5c6b67
+fg:       #c4d8e4    border:     #1a3448
+mutedFg:  #607888    borderDim:  #0e1e30
+dimFg:    #344858
 
 EXCALIDRAW SEMANTICS (fill / stroke)
-primary:   #3b82f6 / #1e3a5f    start:     #fed7aa / #c2410c
-secondary: #60a5fa / #1e3a5f    end:       #a7f3d0 / #047857
-decision:  #fef3c7 / #b45309    ai:        #ddd6fe / #6d28d9
-warning:   #fee2e2 / #dc2626    error:     #fecaca / #b91c1c
-evidence:  #1e293b / #334155    inactive:  #dbeafe / #1e40af
+primary:   #1a4a6e / #2ab4c8    start:     #0e2e20 / #1ab878
+secondary: #1a3a5a / #1a8898    end:       #2e2010 / #b89020
+decision:  #2a1010 / #c83030    ai:        #1a1040 / #6060c0
+warning:   #2a1808 / #c86418    error:     #2e0e0e / #c83030
+evidence:  #06080e / #1a3448    inactive:  #0e1622 / #344858
 ```

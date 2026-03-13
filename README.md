@@ -227,7 +227,7 @@ Connect external MCP (Model Context Protocol) servers as native pi tools.
 | `defaults` | Deploys `AGENTS.md` and theme on first install; content-hash guard prevents overwriting customizations |
 | `terminal-title` | Dynamic tab titles showing active cleave runs and git branch |
 | `spinner-verbs` | Warhammer 40K-themed loading messages |
-| `style` | Verdant design system reference (`/style`) |
+| `style` | Alpharius design system reference (`/style`) |
 | `version-check` | Polls GitHub releases hourly, notifies when a new Omegon release is available |
 | `web-ui` | Localhost-only read-only HTTP dashboard and JSON control-plane endpoints (`/web-ui [start|stop|status|open]`) |
 
@@ -247,7 +247,7 @@ Skills provide specialized instructions the agent loads on-demand when a task ma
 | `pi-extensions` | pi extension API — `registerCommand`, `registerTool`, event handlers, TUI context, common pitfalls |
 | `pi-tui` | TUI component patterns — `Component` interface, overlays, keyboard handling, theming, footer/widget APIs |
 | `security` | Input escaping, injection prevention, path traversal, process safety, secrets management |
-| `style` | Verdant color system, typography, spacing — shared across TUI, D2 diagrams, and generated images |
+| `style` | Alpharius color system, typography, spacing — shared across TUI, D2 diagrams, and generated images |
 | `vault` | Obsidian-compatible markdown conventions — wikilinks, frontmatter, vault-friendly file organization |
 
 ## Prompt Templates

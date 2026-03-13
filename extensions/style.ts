@@ -1,5 +1,5 @@
 /**
- * style — /style command for the Verdant design system
+ * style — /style command for the Alpharius design system
  *
  * Registers `/style [subcommand]` as an interactive command.
  * Subcommands: (none), palette, d2, excalidraw, check <file>
@@ -12,84 +12,84 @@ import type { ExtensionAPI } from "@cwilson613/pi-coding-agent";
 // ---------------------------------------------------------------------------
 
 const CORE_PALETTE = {
-	primary:       "#3dc9b0",
-	primaryMuted:  "#4a9e90",
-	primaryBright: "#8ac4b8",
-	fg:            "#d4e8e4",
-	mutedFg:       "#8a9a96",
-	dimFg:         "#5c6b67",
-	bg:            "#0c0e12",
-	cardBg:        "#151c20",
-	surfaceBg:     "#1a2428",
-	borderColor:   "#2d4a47",
-	borderDim:     "#1e3533",
+	primary:       "#2ab4c8",
+	primaryMuted:  "#1a8898",
+	primaryBright: "#6ecad8",
+	fg:            "#c4d8e4",
+	mutedFg:       "#607888",
+	dimFg:         "#344858",
+	bg:            "#06080e",
+	cardBg:        "#0e1622",
+	surfaceBg:     "#131e2e",
+	borderColor:   "#1a3448",
+	borderDim:     "#0e1e30",
 };
 
 const SIGNALS = {
-	green:  "#34d399",
-	red:    "#f44747",
-	orange: "#e98100",
-	yellow: "#e9c400",
+	green:  "#1ab878",
+	red:    "#c83030",
+	orange: "#c86418",
+	yellow: "#b89020",
 };
 
 const EXCALIDRAW_SEMANTICS: Record<string, { fill: string; stroke: string; use: string }> = {
-	primary:   { fill: "#3b82f6", stroke: "#1e3a5f", use: "Default components, neutral nodes" },
-	secondary: { fill: "#60a5fa", stroke: "#1e3a5f", use: "Supporting/related components" },
-	tertiary:  { fill: "#93c5fd", stroke: "#1e3a5f", use: "Third-level, background detail" },
-	start:     { fill: "#fed7aa", stroke: "#c2410c", use: "Entry points, triggers, inputs" },
-	end:       { fill: "#a7f3d0", stroke: "#047857", use: "Outputs, completion, results" },
-	decision:  { fill: "#fef3c7", stroke: "#b45309", use: "Conditionals, branches, choices" },
-	ai:        { fill: "#ddd6fe", stroke: "#6d28d9", use: "AI/LLM components, inference" },
-	warning:   { fill: "#fee2e2", stroke: "#dc2626", use: "Warnings, degraded states" },
-	error:     { fill: "#fecaca", stroke: "#b91c1c", use: "Error states, failures" },
-	evidence:  { fill: "#1e293b", stroke: "#334155", use: "Code snippets, data samples" },
-	inactive:  { fill: "#dbeafe", stroke: "#1e40af", use: "Disabled, inactive, future-state" },
+	primary:   { fill: "#1a4a6e", stroke: "#2ab4c8", use: "Default components, neutral nodes" },
+	secondary: { fill: "#1a3a5a", stroke: "#1a8898", use: "Supporting/related components" },
+	tertiary:  { fill: "#0e2a40", stroke: "#344858", use: "Third-level, background detail" },
+	start:     { fill: "#0e2e20", stroke: "#1ab878", use: "Entry points, triggers, inputs" },
+	end:       { fill: "#2e2010", stroke: "#b89020", use: "Outputs, completion, results" },
+	decision:  { fill: "#2a1010", stroke: "#c83030", use: "Conditionals, branches, choices" },
+	ai:        { fill: "#1a1040", stroke: "#6060c0", use: "AI/LLM components, inference" },
+	warning:   { fill: "#2a1808", stroke: "#c86418", use: "Warnings, degraded states" },
+	error:     { fill: "#2e0e0e", stroke: "#c83030", use: "Error states, failures" },
+	evidence:  { fill: "#06080e", stroke: "#1a3448", use: "Code snippets, data samples" },
+	inactive:  { fill: "#0e1622", stroke: "#344858", use: "Disabled, inactive, future-state" },
 };
 
-const D2_STYLE_TEMPLATE = `# Verdant D2 style template — paste into your .d2 file
+const D2_STYLE_TEMPLATE = `# Alpharius D2 style template — paste into your .d2 file
 
-# Primary component
+# Primary component (ceramite blue-teal)
 component: Label {
   style: {
-    fill: "#3b82f6"
-    stroke: "#1e3a5f"
-    font-color: "#ffffff"
+    fill: "#1a4a6e"
+    stroke: "#2ab4c8"
+    font-color: "#c4d8e4"
     border-radius: 8
   }
 }
 
-# Start / entry point
+# Start / entry point (hydra green)
 entry: Trigger {
   style: {
-    fill: "#fed7aa"
-    stroke: "#c2410c"
-    font-color: "#374151"
+    fill: "#0e2e20"
+    stroke: "#1ab878"
+    font-color: "#c4d8e4"
   }
 }
 
-# End / output
+# End / output (brass gold)
 result: Output {
   style: {
-    fill: "#a7f3d0"
-    stroke: "#047857"
-    font-color: "#374151"
+    fill: "#2e2010"
+    stroke: "#b89020"
+    font-color: "#c4d8e4"
   }
 }
 
 # Connection
 entry -> component -> result {
   style: {
-    stroke: "#3dc9b0"
-    font-color: "#d4e8e4"
+    stroke: "#2ab4c8"
+    font-color: "#c4d8e4"
   }
 }
 
 # Container
 group: Infrastructure {
   style: {
-    fill: "#0c0e12"
-    stroke: "#2d4a47"
-    font-color: "#8ac4b8"
+    fill: "#06080e"
+    stroke: "#1a3448"
+    font-color: "#6ecad8"
   }
 }`;
 
@@ -109,7 +109,7 @@ for (const [name, colors] of Object.entries(EXCALIDRAW_SEMANTICS)) {
 
 function quickRef(): string {
 	return [
-		"**Verdant Design System — Quick Reference**",
+		"**Alpharius Design System — Quick Reference**",
 		"",
 		"```",
 		"BACKGROUNDS          ACCENTS              SIGNALS",
@@ -147,14 +147,13 @@ function excalidrawTable(): string {
 		"|---------|------|--------|-----|",
 		...rows,
 		"",
-		"Text on light fills (`start`, `end`, `decision`, `warning`, `error`, `inactive`): use `#374151`",
-		"Text on dark fills (`primary`, `secondary`, `evidence`): use `#ffffff`",
+		"Text on all fills: use `#c4d8e4` (Alpharius silver-white foreground)",
 	].join("\n");
 }
 
 function d2Template(): string {
 	return [
-		"**D2 Verdant Style Template**",
+		"**D2 Alpharius Style Template**",
 		"",
 		"Copy and adapt for your diagrams. Renders with `--theme 200 --layout elk`:",
 		"",
@@ -214,7 +213,7 @@ function auditColors(filePath: string): string {
 
 export default function styleExtension(pi: ExtensionAPI) {
 	pi.registerCommand("style", {
-		description: "Verdant design system (usage: /style [palette|d2|excalidraw|check <file>])",
+		description: "Alpharius design system (usage: /style [palette|d2|excalidraw|check <file>])",
 		getArgumentCompletions: (prefix: string) => {
 			const parts = prefix.split(/\s+/);
 			if (parts.length <= 1) {
@@ -242,7 +241,7 @@ export default function styleExtension(pi: ExtensionAPI) {
 				case "palette":
 					// Delegate to agent to render via render_diagram tool (D2)
 					pi.sendUserMessage(
-						"Render a D2 diagram showing the Verdant palette as a visual swatch. " +
+						"Render a D2 diagram showing the Alpharius palette as a visual swatch. " +
 						"Use the style skill's color tokens. Group into containers: Core (bg/cardBg/surfaceBg + primary/primaryMuted/primaryBright + fg/mutedFg/dimFg), " +
 						"Signals (green/red/orange/yellow), and Borders (borderColor/borderDim). " +
 						"Style each node with its actual hex value as fill color, appropriate font-color for contrast, " +
@@ -269,7 +268,7 @@ export default function styleExtension(pi: ExtensionAPI) {
 					// Treat as a question — delegate to agent with style skill context
 					pi.sendUserMessage(
 						`The user asked about the style system: "${trimmed}". ` +
-						`Answer using the style skill (Verdant design system). Load /skill:style if needed.`,
+						`Answer using the style skill (Alpharius design system). Load /skill:style if needed.`,
 						{ deliverAs: "followUp" },
 					);
 					return;

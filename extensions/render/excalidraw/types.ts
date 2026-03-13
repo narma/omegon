@@ -156,7 +156,7 @@ export const DEFAULT_APP_STATE: AppState = {
 	gridSize: 20,
 	gridStep: 5,
 	gridModeEnabled: false,
-	viewBackgroundColor: "#ffffff",
+	viewBackgroundColor: "#06080e",
 };
 
 export const DEFAULT_ELEMENT_STYLE = {
@@ -199,25 +199,25 @@ export interface ColorPair {
 }
 
 export const SEMANTIC_COLORS: Record<SemanticPurpose, ColorPair> = {
-	primary:   { fill: "#3b82f6", stroke: "#1e3a5f" },
-	secondary: { fill: "#60a5fa", stroke: "#1e3a5f" },
-	tertiary:  { fill: "#93c5fd", stroke: "#1e3a5f" },
-	start:     { fill: "#fed7aa", stroke: "#c2410c" },
-	end:       { fill: "#a7f3d0", stroke: "#047857" },
-	warning:   { fill: "#fee2e2", stroke: "#dc2626" },
-	decision:  { fill: "#fef3c7", stroke: "#b45309" },
-	ai:        { fill: "#ddd6fe", stroke: "#6d28d9" },
-	inactive:  { fill: "#dbeafe", stroke: "#1e40af" },
-	error:     { fill: "#fecaca", stroke: "#b91c1c" },
-	evidence:  { fill: "#1e293b", stroke: "#334155" },
+	primary:   { fill: "#1a4a6e", stroke: "#2ab4c8" },
+	secondary: { fill: "#1a3a5a", stroke: "#1a8898" },
+	tertiary:  { fill: "#0e2a40", stroke: "#344858" },
+	start:     { fill: "#0e2e20", stroke: "#1ab878" },
+	end:       { fill: "#2e2010", stroke: "#b89020" },
+	warning:   { fill: "#2a1808", stroke: "#c86418" },
+	decision:  { fill: "#2a1010", stroke: "#c83030" },
+	ai:        { fill: "#1a1040", stroke: "#6060c0" },
+	inactive:  { fill: "#0e1622", stroke: "#344858" },
+	error:     { fill: "#2e0e0e", stroke: "#c83030" },
+	evidence:  { fill: "#06080e", stroke: "#1a3448" },
 };
 
 export const TEXT_COLORS = {
-	title:   "#1e40af",
-	subtitle: "#3b82f6",
-	body:    "#64748b",
-	onLight: "#374151",
-	onDark:  "#ffffff",
+	title:    "#2ab4c8",
+	subtitle: "#1a8898",
+	body:     "#607888",
+	onLight:  "#c4d8e4",
+	onDark:   "#c4d8e4",
 } as const;
 
 export type TextLevel = keyof typeof TEXT_COLORS;

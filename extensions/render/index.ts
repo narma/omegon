@@ -297,7 +297,7 @@ export default function renderExtension(pi: ExtensionAPI) {
 		promptGuidelines: [
 			"Use D2 syntax, NOT Mermaid. D2 reference: https://d2lang.com/tour/intro",
 			"Use --theme 200 (dark) and --layout elk for best results",
-			"Apply Verdant semantic colors via style blocks: fill, stroke, font-color",
+			"Apply Alpharius semantic colors via style blocks: fill, stroke, font-color",
 		],
 		parameters: Type.Object({
 			code:   Type.String({ description: "D2 diagram source code" }),

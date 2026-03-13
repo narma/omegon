@@ -58,7 +58,7 @@ export default function (pi: ExtensionAPI) {
       let changed = false;
 
       if (!settings.theme) {
-        settings.theme = "default";
+        settings.theme = "alpharius";
         changed = true;
       }
 
