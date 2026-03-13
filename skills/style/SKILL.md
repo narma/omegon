@@ -119,6 +119,40 @@ group: Infrastructure {
 
 ---
 
+## Terminal Alignment
+
+Pi uses 24-bit RGB (`COLORTERM=truecolor`) for all its own output, so Kitty's palette doesn't affect pi rendering directly. However, the **naked terminal background** between pi regions, the shell prompt (oh-my-bash), `ls`, `git diff`, and Kitty's tab bar all pull from the terminal palette. Without alignment, the void background is wrong and the brass/gold contrast breaks.
+
+### Kitty theme file
+
+`themes/alpharius.conf` is a ready-to-use Kitty conf snippet. Include it in `kitty.conf`:
+
+```conf
+include /path/to/omegon/themes/alpharius.conf
+```
+
+Or copy it to `~/.config/kitty/current-theme.conf`.
+
+If the palette changes, regenerate with:
+
+```bash
+npx tsx scripts/export-kitty-theme.ts
+```
+
+### What it sets
+
+| Key | Value | Why |
+|-----|-------|-----|
+| `background` | `#06080e` | Seamless void around pi rendering regions |
+| `foreground` | `#c4d8e4` | Silver-white — pi's primary text colour |
+| `cursor` | `#2ab4c8` | Ceramite teal — matches pi's accent/focus colour |
+| `selection_background` | `#102030` | Matches pi's `selectedBg` |
+| `color0–7` | Alpharius semantic palette | Normal ANSI slots |
+| `color8–15` | Bright variants | Bright ANSI slots |
+| Tab bar / borders | Alpharius card/border tones | Kitty chrome integration |
+
+---
+
 ## Typography
 
 ### Font Stack
