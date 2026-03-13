@@ -31,7 +31,7 @@ export interface SkillMapping {
 	/** Skill name (matches the directory name under skills/) */
 	skill: string;
 	/** Optional preferred model tier for this skill's complexity */
-	preferredTier?: "haiku" | "sonnet" | "opus";
+	preferredTier?: "retribution" | "victory" | "gloriana";
 }
 
 // ─── Default Mappings ───────────────────────────────────────────────────────
@@ -47,37 +47,37 @@ export const DEFAULT_MAPPINGS: SkillMapping[] = [
 	{
 		patterns: ["*.py", "pyproject.toml", "setup.py", "setup.cfg", "requirements*.txt", "Pipfile"],
 		skill: "python",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// Rust
 	{
 		patterns: ["*.rs", "Cargo.toml", "Cargo.lock"],
 		skill: "rust",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// OCI / Containers
 	{
 		patterns: ["Containerfile", "Dockerfile", "*.containerfile", "*.dockerfile", "docker-compose*.yml", "docker-compose*.yaml"],
 		skill: "oci",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// Kubernetes / Helm
 	{
 		patterns: ["k8s/**", "kubernetes/**", "helm/**", "charts/**", "Chart.yaml", "values*.yaml", "**/templates/*.yaml"],
 		skill: "k8s-operations",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// TypeScript
 	{
 		patterns: ["*.ts", "*.tsx", "tsconfig.json", "tsconfig.*.json"],
 		skill: "typescript",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// Pi extensions (more specific than generic TypeScript — matched first by specificity)
 	{
 		patterns: ["extensions/**/*.ts", "extensions/*/index.ts"],
 		skill: "pi-extensions",
-		preferredTier: "sonnet",
+		preferredTier: "victory",
 	},
 	// Git (rarely auto-matched, usually annotated)
 	{
@@ -241,18 +241,18 @@ export function resolveSkillPaths(
  * Get the preferred model tier for a set of skills.
  *
  * Returns the highest tier among all matched skills:
- * opus > sonnet > haiku > undefined (default)
+ * gloriana > victory > retribution > undefined (default)
  *
  * This allows skills to hint at the model complexity needed
- * for good results (e.g., Rust/Python → sonnet, complex architecture → opus).
+ * for good results (e.g., Rust/Python → victory, complex architecture → gloriana).
  */
 export function getPreferredTier(
 	skillNames: string[],
 	mappings: SkillMapping[] = DEFAULT_MAPPINGS,
-): "haiku" | "sonnet" | "opus" | undefined {
-	const tierRank = { haiku: 1, sonnet: 2, opus: 3 };
+): "retribution" | "victory" | "gloriana" | undefined {
+	const tierRank = { retribution: 1, victory: 2, gloriana: 3 };
 	let maxRank = 0;
-	let maxTier: "haiku" | "sonnet" | "opus" | undefined;
+	let maxTier: "retribution" | "victory" | "gloriana" | undefined;
 
 	for (const name of skillNames) {
 		const mapping = mappings.find((m) => m.skill === name);

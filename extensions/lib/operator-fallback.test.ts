@@ -246,7 +246,7 @@ describe("explainTierResolutionFailure", () => {
     profile.policy.heavyLocal = "deny";
 
     const message = explainTierResolutionFailure(
-      "haiku",
+      "retribution",
       models,
       getDefaultPolicy(),
       profile,
@@ -254,7 +254,7 @@ describe("explainTierResolutionFailure", () => {
       1000,
     );
 
-    assert.match(message ?? "", /Unable to switch to Adept \[haiku\]/);
+    assert.match(message ?? "", /Unable to switch to Adept \[Retribution Class\]/);
     assert.match(message ?? "", /blocked by policy|not permitted/i);
   });
 });

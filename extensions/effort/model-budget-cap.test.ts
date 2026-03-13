@@ -47,10 +47,10 @@ function setEffortUncapped(driver: string, name: string, level: number) {
 // ─── Tests ────────────────────────────────────────────────────
 
 describe("TIER_ORDER", () => {
-  it("defines correct ordering: local < haiku < sonnet < opus", () => {
-    assert.ok(TIER_ORDER.local < TIER_ORDER.haiku);
-    assert.ok(TIER_ORDER.haiku < TIER_ORDER.sonnet);
-    assert.ok(TIER_ORDER.sonnet < TIER_ORDER.opus);
+  it("defines correct ordering: local < retribution < victory < gloriana", () => {
+    assert.ok(TIER_ORDER.local < TIER_ORDER.retribution);
+    assert.ok(TIER_ORDER.retribution < TIER_ORDER.victory);
+    assert.ok(TIER_ORDER.victory < TIER_ORDER.gloriana);
   });
 });
 
@@ -62,63 +62,63 @@ describe("checkEffortCap", () => {
   // Spec: No cap allows any switch
   describe("no cap active", () => {
     it("allows any switch when effort is undefined", () => {
-      const result = checkEffortCap("opus");
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, false);
       assert.equal(result.message, undefined);
     });
 
     it("allows any switch when effort exists but is not capped", () => {
-      setEffortUncapped("sonnet", "Substantial", 3);
-      const result = checkEffortCap("opus");
+      setEffortUncapped("victory", "Substantial", 3);
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, false);
     });
 
-    it("allows haiku when no cap", () => {
-      const result = checkEffortCap("haiku");
+    it("allows retribution when no cap", () => {
+      const result = checkEffortCap("retribution");
       assert.equal(result.blocked, false);
     });
 
-    it("allows sonnet when no cap", () => {
-      const result = checkEffortCap("sonnet");
+    it("allows victory when no cap", () => {
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, false);
     });
   });
 
   // Spec: Cap blocks upgrade past ceiling
   describe("cap blocks upgrades", () => {
-    it("blocks opus when capped at sonnet (Ruthless)", () => {
-      setEffortCap("sonnet", "Ruthless", 4);
-      const result = checkEffortCap("opus");
+    it("blocks gloriana when capped at victory (Ruthless)", () => {
+      setEffortCap("victory", "Ruthless", 4);
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, true);
       assert.ok(result.message);
       assert.ok(result.message.includes("Ruthless"));
       assert.ok(result.message.includes("level 4"));
-      assert.ok(result.message.includes("sonnet"));
-      assert.ok(result.message.includes("opus"));
+      assert.ok(result.message.includes("victory"));
+      assert.ok(result.message.includes("gloriana"));
     });
 
-    it("blocks opus when capped at haiku", () => {
+    it("blocks gloriana when capped at retribution", () => {
       setEffortCap("local", "Servitor", 1);
-      const result = checkEffortCap("opus");
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, true);
       assert.ok(result.message!.includes("Servitor"));
     });
 
-    it("blocks sonnet when capped at local (Servitor)", () => {
+    it("blocks victory when capped at local (Servitor)", () => {
       setEffortCap("local", "Servitor", 1);
-      const result = checkEffortCap("sonnet");
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, true);
     });
 
-    it("blocks haiku when capped at local (Servitor)", () => {
+    it("blocks retribution when capped at local (Servitor)", () => {
       setEffortCap("local", "Servitor", 1);
-      const result = checkEffortCap("haiku");
+      const result = checkEffortCap("retribution");
       assert.equal(result.blocked, true);
     });
 
-    it("blocks opus when capped at Substantial (driver=sonnet)", () => {
-      setEffortCap("sonnet", "Substantial", 3);
-      const result = checkEffortCap("opus");
+    it("blocks gloriana when capped at Substantial (driver=victory)", () => {
+      setEffortCap("victory", "Substantial", 3);
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, true);
       assert.ok(result.message!.includes("Substantial"));
       assert.ok(result.message!.includes("/effort uncap"));
@@ -127,61 +127,61 @@ describe("checkEffortCap", () => {
 
   // Spec: Cap allows downgrade
   describe("cap allows downgrades", () => {
-    it("allows haiku when capped at sonnet (Ruthless)", () => {
-      setEffortCap("sonnet", "Ruthless", 4);
-      const result = checkEffortCap("haiku");
+    it("allows retribution when capped at victory (Ruthless)", () => {
+      setEffortCap("victory", "Ruthless", 4);
+      const result = checkEffortCap("retribution");
       assert.equal(result.blocked, false);
     });
 
-    it("allows haiku when capped at opus (Omnissiah)", () => {
-      setEffortCap("opus", "Omnissiah", 7);
-      const result = checkEffortCap("haiku");
+    it("allows retribution when capped at gloriana (Omnissiah)", () => {
+      setEffortCap("gloriana", "Omnissiah", 7);
+      const result = checkEffortCap("retribution");
       assert.equal(result.blocked, false);
     });
 
-    it("allows sonnet when capped at opus", () => {
-      setEffortCap("opus", "Absolute", 6);
-      const result = checkEffortCap("sonnet");
+    it("allows victory when capped at gloriana", () => {
+      setEffortCap("gloriana", "Absolute", 6);
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, false);
     });
   });
 
   // Spec: Cap survives tier switching (C1 regression)
   describe("cap derives ceiling from capLevel, not current driver", () => {
-    it("blocks opus when capped at Ruthless even after switching to Omnissiah", () => {
-      // Operator capped at Ruthless (level 4, driver=sonnet), then switched to Omnissiah
-      // Current driver is now "opus", but capLevel is still 4 (sonnet ceiling)
-      setEffortCap("opus", "Omnissiah", 7, 4);
-      const result = checkEffortCap("opus");
+    it("blocks gloriana when capped at Ruthless even after switching to Omnissiah", () => {
+      // Operator capped at Ruthless (level 4, driver=victory), then switched to Omnissiah
+      // Current driver is now "gloriana", but capLevel is still 4 (victory ceiling)
+      setEffortCap("gloriana", "Omnissiah", 7, 4);
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, true);
       assert.ok(result.message!.includes("Ruthless"));
       assert.ok(result.message!.includes("level 4"));
     });
 
-    it("allows sonnet when capped at Ruthless even after switching to Omnissiah", () => {
-      setEffortCap("opus", "Omnissiah", 7, 4);
-      const result = checkEffortCap("sonnet");
+    it("allows victory when capped at Ruthless even after switching to Omnissiah", () => {
+      setEffortCap("gloriana", "Omnissiah", 7, 4);
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, false);
     });
 
-    it("blocks sonnet when capped at Servitor even after switching to Absolute", () => {
-      setEffortCap("opus", "Absolute", 6, 1);
-      const result = checkEffortCap("sonnet");
+    it("blocks victory when capped at Servitor even after switching to Absolute", () => {
+      setEffortCap("gloriana", "Absolute", 6, 1);
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, true);
     });
   });
 
   // Spec: Cap allows lateral switch (same tier)
   describe("cap allows lateral switches", () => {
-    it("allows sonnet when capped at sonnet", () => {
-      setEffortCap("sonnet", "Ruthless", 4);
-      const result = checkEffortCap("sonnet");
+    it("allows victory when capped at victory", () => {
+      setEffortCap("victory", "Ruthless", 4);
+      const result = checkEffortCap("victory");
       assert.equal(result.blocked, false);
     });
 
-    it("allows opus when capped at opus", () => {
-      setEffortCap("opus", "Omnissiah", 7);
-      const result = checkEffortCap("opus");
+    it("allows gloriana when capped at gloriana", () => {
+      setEffortCap("gloriana", "Omnissiah", 7);
+      const result = checkEffortCap("gloriana");
       assert.equal(result.blocked, false);
     });
   });

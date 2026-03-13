@@ -352,13 +352,13 @@ describe("buildChildPrompt", () => {
 // ─── resolveExecuteModel ────────────────────────────────────────────────────
 
 describe("resolveExecuteModel", () => {
-	it("defaults to sonnet when no hints", () => {
+	it("defaults to victory when no hints", () => {
 		const result = resolveExecuteModel(
 			{ skills: [], executeModel: undefined },
 			false,
 			false,
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 
 	it("returns local when preferLocal is true and local model available", () => {
@@ -366,7 +366,7 @@ describe("resolveExecuteModel", () => {
 			{ skills: ["python"], executeModel: undefined },
 			true,
 			true,
-			() => "sonnet",
+			() => "victory",
 		);
 		assert.equal(result, "local");
 	});
@@ -377,17 +377,17 @@ describe("resolveExecuteModel", () => {
 			true,
 			false,
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 
 	it("explicit executeModel takes precedence over skill tier", () => {
 		const result = resolveExecuteModel(
-			{ skills: ["python"], executeModel: "opus" },
+			{ skills: ["python"], executeModel: "gloriana" },
 			false,
 			false,
-			() => "sonnet",
+			() => "victory",
 		);
-		assert.equal(result, "opus");
+		assert.equal(result, "gloriana");
 	});
 
 	it("skill tier used when no explicit executeModel", () => {
@@ -395,18 +395,18 @@ describe("resolveExecuteModel", () => {
 			{ skills: ["complex-arch"], executeModel: undefined },
 			false,
 			false,
-			(skills) => skills.includes("complex-arch") ? "opus" : undefined,
+			(skills) => skills.includes("complex-arch") ? "gloriana" : undefined,
 		);
-		assert.equal(result, "opus");
+		assert.equal(result, "gloriana");
 	});
 
 	it("explicit executeModel beats local override", () => {
 		const result = resolveExecuteModel(
-			{ skills: [], executeModel: "opus" },
+			{ skills: [], executeModel: "gloriana" },
 			true,
 			true,
 		);
-		assert.equal(result, "opus");
+		assert.equal(result, "gloriana");
 	});
 
 	it("local override applies when no explicit executeModel", () => {
@@ -423,9 +423,9 @@ describe("resolveExecuteModel", () => {
 			{ skills: undefined, executeModel: undefined },
 			false,
 			false,
-			() => "opus",
+			() => "gloriana",
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 
 	it("handles empty skills with tier function", () => {
@@ -433,9 +433,9 @@ describe("resolveExecuteModel", () => {
 			{ skills: [], executeModel: undefined },
 			false,
 			false,
-			() => "opus",
+			() => "gloriana",
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 
 	it("skill tier function returning undefined falls through to default", () => {
@@ -445,7 +445,7 @@ describe("resolveExecuteModel", () => {
 			false,
 			() => undefined,
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 });
 
@@ -460,18 +460,18 @@ describe("classifyByScope", () => {
 		assert.equal(classifyByScope(["src/a.ts", "src/b.ts", "src/c.ts"]), "local");
 	});
 
-	it("returns sonnet for 4 non-test files", () => {
-		assert.equal(classifyByScope(["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"]), "sonnet");
+	it("returns victory for 4 non-test files", () => {
+		assert.equal(classifyByScope(["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts"]), "victory");
 	});
 
-	it("returns sonnet for 8 non-test files", () => {
+	it("returns victory for 8 non-test files", () => {
 		const scope = Array.from({ length: 8 }, (_, i) => `src/file${i}.ts`);
-		assert.equal(classifyByScope(scope), "sonnet");
+		assert.equal(classifyByScope(scope), "victory");
 	});
 
-	it("returns opus for 9+ non-test files", () => {
+	it("returns gloriana for 9+ non-test files", () => {
 		const scope = Array.from({ length: 9 }, (_, i) => `src/file${i}.ts`);
-		assert.equal(classifyByScope(scope), "opus");
+		assert.equal(classifyByScope(scope), "gloriana");
 	});
 
 	it("test files are excluded from non-test count", () => {
@@ -505,33 +505,33 @@ describe("resolveExecuteModel — scope autoclassification", () => {
 		assert.equal(result, "local");
 	});
 
-	it("classifies medium scope (4-8 files) as sonnet", () => {
+	it("classifies medium scope (4-8 files) as victory", () => {
 		const scope = Array.from({ length: 5 }, (_, i) => `src/file${i}.ts`);
 		const result = resolveExecuteModel(
 			{ scope, skills: [] },
 			false,
 			true,
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 
-	it("classifies large scope (9+ files) as opus", () => {
+	it("classifies large scope (9+ files) as gloriana", () => {
 		const scope = Array.from({ length: 10 }, (_, i) => `src/file${i}.ts`);
 		const result = resolveExecuteModel(
 			{ scope, skills: [] },
 			false,
 			true,
 		);
-		assert.equal(result, "opus");
+		assert.equal(result, "gloriana");
 	});
 
 	it("explicit annotation overrides scope classification", () => {
 		const result = resolveExecuteModel(
-			{ scope: ["src/a.ts"], skills: [], executeModel: "opus" },
+			{ scope: ["src/a.ts"], skills: [], executeModel: "gloriana" },
 			false,
 			true,
 		);
-		assert.equal(result, "opus", "explicit opus should override scope-based local");
+		assert.equal(result, "gloriana", "explicit gloriana should override scope-based local");
 	});
 
 	it("preferLocal caps scope classification to local", () => {
@@ -550,7 +550,7 @@ describe("resolveExecuteModel — scope autoclassification", () => {
 			false,
 			false, // no local model
 		);
-		assert.equal(result, "sonnet", "should fall through to default when no local model");
+		assert.equal(result, "victory", "should fall through to default when no local model");
 	});
 
 	it("no scope falls through to preferLocal", () => {
@@ -562,13 +562,13 @@ describe("resolveExecuteModel — scope autoclassification", () => {
 		assert.equal(result, "local");
 	});
 
-	it("no scope, no preferLocal, no skills → default sonnet", () => {
+	it("no scope, no preferLocal, no skills → default victory", () => {
 		const result = resolveExecuteModel(
 			{ skills: [] },
 			false,
 			true,
 		);
-		assert.equal(result, "sonnet");
+		assert.equal(result, "victory");
 	});
 });
 
@@ -641,7 +641,7 @@ describe("buildGuardrailSection", () => {
 
 // ─── mapModelTierToFlag removed ─────────────────────────────────────────────
 // mapModelTierToFlag() was a deprecated internal-only function that returned
-// fuzzy tier aliases (e.g. "opus", "haiku"). It has been unexported per C5
+// fuzzy tier aliases (e.g. "gloriana", "retribution"). It has been unexported per C5
 // review finding: "Dead exports are test surface for wrong behavior."
 // Use resolveModelIdForTier() (tested in dispatcher.test.ts) instead.
 
@@ -660,16 +660,16 @@ describe("applyEffortFloor", () => {
 
 	it("returns classified unchanged when effort is undefined", () => {
 		clearEffort();
-		assert.equal(applyEffortFloor("sonnet"), "sonnet");
+		assert.equal(applyEffortFloor("victory"), "victory");
 		assert.equal(applyEffortFloor("local"), "local");
-		assert.equal(applyEffortFloor("opus"), "opus");
+		assert.equal(applyEffortFloor("gloriana"), "gloriana");
 	});
 
 	it("forces local when cleavePreferLocal is true", () => {
 		setEffort({ cleavePreferLocal: true, cleaveFloor: "local" });
 		try {
-			assert.equal(applyEffortFloor("sonnet"), "local");
-			assert.equal(applyEffortFloor("opus"), "local");
+			assert.equal(applyEffortFloor("victory"), "local");
+			assert.equal(applyEffortFloor("gloriana"), "local");
 			// Already local stays local
 			assert.equal(applyEffortFloor("local"), "local");
 		} finally {
@@ -678,25 +678,25 @@ describe("applyEffortFloor", () => {
 	});
 
 	it("raises tier to floor when classified is below", () => {
-		setEffort({ cleavePreferLocal: false, cleaveFloor: "sonnet" });
+		setEffort({ cleavePreferLocal: false, cleaveFloor: "victory" });
 		try {
-			// local → sonnet (raised to floor)
-			assert.equal(applyEffortFloor("local"), "sonnet");
-			// sonnet stays sonnet (at floor)
-			assert.equal(applyEffortFloor("sonnet"), "sonnet");
-			// opus stays opus (above floor)
-			assert.equal(applyEffortFloor("opus"), "opus");
+			// local → victory (raised to floor)
+			assert.equal(applyEffortFloor("local"), "victory");
+			// victory stays victory (at floor)
+			assert.equal(applyEffortFloor("victory"), "victory");
+			// gloriana stays gloriana (above floor)
+			assert.equal(applyEffortFloor("gloriana"), "gloriana");
 		} finally {
 			clearEffort();
 		}
 	});
 
-	it("opus floor raises everything to opus", () => {
-		setEffort({ cleavePreferLocal: false, cleaveFloor: "opus" });
+	it("gloriana floor raises everything to gloriana", () => {
+		setEffort({ cleavePreferLocal: false, cleaveFloor: "gloriana" });
 		try {
-			assert.equal(applyEffortFloor("local"), "opus");
-			assert.equal(applyEffortFloor("sonnet"), "opus");
-			assert.equal(applyEffortFloor("opus"), "opus");
+			assert.equal(applyEffortFloor("local"), "gloriana");
+			assert.equal(applyEffortFloor("victory"), "gloriana");
+			assert.equal(applyEffortFloor("gloriana"), "gloriana");
 		} finally {
 			clearEffort();
 		}
@@ -724,7 +724,7 @@ describe("resolveExecuteModel — effort integration", () => {
 			cleaveFloor: "local",
 		});
 		try {
-			// 5-file scope would normally classify as sonnet
+			// 5-file scope would normally classify as victory
 			const result = resolveExecuteModel(
 				{ scope: Array.from({ length: 5 }, (_, i) => `src/file${i}.ts`), skills: [] },
 				false,
@@ -736,12 +736,12 @@ describe("resolveExecuteModel — effort integration", () => {
 		}
 	});
 
-	it("Absolute tier raises floor to sonnet for small-scope children", () => {
+	it("Absolute tier raises floor to victory for small-scope children", () => {
 		setEffort({
 			level: 6,
 			name: "Absolute",
 			cleavePreferLocal: false,
-			cleaveFloor: "sonnet",
+			cleaveFloor: "victory",
 		});
 		try {
 			// 2-file scope would normally classify as local
@@ -750,7 +750,7 @@ describe("resolveExecuteModel — effort integration", () => {
 				false,
 				true,
 			);
-			assert.equal(result, "sonnet");
+			assert.equal(result, "victory");
 		} finally {
 			clearEffort();
 		}
@@ -775,13 +775,13 @@ describe("resolveExecuteModel — effort integration", () => {
 			cleaveFloor: "local",
 		});
 		try {
-			// Explicit opus annotation should NOT be forced to local
+			// Explicit gloriana annotation should NOT be forced to local
 			const result = resolveExecuteModel(
-				{ scope: ["src/a.ts"], skills: [], executeModel: "opus" },
+				{ scope: ["src/a.ts"], skills: [], executeModel: "gloriana" },
 				false,
 				true,
 			);
-			assert.equal(result, "opus");
+			assert.equal(result, "gloriana");
 		} finally {
 			clearEffort();
 		}

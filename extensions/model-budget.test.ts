@@ -18,16 +18,16 @@ describe("model-budget copy", () => {
     assert.match(description, /Anthropic, OpenAI, or local inference/);
   });
 
-  it("describes /sonnet as a balanced capability tier", () => {
-    const description = buildTierCommandDescription("sonnet");
-    assert.match(description, /Magos \[sonnet\]/);
+  it("describes /victory as a balanced capability tier", () => {
+    const description = buildTierCommandDescription("victory");
+    assert.match(description, /Magos \[Victory Class\]/);
     assert.match(description, /balanced capability tier/i);
     assert.match(description, /provider-aware routing/i);
   });
 
-  it("describes /opus as a deep reasoning tier", () => {
-    const description = buildTierCommandDescription("opus");
-    assert.match(description, /Archmagos \[opus\]/);
+  it("describes /gloriana as a deep reasoning tier", () => {
+    const description = buildTierCommandDescription("gloriana");
+    assert.match(description, /Archmagos \[Gloriana Class\]/);
     assert.match(description, /deep reasoning tier/i);
   });
 

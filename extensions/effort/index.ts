@@ -39,13 +39,13 @@ import { readOperatorProfile, loadOperatorRuntimeState, toCapabilityProfile, toC
 
 /** Tier icons indexed by level. */
 const TIER_ICONS: Record<EffortLevel, string> = {
-  1: "🟢",
-  2: "🔵",
-  3: "🟡",
-  4: "🟠",
-  5: "🔴",
+  1: "○",
+  2: "●",
+  3: "🗡️",
+  4: "⚔️",
+  5: "☠️",
   6: "💀",
-  7: "⚙️",
+  7: "🤖",
 };
 
 function getResolverInputs(ctx: ExtensionContext) {
@@ -101,9 +101,9 @@ async function restoreLastUsedModel(
  * Resolve the effective extraction tier, honoring the session routing policy.
  *
  * When cheapCloudPreferredOverLocal is true and the effort tier's extraction
- * setting is "local", we upgrade to "haiku" (cheapest cloud tier) so that
+ * setting is "local", we upgrade to "retribution" (cheapest cloud tier) so that
  * background extraction work uses a cost-effective cloud model when available.
- * If no cloud model satisfies haiku, falls back to "local" transparently.
+ * If no cloud model satisfies retribution, falls back to "local" transparently.
  *
  * Spec: "Extraction prefers cheap cloud when configured"
  *       "Offline or unavailable cloud falls back safely"
@@ -115,9 +115,9 @@ function resolveExtractionTier(
   const { policy, profile, runtimeState } = getResolverInputs(ctx);
   const all = ctx.modelRegistry.getAll() as unknown as RegistryModel[];
 
-  // Determine effective tier: upgrade local→haiku when policy prefers cheap cloud
+  // Determine effective tier: upgrade local→retribution when policy prefers cheap cloud
   const effectiveTier: ModelTier =
-    policy.cheapCloudPreferredOverLocal && extraction === "local" ? "haiku" : extraction;
+    policy.cheapCloudPreferredOverLocal && extraction === "local" ? "retribution" : extraction;
 
   const resolved = resolveTier(effectiveTier, all, policy, runtimeState, profile);
 
@@ -232,7 +232,7 @@ export default function (pi: ExtensionAPI) {
     const state = buildEffortState(level);
 
     // Resolve extraction tier under current routing policy (C1: spec compliance).
-    // When cheapCloudPreferredOverLocal is true this upgrades local→haiku and
+    // When cheapCloudPreferredOverLocal is true this upgrades local→retribution and
     // falls back to local if no cloud model is available.
     const extractionResolution = resolveExtractionTier(state.extraction, ctx);
     state.resolvedExtractionModelId = extractionResolution.resolvedModelId;

@@ -188,21 +188,21 @@ describe("dashboard snapshot — operator metadata parity", () => {
     sharedState.effort = {
       level: 4,
       name: "Ruthless",
-      driver: "sonnet",
+      driver: "victory",
       thinking: "high",
       capped: false,
-      extraction: "haiku",
-      compaction: "haiku",
+      extraction: "retribution",
+      compaction: "retribution",
       cleavePreferLocal: false,
-      cleaveFloor: "sonnet",
-      reviewModel: "opus",
+      cleaveFloor: "victory",
+      reviewModel: "gloriana",
     } as any;
 
     const { dashboard } = buildControlPlaneState(REPO_ROOT, STARTED_AT);
     const m = dashboard.operatorMetadata;
     assert.equal(m.effortName, "Ruthless");
     assert.equal(m.effortLevel, 4);
-    assert.equal(m.driverTier, "sonnet");
+    assert.equal(m.driverTier, "victory");
     assert.equal(m.thinkingLevel, "high");
     assert.equal(m.effortCapped, false);
   });
@@ -211,15 +211,15 @@ describe("dashboard snapshot — operator metadata parity", () => {
     sharedState.effort = {
       level: 3,
       name: "Substantial",
-      driver: "haiku",
+      driver: "retribution",
       thinking: "medium",
       capped: true,
       capLevel: 3,
-      extraction: "haiku",
-      compaction: "haiku",
+      extraction: "retribution",
+      compaction: "retribution",
       cleavePreferLocal: true,
-      cleaveFloor: "haiku",
-      reviewModel: "sonnet",
+      cleaveFloor: "retribution",
+      reviewModel: "victory",
     } as any;
 
     const { dashboard } = buildControlPlaneState(REPO_ROOT, STARTED_AT);
@@ -260,14 +260,14 @@ describe("dashboard snapshot — operator metadata parity", () => {
     sharedState.effort = {
       level: 5,
       name: "Lethal",
-      driver: "opus",
+      driver: "gloriana",
       thinking: "high",
       capped: false,
-      extraction: "sonnet",
-      compaction: "sonnet",
+      extraction: "victory",
+      compaction: "victory",
       cleavePreferLocal: false,
-      cleaveFloor: "sonnet",
-      reviewModel: "opus",
+      cleaveFloor: "victory",
+      reviewModel: "gloriana",
     } as any;
     const { dashboard } = buildControlPlaneState(REPO_ROOT, STARTED_AT);
     assert.doesNotThrow(() => JSON.stringify(dashboard.operatorMetadata));

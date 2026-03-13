@@ -13,11 +13,11 @@ import { EFFORT_NAMES } from "./types.ts";
  *
  *  1 = Servitor        — all local
  *  2 = Average    — local driver, local background
- *  3 = Substantial — sonnet driver, local background (daily default)
- *  4 = Ruthless   — sonnet + medium thinking
- *  5 = Lethal     — sonnet + high thinking, opus review
- *  6 = Absolute   — opus driver, sonnet background
- *  7 = Omnissiah  — all opus
+ *  3 = Substantial — victory driver, local background (daily default)
+ *  4 = Ruthless   — victory + medium thinking
+ *  5 = Lethal     — victory + high thinking, gloriana review
+ *  6 = Absolute   — gloriana driver, victory background
+ *  7 = Omnissiah  — all gloriana
  */
 const TIERS: Record<EffortLevel, EffortConfig> = {
   1: {
@@ -45,57 +45,57 @@ const TIERS: Record<EffortLevel, EffortConfig> = {
   3: {
     level: 3,
     name: "Substantial",
-    driver: "sonnet",
+    driver: "victory",
     thinking: "low",
     extraction: "local",
-    compaction: "sonnet",
+    compaction: "victory",
     cleavePreferLocal: false,
     cleaveFloor: "local",
-    reviewModel: "sonnet",
+    reviewModel: "victory",
   },
   4: {
     level: 4,
     name: "Ruthless",
-    driver: "sonnet",
+    driver: "victory",
     thinking: "medium",
     extraction: "local",
-    compaction: "sonnet",
+    compaction: "victory",
     cleavePreferLocal: false,
     cleaveFloor: "local",
-    reviewModel: "sonnet",
+    reviewModel: "victory",
   },
   5: {
     level: 5,
     name: "Lethal",
-    driver: "sonnet",
+    driver: "victory",
     thinking: "high",
     extraction: "local",
-    compaction: "sonnet",
+    compaction: "victory",
     cleavePreferLocal: false,
-    cleaveFloor: "sonnet",
-    reviewModel: "opus",
+    cleaveFloor: "victory",
+    reviewModel: "gloriana",
   },
   6: {
     level: 6,
     name: "Absolute",
-    driver: "opus",
+    driver: "gloriana",
     thinking: "high",
-    extraction: "sonnet",
-    compaction: "sonnet",
+    extraction: "victory",
+    compaction: "victory",
     cleavePreferLocal: false,
-    cleaveFloor: "sonnet",
-    reviewModel: "opus",
+    cleaveFloor: "victory",
+    reviewModel: "gloriana",
   },
   7: {
     level: 7,
     name: "Omnissiah",
-    driver: "opus",
+    driver: "gloriana",
     thinking: "high",
-    extraction: "opus",
-    compaction: "opus",
+    extraction: "gloriana",
+    compaction: "gloriana",
     cleavePreferLocal: false,
-    cleaveFloor: "opus",
-    reviewModel: "opus",
+    cleaveFloor: "gloriana",
+    reviewModel: "gloriana",
   },
 };
 

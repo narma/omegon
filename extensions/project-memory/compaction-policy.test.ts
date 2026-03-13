@@ -50,7 +50,7 @@ describe("shouldInterceptCompaction", () => {
 
   it("intercepts when retry fallback requests local compaction", () => {
     assert.equal(
-      shouldInterceptCompaction("sonnet", DEFAULT_CONFIG, true),
+      shouldInterceptCompaction("victory", DEFAULT_CONFIG, true),
       true,
     );
   });

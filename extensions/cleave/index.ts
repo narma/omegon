@@ -2354,7 +2354,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				Type.Boolean({
 					description:
 						"Enable adversarial review loop after each child completes. " +
-						"Runs an opus-tier reviewer that checks for bugs, security issues, " +
+						"Runs an gloriana-tier reviewer that checks for bugs, security issues, " +
 						"and spec compliance. Severity-gated fix iterations with churn detection. " +
 						"Default: false.",
 				}),

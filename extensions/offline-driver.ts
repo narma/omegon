@@ -201,17 +201,17 @@ export async function restoreCloudDriver(
   const provider = savedCloudProvider || "anthropic";
   let modelId = savedCloudModel;
 
-  // If no saved model, find the best available opus model by prefix
+  // If no saved model, find the best available gloriana-class model by prefix
   if (!modelId) {
     const all = ctx.modelRegistry.getAll();
-    const opus = all
+    const topTier = all
       .filter((m: any) => m.provider === "anthropic" && m.id.startsWith("claude-opus"))
       .sort((a: any, b: any) => b.id.localeCompare(a.id));
-    modelId = opus[0]?.id;
+    modelId = topTier[0]?.id;
   }
 
   if (!modelId) {
-    return { success: false, message: "No Anthropic opus model found in registry.", provider: "cloud", automatic };
+    return { success: false, message: "No Anthropic gloriana-class model found in registry.", provider: "cloud", automatic };
   }
 
   const model = ctx.modelRegistry.find(provider, modelId);

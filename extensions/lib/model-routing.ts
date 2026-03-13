@@ -1,7 +1,7 @@
 /**
  * Shared provider-aware model resolver for Omegon.
  *
- * Keeps canonical compatibility tiers (local|haiku|sonnet|opus) stable while
+ * Keeps canonical compatibility tiers (local|retribution|victory|gloriana) stable while
  * also supporting public operator capability roles
  * (archmagos|magos|adept|servitor|servoskull).
  */
@@ -12,7 +12,7 @@ import { PREFERRED_ORDER } from "./local-models.ts";
 // Types
 // ---------------------------------------------------------------------------
 
-export type ModelTier = "local" | "haiku" | "sonnet" | "opus";
+export type ModelTier = "local" | "retribution" | "victory" | "gloriana";
 export type ProviderName = "openai" | "anthropic" | "local";
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
 export type CapabilityRole = "archmagos" | "magos" | "adept" | "servitor" | "servoskull";
@@ -143,16 +143,16 @@ const THINKING_ORDER: Record<ThinkingLevel, number> = {
 
 const ROLE_COMPATIBILITY_MAP: Record<ModelTier, CapabilityRole> = {
   local: "servitor",
-  haiku: "adept",
-  sonnet: "magos",
-  opus: "archmagos",
+  retribution: "adept",
+  victory: "magos",
+  gloriana: "archmagos",
 };
 
 const TIER_DISPLAY_LABELS: Record<ModelTier, string> = {
-  local: "Servitor",
-  haiku: "Adept",
-  sonnet: "Magos",
-  opus: "Archmagos",
+  local: "Servitor [Local]",
+  retribution: "Adept [Retribution Class]",
+  victory: "Magos [Victory Class]",
+  gloriana: "Archmagos [Gloriana Class]",
 };
 
 const ROLE_DISPLAY_LABELS: Record<CapabilityRole, string> = {
@@ -168,15 +168,15 @@ const ROLE_DISPLAY_LABELS: Record<CapabilityRole, string> = {
 // ---------------------------------------------------------------------------
 
 const ANTHROPIC_TIER_PREFIXES: Record<Exclude<ModelTier, "local">, string[]> = {
-  haiku: ["claude-haiku"],
-  sonnet: ["claude-sonnet"],
-  opus: ["claude-opus"],
+  retribution: ["claude-haiku"],
+  victory: ["claude-sonnet"],
+  gloriana: ["claude-opus"],
 };
 
 const OPENAI_TIER_MODELS: Record<Exclude<ModelTier, "local">, string[]> = {
-  haiku: ["gpt-5.1-codex", "gpt-4o-mini", "gpt-4.1-mini"],
-  sonnet: ["gpt-5.3-codex-spark", "gpt-4.1", "gpt-4o"],
-  opus: ["gpt-5.4", "gpt-4.5", "o3"],
+  retribution: ["gpt-5.1-codex", "gpt-4o-mini", "gpt-4.1-mini"],
+  victory: ["gpt-5.3-codex-spark", "gpt-4.1", "gpt-4o"],
+  gloriana: ["gpt-5.4", "gpt-4.5", "o3"],
 };
 
 // ---------------------------------------------------------------------------
@@ -223,9 +223,9 @@ function matchOpenAITier(models: RegistryModel[], tier: Exclude<ModelTier, "loca
   }
   const exactIdSet = new Set(exactIds);
   const prefixFallbacks: Record<string, string[]> = {
-    haiku: ["gpt-4o-mini-", "gpt-4.1-mini-"],
-    sonnet: ["gpt-4o-", "gpt-4.1-"],
-    opus: ["gpt-4.5-", "o3-", "gpt-5."],
+    retribution: ["gpt-4o-mini-", "gpt-4.1-mini-"],
+    victory: ["gpt-4o-", "gpt-4.1-"],
+    gloriana: ["gpt-4.5-", "o3-", "gpt-5."],
   };
   for (const prefix of prefixFallbacks[tier] ?? []) {
     const found = models.find(
@@ -547,12 +547,12 @@ export function getDefaultCapabilityProfile(models: RegistryModel[] = []): Capab
   const servitorCandidates: CapabilityCandidate[] = [];
   const servoskullCandidates: CapabilityCandidate[] = [];
 
-  const anthropicOpus = matchAnthropicTier(models, "opus");
-  const openaiOpus = matchOpenAITier(models, "opus");
-  const anthropicSonnet = matchAnthropicTier(models, "sonnet");
-  const openaiSonnet = matchOpenAITier(models, "sonnet");
-  const anthropicHaiku = matchAnthropicTier(models, "haiku");
-  const openaiHaiku = matchOpenAITier(models, "haiku");
+  const anthropicOpus = matchAnthropicTier(models, "gloriana");
+  const openaiOpus = matchOpenAITier(models, "gloriana");
+  const anthropicSonnet = matchAnthropicTier(models, "victory");
+  const openaiSonnet = matchOpenAITier(models, "victory");
+  const anthropicHaiku = matchAnthropicTier(models, "retribution");
+  const openaiHaiku = matchOpenAITier(models, "retribution");
   const local = matchLocalTier(models);
 
   if (anthropicOpus) archmagosCandidates.push({ id: anthropicOpus.id, provider: "anthropic", source: "upstream", weight: "heavy", maxThinking: "high" });
@@ -580,9 +580,9 @@ export function getDefaultCapabilityProfile(models: RegistryModel[] = []): Capab
       servoskull: { candidates: servoskullCandidates },
     },
     internalAliases: {
-      opus: "archmagos",
-      sonnet: "magos",
-      haiku: "adept",
+      gloriana: "archmagos",
+      victory: "magos",
+      retribution: "adept",
       local: "servitor",
       review: "archmagos",
       planning: "archmagos",

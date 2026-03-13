@@ -24,9 +24,9 @@ import {
 
 const ROLE_ORDER: CapabilityRole[] = ["archmagos", "magos", "adept", "servitor", "servoskull"];
 const TIER_ROLE_MAP: Record<Exclude<ModelTier, "local">, CapabilityRole> = {
-  opus: "archmagos",
-  sonnet: "magos",
-  haiku: "adept",
+  gloriana: "archmagos",
+  victory: "magos",
+  retribution: "adept",
 };
 
 export interface RecoveryPlan {
@@ -172,7 +172,7 @@ export function explainTierResolutionFailure(
   if (tier === "local") return undefined;
   const resolution = resolveCapabilityRole(TIER_ROLE_MAP[tier], models, policy, profile, runtimeState, now);
   if (resolution.ok || !resolution.reason) return undefined;
-  return `Unable to switch to ${getTierDisplayLabel(tier)} [${tier}]: ${resolution.reason}`;
+  return `Unable to switch to ${getTierDisplayLabel(tier)}: ${resolution.reason}`;
 }
 
 export function recordTransientFailureForModel(

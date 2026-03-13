@@ -13,7 +13,7 @@ import { loadPiConfig, savePiConfig, type PiConfig } from "./model-preferences.t
 export const CAPABILITY_ROLES = ["archmagos", "magos", "adept", "servitor", "servoskull"] as const;
 
 export type CapabilityRole = typeof CAPABILITY_ROLES[number];
-export type CapabilityRoleAlias = "opus" | "sonnet" | "haiku" | "local" | "servo-skull";
+export type CapabilityRoleAlias = "gloriana" | "victory" | "retribution" | "local" | "servo-skull";
 export type CandidateSource = "upstream" | "local";
 export type CandidateWeight = "light" | "normal" | "heavy";
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
@@ -252,11 +252,11 @@ export function parseOperatorRuntimeState(raw: unknown): OperatorRuntimeState {
 
 export function resolveRoleAlias(role: CapabilityRole | CapabilityRoleAlias): CapabilityRole {
   switch (role) {
-    case "opus":
+    case "gloriana":
       return "archmagos";
-    case "sonnet":
+    case "victory":
       return "magos";
-    case "haiku":
+    case "retribution":
       return "adept";
     case "local":
     case "servo-skull":
@@ -276,9 +276,9 @@ export function toCapabilityProfile(profile: OperatorCapabilityProfile): Capabil
       servoskull: { candidates: profile.roles.servoskull.map(normalizeCandidate).filter((c): c is CapabilityCandidate => !!c) },
     },
     internalAliases: {
-      opus: "archmagos",
-      sonnet: "magos",
-      haiku: "adept",
+      gloriana: "archmagos",
+      victory: "magos",
+      retribution: "adept",
       local: "servitor",
       review: "archmagos",
       planning: "archmagos",

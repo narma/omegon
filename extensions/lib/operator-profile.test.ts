@@ -83,9 +83,9 @@ describe("operator profile parsing", () => {
   });
 
   it("resolves legacy/internal aliases onto public roles", () => {
-    assert.equal(resolveRoleAlias("opus"), "archmagos");
-    assert.equal(resolveRoleAlias("sonnet"), "magos");
-    assert.equal(resolveRoleAlias("haiku"), "adept");
+    assert.equal(resolveRoleAlias("gloriana"), "archmagos");
+    assert.equal(resolveRoleAlias("victory"), "magos");
+    assert.equal(resolveRoleAlias("retribution"), "adept");
     assert.equal(resolveRoleAlias("local"), "servoskull");
     assert.equal(resolveRoleAlias("servo-skull"), "servoskull");
   });

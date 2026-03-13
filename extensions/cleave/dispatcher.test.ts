@@ -293,28 +293,28 @@ describe("resolveModelIdForTier", () => {
 		providerOrder: ["openai" as const, "anthropic" as const, "local" as const],
 	};
 
-	it("'opus' tier resolves to explicit Anthropic model ID with Anthropic-first policy", () => {
-		const result = resolveModelIdForTier("opus", mockModels, defaultPolicy);
+	it("'gloriana' tier resolves to explicit Anthropic model ID with Anthropic-first policy", () => {
+		const result = resolveModelIdForTier("gloriana", mockModels, defaultPolicy);
 		// Anthropic first → claude-opus-4-6
 		assert.equal(result, "claude-opus-4-6");
 	});
 
-	it("'opus' tier resolves to explicit OpenAI model ID with OpenAI-first policy", () => {
-		const result = resolveModelIdForTier("opus", mockModels, openaiFirstPolicy);
+	it("'gloriana' tier resolves to explicit OpenAI model ID with OpenAI-first policy", () => {
+		const result = resolveModelIdForTier("gloriana", mockModels, openaiFirstPolicy);
 		// OpenAI first → gpt-5.4
 		assert.equal(result, "gpt-5.4");
 	});
 
-	it("'sonnet' tier resolves to explicit model ID (not undefined) when registry has models", () => {
-		const result = resolveModelIdForTier("sonnet", mockModels, defaultPolicy);
+	it("'victory' tier resolves to explicit model ID (not undefined) when registry has models", () => {
+		const result = resolveModelIdForTier("victory", mockModels, defaultPolicy);
 		// Should return explicit ID, not undefined
-		assert.ok(result !== undefined, "Expected explicit model ID for sonnet tier");
+		assert.ok(result !== undefined, "Expected explicit model ID for victory tier");
 		assert.ok(result!.length > 0, "Expected non-empty model ID");
 	});
 
-	it("'sonnet' tier returns undefined when registry is empty (pi default)", () => {
-		const result = resolveModelIdForTier("sonnet", [], defaultPolicy);
-		// Empty registry → fallback returns undefined (sonnet is pi's default)
+	it("'victory' tier returns undefined when registry is empty (pi default)", () => {
+		const result = resolveModelIdForTier("victory", [], defaultPolicy);
+		// Empty registry → fallback returns undefined (victory is pi's default)
 		assert.equal(result, undefined);
 	});
 
@@ -328,43 +328,43 @@ describe("resolveModelIdForTier", () => {
 		assert.equal(result, undefined);
 	});
 
-	it("'haiku' tier resolves to explicit Anthropic haiku model", () => {
-		const result = resolveModelIdForTier("haiku", mockModels, defaultPolicy);
+	it("'retribution' tier resolves to explicit Anthropic retribution-class model", () => {
+		const result = resolveModelIdForTier("retribution", mockModels, defaultPolicy);
 		assert.equal(result, "claude-haiku-3-5");
 	});
 
-	it("review model resolves opus explicitly (spec: Review model also resolves explicitly)", () => {
+	it("review model resolves gloriana explicitly (spec: Review model also resolves explicitly)", () => {
 		// Simulating the review model resolution path in dispatchSingleChild
-		const reviewModelId = resolveModelIdForTier("opus", mockModels, defaultPolicy);
-		// Must not be the bare alias "opus" — must be an explicit ID
-		assert.notEqual(reviewModelId, "opus");
+		const reviewModelId = resolveModelIdForTier("gloriana", mockModels, defaultPolicy);
+		// Must not be the bare alias "gloriana" — must be an explicit ID
+		assert.notEqual(reviewModelId, "gloriana");
 		assert.ok(reviewModelId?.includes("claude-opus") || reviewModelId?.includes("gpt-5"), 
 			`Expected explicit model ID, got: ${reviewModelId}`);
 	});
 
-	it("does not pass bare 'opus' alias (spec: Child execution passes resolved model ID)", () => {
+	it("does not pass bare 'gloriana' alias (spec: Child execution passes resolved model ID)", () => {
 		// resolveModelIdForTier must NOT return bare tier alias — must be explicit model ID
-		const result = resolveModelIdForTier("opus", mockModels, defaultPolicy);
-		assert.notEqual(result, "opus", "Must not return bare alias 'opus'");
-		assert.notEqual(result, "haiku", "Must not return bare alias 'haiku'");
+		const result = resolveModelIdForTier("gloriana", mockModels, defaultPolicy);
+		assert.notEqual(result, "gloriana", "Must not return bare alias 'gloriana'");
+		assert.notEqual(result, "retribution", "Must not return bare alias 'retribution'");
 		assert.ok(result && result.includes("-"), `Expected explicit model ID (with dash), got: ${result}`);
 	});
 
-	it("does not pass bare alias even for haiku tier (spec: Prefer explicit IDs)", () => {
-		const result = resolveModelIdForTier("haiku", mockModels, defaultPolicy);
-		assert.notEqual(result, "haiku", "Must not return bare alias 'haiku'");
+	it("does not pass bare alias even for retribution tier (spec: Prefer explicit IDs)", () => {
+		const result = resolveModelIdForTier("retribution", mockModels, defaultPolicy);
+		assert.notEqual(result, "retribution", "Must not return bare alias 'retribution'");
 		assert.ok(result && result.includes("-"), `Expected explicit model ID, got: ${result}`);
 	});
 
-	it("returns undefined (not bare alias) when registry is empty and tier is opus", () => {
+	it("returns undefined (not bare alias) when registry is empty and tier is gloriana", () => {
 		// When the registry is empty, we cannot get an explicit ID. Returning the bare
 		// alias violates the spec — return undefined so no --model flag is passed.
-		const result = resolveModelIdForTier("opus", [], defaultPolicy);
+		const result = resolveModelIdForTier("gloriana", [], defaultPolicy);
 		assert.equal(result, undefined, "Empty registry: should return undefined, not bare alias");
 	});
 
-	it("returns undefined (not bare alias) when registry is empty and tier is haiku", () => {
-		const result = resolveModelIdForTier("haiku", [], defaultPolicy);
+	it("returns undefined (not bare alias) when registry is empty and tier is retribution", () => {
+		const result = resolveModelIdForTier("retribution", [], defaultPolicy);
 		assert.equal(result, undefined, "Empty registry: should return undefined, not bare alias");
 	});
 
@@ -374,8 +374,8 @@ describe("resolveModelIdForTier", () => {
 			providerOrder: ["openai" as const, "anthropic" as const],
 			avoidProviders: ["anthropic" as const],
 		};
-		// Should resolve to OpenAI opus (avoid Anthropic in first pass)
-		const result = resolveModelIdForTier("opus", mockModels, lowBudgetPolicy);
+		// Should resolve to OpenAI gloriana (avoid Anthropic in first pass)
+		const result = resolveModelIdForTier("gloriana", mockModels, lowBudgetPolicy);
 		assert.equal(result, "gpt-5.4");
 	});
 });
@@ -546,7 +546,7 @@ function makeTestState(childCount: number): CleaveState {
 		dependsOn: [],
 		branch: `branch-${i}`,
 		worktreePath: undefined,
-		executeModel: "sonnet",
+		executeModel: "victory",
 	}));
 	return {
 		runId: "test-run",

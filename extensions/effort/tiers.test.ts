@@ -49,65 +49,65 @@ describe("tierConfig", () => {
     const c = tierConfig(3);
     assert.equal(c.level, 3);
     assert.equal(c.name, "Substantial");
-    assert.equal(c.driver, "sonnet");
+    assert.equal(c.driver, "victory");
     assert.equal(c.thinking, "low");
     assert.equal(c.extraction, "local");
-    assert.equal(c.compaction, "sonnet");
+    assert.equal(c.compaction, "victory");
     assert.equal(c.cleavePreferLocal, false);
     assert.equal(c.cleaveFloor, "local");
-    assert.equal(c.reviewModel, "sonnet");
+    assert.equal(c.reviewModel, "victory");
   });
 
-  it("Ruthless tier (4) has sonnet + medium thinking, local extraction, cloud-first compaction", () => {
+  it("Ruthless tier (4) has victory + medium thinking, local extraction, cloud-first compaction", () => {
     const c = tierConfig(4);
     assert.equal(c.level, 4);
     assert.equal(c.name, "Ruthless");
-    assert.equal(c.driver, "sonnet");
+    assert.equal(c.driver, "victory");
     assert.equal(c.thinking, "medium");
     assert.equal(c.extraction, "local");
-    assert.equal(c.compaction, "sonnet");
+    assert.equal(c.compaction, "victory");
     assert.equal(c.cleavePreferLocal, false);
     assert.equal(c.cleaveFloor, "local");
-    assert.equal(c.reviewModel, "sonnet");
+    assert.equal(c.reviewModel, "victory");
   });
 
-  it("Lethal tier (5) has sonnet + high thinking, local extraction, opus review", () => {
+  it("Lethal tier (5) has victory + high thinking, local extraction, gloriana review", () => {
     const c = tierConfig(5);
     assert.equal(c.level, 5);
     assert.equal(c.name, "Lethal");
-    assert.equal(c.driver, "sonnet");
+    assert.equal(c.driver, "victory");
     assert.equal(c.thinking, "high");
     assert.equal(c.extraction, "local");
-    assert.equal(c.compaction, "sonnet");
+    assert.equal(c.compaction, "victory");
     assert.equal(c.cleavePreferLocal, false);
-    assert.equal(c.cleaveFloor, "sonnet");
-    assert.equal(c.reviewModel, "opus");
+    assert.equal(c.cleaveFloor, "victory");
+    assert.equal(c.reviewModel, "gloriana");
   });
 
-  it("Absolute tier (6) has opus driver, sonnet background", () => {
+  it("Absolute tier (6) has gloriana driver, victory background", () => {
     const c = tierConfig(6);
     assert.equal(c.level, 6);
     assert.equal(c.name, "Absolute");
-    assert.equal(c.driver, "opus");
+    assert.equal(c.driver, "gloriana");
     assert.equal(c.thinking, "high");
-    assert.equal(c.extraction, "sonnet");
-    assert.equal(c.compaction, "sonnet");
+    assert.equal(c.extraction, "victory");
+    assert.equal(c.compaction, "victory");
     assert.equal(c.cleavePreferLocal, false);
-    assert.equal(c.cleaveFloor, "sonnet");
-    assert.equal(c.reviewModel, "opus");
+    assert.equal(c.cleaveFloor, "victory");
+    assert.equal(c.reviewModel, "gloriana");
   });
 
-  it("Omnissiah tier (7) is all opus", () => {
+  it("Omnissiah tier (7) is all gloriana", () => {
     const c = tierConfig(7);
     assert.equal(c.level, 7);
     assert.equal(c.name, "Omnissiah");
-    assert.equal(c.driver, "opus");
+    assert.equal(c.driver, "gloriana");
     assert.equal(c.thinking, "high");
-    assert.equal(c.extraction, "opus");
-    assert.equal(c.compaction, "opus");
+    assert.equal(c.extraction, "gloriana");
+    assert.equal(c.compaction, "gloriana");
     assert.equal(c.cleavePreferLocal, false);
-    assert.equal(c.cleaveFloor, "opus");
-    assert.equal(c.reviewModel, "opus");
+    assert.equal(c.cleaveFloor, "gloriana");
+    assert.equal(c.reviewModel, "gloriana");
   });
 
   it("every tier has all required fields", () => {
@@ -244,7 +244,7 @@ describe("effort constants", () => {
 // ─── Tier progression invariants ────────────────────────────────────────────
 
 describe("tier progression invariants", () => {
-  const MODEL_ORDER = { local: 0, haiku: 1, sonnet: 2, opus: 3 } as const;
+  const MODEL_ORDER = { local: 0, retribution: 1, victory: 2, gloriana: 3 } as const;
   const THINKING_ORDER = { off: 0, minimal: 1, low: 2, medium: 3, high: 4 } as const;
 
   it("driver model tier never decreases as level increases", () => {

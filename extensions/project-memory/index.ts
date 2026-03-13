@@ -86,8 +86,8 @@ import {
 
 /** Map abstract effort model tiers to concrete cloud model IDs for extraction. */
 const EFFORT_EXTRACTION_MODELS: Record<string, string> = {
-  opus: "claude-opus-4-6",
-  sonnet: "claude-sonnet-4-6",
+  gloriana: "claude-opus-4-6",
+  victory: "claude-sonnet-4-6",
 };
 
 // ---------------------------------------------------------------------------
@@ -279,10 +279,10 @@ function resolveCompactionFallbackChain(
   }
   
   // Add GPT-5.3-codex-spark (free reasoning model) as priority fallback
-  chain.push({ tier: "sonnet", timeout: config.compactionCodexTimeout, label: "GPT-5.3-Codex-Spark" });
+  chain.push({ tier: "victory", timeout: config.compactionCodexTimeout, label: "GPT-5.3-Codex-Spark" });
   
   // Add Haiku as budget fallback
-  chain.push({ tier: "haiku", timeout: config.compactionHaikuTimeout, label: "Haiku" });
+  chain.push({ tier: "retribution", timeout: config.compactionHaikuTimeout, label: "Haiku" });
   
   // If we started with cloud, add local as final fallback
   if (!startWithLocal) {

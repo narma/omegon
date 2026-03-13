@@ -20,7 +20,7 @@ export function sanitizeCompactionText(input: string): string {
  * Local interception is only enabled for explicit local policy or fallback retry.
  */
 export function shouldInterceptCompaction(
-  effortCompaction: "local" | "haiku" | "sonnet" | "opus" | undefined,
+  effortCompaction: "local" | "retribution" | "victory" | "gloriana" | undefined,
   config: MemoryConfig,
   useLocalCompaction: boolean,
 ): boolean {

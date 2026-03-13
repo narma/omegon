@@ -45,7 +45,7 @@ export interface AssessmentFlags {
 // ─── Planning ────────────────────────────────────────────────────────────────
 
 /** Model tier for child execution — maps to pi's --model flag */
-export type ModelTier = "local" | "haiku" | "sonnet" | "opus";
+export type ModelTier = "local" | "retribution" | "victory" | "gloriana";
 
 export interface ChildPlan {
 	label: string;

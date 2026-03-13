@@ -75,7 +75,7 @@ export interface OperatorMetadataSnapshot {
   effortName: string | null;
   /** Numeric effort level 1-7, or null. */
   effortLevel: number | null;
-  /** Driver model tier (e.g. "sonnet", "opus"), or null. */
+  /** Driver model tier (e.g. "victory", "gloriana"), or null. */
   driverTier: string | null;
   /** Extended thinking level (e.g. "medium", "high"), or null. */
   thinkingLevel: string | null;

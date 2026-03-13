@@ -2,7 +2,7 @@
  * cleave/review — Adversarial review loop for child task quality gating.
  *
  * Implements the tiered execution loop (design D4):
- *   Execute (cheap) → Review (opus) → [pass? done : Fix (cheap) → Review (opus)]
+ *   Execute (cheap) → Review (gloriana) → [pass? done : Fix (cheap) → Review (gloriana)]
  *
  * Severity gating (D4a):
  *   - Nits only → PASS, no fix needed
@@ -434,7 +434,7 @@ export interface ReviewExecutor {
  *
  * Full flow (D4):
  *   1. Execute child task (cheap model)
- *   2. If review enabled: run adversarial review (opus)
+ *   2. If review enabled: run adversarial review (gloriana)
  *   3. Severity gate determines next action:
  *      - ACCEPT → done
  *      - FIX → run fix agent (cheap model), then re-review
@@ -470,7 +470,7 @@ export async function executeWithReview(
 	}
 
 	// If initial execution failed (timeout, crash), skip review — don't waste
-	// an opus call reviewing an incomplete/empty worktree
+	// a gloriana call reviewing an incomplete/empty worktree
 	if (executeResult.exitCode !== 0) {
 		return {
 			executeResult,

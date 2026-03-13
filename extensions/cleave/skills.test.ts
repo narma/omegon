@@ -176,7 +176,7 @@ describe("matchSkillsToChild", () => {
 
 	it("uses custom mappings when provided", () => {
 		const custom: SkillMapping[] = [
-			{ patterns: ["*.tsx", "*.jsx"], skill: "react", preferredTier: "sonnet" },
+			{ patterns: ["*.tsx", "*.jsx"], skill: "react", preferredTier: "victory" },
 		];
 		const child = makeChild({ scope: ["src/App.tsx"] });
 		const skills = matchSkillsToChild(child, custom);
@@ -290,27 +290,27 @@ describe("getPreferredTier", () => {
 		assert.equal(getPreferredTier(["nonexistent"]), undefined);
 	});
 
-	it("returns sonnet for python skill", () => {
-		assert.equal(getPreferredTier(["python"]), "sonnet");
+	it("returns victory for python skill", () => {
+		assert.equal(getPreferredTier(["python"]), "victory");
 	});
 
 	it("returns highest tier among multiple skills", () => {
 		const custom: SkillMapping[] = [
-			{ patterns: ["*.py"], skill: "python", preferredTier: "sonnet" },
-			{ patterns: ["*.arch"], skill: "architecture", preferredTier: "opus" },
+			{ patterns: ["*.py"], skill: "python", preferredTier: "victory" },
+			{ patterns: ["*.arch"], skill: "architecture", preferredTier: "gloriana" },
 		];
-		assert.equal(getPreferredTier(["python", "architecture"], custom), "opus");
+		assert.equal(getPreferredTier(["python", "architecture"], custom), "gloriana");
 	});
 
-	it("returns sonnet when all skills are sonnet tier", () => {
-		assert.equal(getPreferredTier(["python", "rust"]), "sonnet");
+	it("returns victory when all skills are victory tier", () => {
+		assert.equal(getPreferredTier(["python", "rust"]), "victory");
 	});
 
 	it("uses custom mappings", () => {
 		const custom: SkillMapping[] = [
-			{ patterns: ["*.simple"], skill: "simple", preferredTier: "haiku" },
+			{ patterns: ["*.simple"], skill: "simple", preferredTier: "retribution" },
 		];
-		assert.equal(getPreferredTier(["simple"], custom), "haiku");
+		assert.equal(getPreferredTier(["simple"], custom), "retribution");
 	});
 });
 

@@ -59,7 +59,7 @@ export interface MemoryConfig {
   compactionFallbackChain: boolean;
   /** Timeout for gpt-5.3-codex-spark compaction fallback in ms */
   compactionCodexTimeout: number;
-  /** Timeout for haiku compaction fallback in ms */
+  /** Timeout for retribution compaction fallback in ms */
   compactionHaikuTimeout: number;
   /** Max consecutive compaction retry attempts before giving up for the session */
   compactionRetryLimit: number;

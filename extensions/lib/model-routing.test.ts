@@ -73,16 +73,16 @@ function profile(overrides: Partial<CapabilityProfile> = {}): CapabilityProfile 
 }
 
 describe("resolveTier — compatibility tier routing", () => {
-  it("returns openai sonnet when openai is first in order", () => {
-    const result = resolveTier("sonnet", ALL_MODELS, policy({ providerOrder: ["openai", "anthropic", "local"] }));
+  it("returns openai victory when openai is first in order", () => {
+    const result = resolveTier("victory", ALL_MODELS, policy({ providerOrder: ["openai", "anthropic", "local"] }));
     assert.ok(result);
     assert.equal(result.provider, "openai");
     assert.equal(result.modelId, OPENAI_SONNET.id);
     assert.equal(result.maxThinking, "medium");
   });
 
-  it("returns anthropic opus when anthropic is first in order", () => {
-    const result = resolveTier("opus", ALL_MODELS, policy());
+  it("returns anthropic gloriana when anthropic is first in order", () => {
+    const result = resolveTier("gloriana", ALL_MODELS, policy());
     assert.ok(result);
     assert.equal(result.provider, "anthropic");
     assert.equal(result.modelId, ANTHROPIC_OPUS.id);
@@ -104,7 +104,7 @@ describe("resolveTier — compatibility tier routing", () => {
     });
     const now = Date.now();
     const runtimeState = withProviderCooldown(undefined, "openai", "429", now);
-    const result = resolveTier("haiku", upstreamOnly, policy({ providerOrder: ["openai", "local"] }), runtimeState, customProfile);
+    const result = resolveTier("retribution", upstreamOnly, policy({ providerOrder: ["openai", "local"] }), runtimeState, customProfile);
     assert.equal(result, undefined);
   });
 
@@ -161,7 +161,7 @@ describe("resolveCapabilityRole — fallback semantics", () => {
         servitor: { candidates: [] },
         servoskull: { candidates: [] },
       },
-      internalAliases: { haiku: "adept" },
+      internalAliases: { retribution: "adept" },
       policy: {
         sameRoleCrossProvider: "allow",
         crossSource: "ask",
@@ -329,10 +329,10 @@ describe("upstream failure classification", () => {
 
 describe("display labels and defaults", () => {
   it("maps tiers to operator-facing labels", () => {
-    assert.equal(getTierDisplayLabel("local"), "Servitor");
-    assert.equal(getTierDisplayLabel("haiku"), "Adept");
-    assert.equal(getTierDisplayLabel("sonnet"), "Magos");
-    assert.equal(getTierDisplayLabel("opus"), "Archmagos");
+    assert.equal(getTierDisplayLabel("local"), "Servitor [Local]");
+    assert.equal(getTierDisplayLabel("retribution"), "Adept [Retribution Class]");
+    assert.equal(getTierDisplayLabel("victory"), "Magos [Victory Class]");
+    assert.equal(getTierDisplayLabel("gloriana"), "Archmagos [Gloriana Class]");
   });
 
   it("maps public roles to labels", () => {

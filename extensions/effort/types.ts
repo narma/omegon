@@ -2,17 +2,17 @@
  * effort/types — Type definitions for the effort-tiers system.
  *
  * Effort tiers provide 7-level global inference cost control,
- * from fully-local (Servitor) to all-opus (Omnissiah).
+ * from fully-local (Servitor) to all-gloriana (Omnissiah).
  */
 
 // ─── Model Tiers ─────────────────────────────────────────────
 
 /**
  * Model tier for effort configuration — which model class to use.
- * Includes "haiku" so that policy-upgraded extraction tiers (local→haiku) are
+ * Includes "retribution" so that policy-upgraded extraction tiers (local→retribution) are
  * representable without casts. Aligns with the shared ModelTier in model-routing.ts.
  */
-export type EffortModelTier = "local" | "haiku" | "sonnet" | "opus";
+export type EffortModelTier = "local" | "retribution" | "victory" | "gloriana";
 
 /** Thinking level passed to the driver model. */
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high";
@@ -98,7 +98,7 @@ export interface EffortState extends EffortConfig {
   capLevel?: EffortLevel;
   /**
    * Concrete model ID resolved for extraction work under the current routing policy.
-   * May differ from `extraction` when cheapCloudPreferredOverLocal upgrades local→haiku.
+   * May differ from `extraction` when cheapCloudPreferredOverLocal upgrades local→retribution.
    * Populated by resolveExtractionTier() on session_start and tier switches.
    */
   resolvedExtractionModelId?: string;

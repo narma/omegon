@@ -2,19 +2,19 @@
  * model-budget — Model tier + thinking level control
  *
  * Provides two orthogonal levers for cost/capability tuning:
- *   1. Model tier: opus (deep) → sonnet (capable) → haiku (fast)
+ *   1. Model tier: gloriana (deep) → victory (capable) → retribution (fast)
  *   2. Thinking level: off → minimal → low → medium → high
  *
  * The agent can adjust both independently. Combined, these give fine-grained
- * control: e.g., sonnet+high for moderate tasks that need careful reasoning,
- * or opus+low for broad context understanding with minimal deliberation.
+ * control: e.g., victory+high for moderate tasks that need careful reasoning,
+ * or gloriana+low for broad context understanding with minimal deliberation.
  *
  * Tools:
- *   set_model_tier     — Switch model (opus/sonnet/haiku)
+ *   set_model_tier     — Switch model (gloriana/victory/retribution)
  *   set_thinking_level — Adjust extended thinking budget
  *
  * Commands:
- *   /opus, /sonnet, /haiku — Direct model switch
+ *   /gloriana, /victory, /retribution — Direct model switch
  */
 
 import { createHash } from "node:crypto";
@@ -32,7 +32,7 @@ import { buildFallbackGuidance, explainTierResolutionFailure, planRecoveryForMod
 import { switchToOfflineDriver } from "./offline-driver.ts";
 
 /** Model tier ordering for effort cap comparison. */
-export const TIER_ORDER: Record<string, number> = { local: 0, haiku: 1, sonnet: 2, opus: 3 };
+export const TIER_ORDER: Record<string, number> = { local: 0, retribution: 1, victory: 2, gloriana: 3 };
 
 /**
  * Check whether an effort cap blocks a model tier switch.
@@ -74,9 +74,9 @@ export function checkEffortCap(requestedTier: string): { blocked: boolean; messa
 /** Tier icons for operator notifications */
 const TIER_ICONS: Record<ModelTier, string> = {
   local:  "🤖",
-  haiku:  "💨",
-  sonnet: "⚡",
-  opus:   "🧠",
+  retribution:  "💨",
+  victory: "⚡",
+  gloriana:   "🧠",
 };
 
 type TierName = ModelTier;
@@ -95,21 +95,21 @@ const THINKING_LABELS: Record<ThinkingLevelName, { icon: string; label: string }
 
 const TIER_CAPABILITY_COPY: Record<TierName, string> = {
   local: "on-device local execution",
-  haiku: "fast lightweight cloud tier",
-  sonnet: "balanced capability tier",
-  opus: "deep reasoning tier",
+  retribution: "fast lightweight cloud tier",
+  victory: "balanced capability tier",
+  gloriana: "deep reasoning tier",
 };
 
 export function buildSetModelTierDescription(): string {
   return (
     "Switch the active capability tier based on task complexity. " +
     "Omegon resolves the requested tier through the active provider routing policy, so the backing model may come from Anthropic, OpenAI, or local inference. " +
-    "Use 'local' for on-device work, 'haiku' for simple lookups and boilerplate, 'sonnet' for routine coding and execution, and 'opus' for deep reasoning and architecture."
+    "Use 'local' for on-device work, 'retribution' for simple lookups and boilerplate, 'victory' for routine coding and execution, and 'gloriana' for deep reasoning and architecture."
   );
 }
 
 export function buildTierCommandDescription(tier: TierName): string {
-  return `Switch to ${getTierDisplayLabel(tier)} [${tier}] — ${TIER_CAPABILITY_COPY[tier]} via provider-aware routing`;
+  return `Switch to ${getTierDisplayLabel(tier)} — ${TIER_CAPABILITY_COPY[tier]} via provider-aware routing`;
 }
 
 function getResolverInputs(ctx: ExtensionContext) {
@@ -445,7 +445,7 @@ function currentTierName(ctx: ExtensionContext): TierName | null {
   // Resolve the current model against the registry using the shared resolver
   const all = ctx.modelRegistry.getAll() as unknown as RegistryModel[];
   const { policy, profile, runtimeState } = getResolverInputs(ctx);
-  for (const tier of ["opus", "sonnet", "haiku", "local"] as TierName[]) {
+  for (const tier of ["gloriana", "victory", "retribution", "local"] as TierName[]) {
     const resolved = resolveTier(tier, all, policy, runtimeState, profile);
     if (resolved?.modelId === model.id) return tier;
   }
@@ -580,7 +580,7 @@ export default function (pi: ExtensionAPI) {
     properties: {
       tier: {
         type: "string",
-        enum: ["local", "haiku", "sonnet", "opus"],
+        enum: ["local", "retribution", "victory", "gloriana"],
         description: "Target model tier",
       },
       reason: {
@@ -614,11 +614,11 @@ export default function (pi: ExtensionAPI) {
     name: "set_model_tier",
     label: "Set Model Tier",
     description: buildSetModelTierDescription(),
-    promptSnippet: "Switch capability tier (local/haiku/sonnet/opus) through provider-aware routing",
+    promptSnippet: "Switch capability tier (local/retribution/victory/gloriana) through provider-aware routing",
     promptGuidelines: [
-      "Downgrade to sonnet for routine file edits, command execution, and cleanup tasks",
-      "Upgrade to opus when encountering architecture decisions, complex debugging, or multi-step planning",
-      "Use haiku for simple lookups, formatting, and boilerplate generation",
+      "Downgrade to victory for routine file edits, command execution, and cleanup tasks",
+      "Upgrade to gloriana when encountering architecture decisions, complex debugging, or multi-step planning",
+      "Use retribution for simple lookups, formatting, and boilerplate generation",
     ],
     parameters: modelTierParameters as any,
     execute: async (
@@ -692,7 +692,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Reduce thinking for mechanical tasks: file reads, grep, simple edits, formatting",
       "Increase thinking for: debugging, architecture decisions, complex refactors, multi-file changes",
-      "Combine with model tier: sonnet+high is cheaper than opus+medium for moderate reasoning tasks",
+      "Combine with model tier: victory+high is cheaper than gloriana+medium for moderate reasoning tasks",
     ],
     parameters: thinkingLevelParameters as any,
     execute: async (
@@ -721,7 +721,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // --- Manual commands for direct control ---
-  const COMMAND_TIERS: ModelTier[] = ["local", "haiku", "sonnet", "opus"];
+  const COMMAND_TIERS: ModelTier[] = ["local", "retribution", "victory", "gloriana"];
   for (const tier of COMMAND_TIERS) {
     const icon = TIER_ICONS[tier];
     const displayLabel = getTierDisplayLabel(tier);

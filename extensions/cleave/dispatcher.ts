@@ -48,7 +48,7 @@ export const LARGE_RUN_THRESHOLD = 4;
  * IDs rather than fuzzy aliases, satisfying the design decision:
  * "Prefer explicit model IDs over fuzzy tier aliases at execution time".
  *
- * @param tier        Abstract tier (local|haiku|sonnet|opus)
+ * @param tier        Abstract tier (local|retribution|victory|gloriana)
  * @param models      Snapshot of the pi model registry
  * @param policy      Session routing policy
  * @param localModel  Local model name (for "local" tier fallback)
@@ -134,7 +134,7 @@ export function extractResultSection(content: string): string {
  * that degrades to cloud spend under pressure.
  */
 const LOCAL_SCOPE_THRESHOLD = 3;      // ≤ this many files → local
-const SONNET_SCOPE_THRESHOLD = 8;     // ≤ this many files → sonnet, > → opus
+const SONNET_SCOPE_THRESHOLD = 8;     // ≤ this many files → victory, > → gloriana
 
 /**
  * Tier ordering for floor comparison. Higher number = higher tier.
@@ -142,9 +142,9 @@ const SONNET_SCOPE_THRESHOLD = 8;     // ≤ this many files → sonnet, > → o
  */
 const TIER_ORDER: Record<ModelTier, number> = {
 	local: 0,
-	haiku: 1,
-	sonnet: 2,
-	opus: 3,
+	retribution: 1,
+	victory: 2,
+	gloriana: 3,
 };
 
 /**
@@ -163,8 +163,8 @@ export function classifyByScope(
 	const effectiveSize = nonTestFiles.length;
 
 	if (effectiveSize <= LOCAL_SCOPE_THRESHOLD) return "local";
-	if (effectiveSize <= SONNET_SCOPE_THRESHOLD) return "sonnet";
-	return "opus";
+	if (effectiveSize <= SONNET_SCOPE_THRESHOLD) return "victory";
+	return "gloriana";
 }
 
 /**
@@ -203,10 +203,10 @@ export function applyEffortFloor(classified: ModelTier): ModelTier {
  *
  * Resolution order (first non-null wins):
  * 1. Explicit annotation — child.executeModel already set (from plan or task annotation)
- * 2. Scope-based autoclassification — ≤3 files → local, ≤8 → sonnet, >8 → opus
+ * 2. Scope-based autoclassification — ≤3 files → local, ≤8 → victory, >8 → gloriana
  *    (only when local model is available)
  * 3. Skill tier hint — highest preferredTier from matched skills
- * 4. Default — sonnet
+ * 4. Default — victory
  *
  * NO-FAIL-PAST RULE: Once a child is assigned "local" tier here, the dispatcher
  * will NOT escalate to cloud on failure. The child either succeeds locally or fails.
@@ -249,7 +249,7 @@ export function resolveExecuteModel(
 	}
 
 	// 4. Default
-	if (!classified) classified = "sonnet";
+	if (!classified) classified = "victory";
 
 	// 5. Apply effort floor (raises tier if below minimum, or forces local)
 	return applyEffortFloor(classified);
@@ -663,7 +663,7 @@ async function dispatchSingleChild(
 
 	// Resolve an explicit model ID for this child using the shared resolver.
 	// This replaces the old mapModelTierToFlag() fuzzy-alias approach.
-	const effectiveTier = (child.executeModel as ModelTier) ?? "sonnet";
+	const effectiveTier = (child.executeModel as ModelTier) ?? "victory";
 	const activePolicy: ProviderRoutingPolicy = (sharedState as any).routingPolicy ?? getDefaultPolicy();
 	let registryModels: RegistryModel[] = [];
 	try {
@@ -704,8 +704,8 @@ async function dispatchSingleChild(
 			return spawnChild(execPrompt, execCwd, timeoutMs, signal, execModelFlag, onChildLine);
 		},
 		review: async (reviewPrompt: string, reviewCwd: string) => {
-			// Reviews always use opus (D4: highest available tier) — resolve to explicit ID
-			const reviewModelId = resolveModelIdForTier("opus", registryModels, activePolicy, localModel);
+			// Reviews always use gloriana (D4: highest available tier) — resolve to explicit ID
+			const reviewModelId = resolveModelIdForTier("gloriana", registryModels, activePolicy, localModel);
 			// Review runs don't stream lastLine — they're short and we don't want
 			// review commentary to overwrite the last execution status line.
 			return spawnChild(reviewPrompt, reviewCwd, timeoutMs, signal, reviewModelId);
