@@ -4,12 +4,17 @@ design_docs:
   - design/memory-lifecycle-integration.md
   - design/memory-mind-audit.md
   - design/cheap-gpt-memory-models.md
+  - memory-system-overhaul.md
+  - memory-session-continuity.md
+  - memory-episode-reliability.md
+  - memory-task-completion-facts.md
+  - memory-pruning-ceiling.md
 openspec_baselines:
   - memory.md
   - memory/lifecycle.md
   - memory/models.md
   - project-memory/compaction.md
-last_updated: 2026-03-10
+last_updated: 2026-03-13
 ---
 
 # Project Memory
@@ -20,11 +25,13 @@ last_updated: 2026-03-10
 
 Project memory gives agents persistent knowledge across sessions. It operates at multiple levels:
 
-- **Fact store**: SQLite+WAL database (`.pi/memory/facts.db`) with atomic facts organized by section (Architecture, Decisions, Constraints, Known Issues, Patterns, Specs). Facts are stored, superseded, archived, and connected in a knowledge graph.
-- **Semantic retrieval**: Facts embedded via Ollama `qwen3-embedding` for `memory_recall(query)` similarity search. Falls back to FTS5 keyword search if embeddings unavailable.
+- **Fact store**: SQLite+WAL database (`.pi/memory/facts.db`) with atomic facts organized by section (Architecture, Decisions, Constraints, Known Issues, Patterns & Conventions, Specs, Recent Work). Facts are stored, superseded, archived, and connected in a knowledge graph.
+- **Semantic retrieval**: Facts embedded for `memory_recall(query)` similarity search. Falls back to FTS5 keyword search if embeddings unavailable.
 - **Working memory**: 25-slot buffer of pinned facts that survive context compaction and get priority injection.
-- **Episodic memory**: Session narratives generated at shutdown via subagent, capturing goals, decisions, sequences, and outcomes.
-- **Context injection**: Facts injected into agent context based on relevance scoring and context pressure.
+- **Episodic memory**: Session narratives generated at shutdown via fallback chain (cloud → local → template floor), capturing goals, decisions, sequences, and outcomes.
+- **Context injection**: Three-layer proactive startup injection (last 3 episodes + recency window + Architecture/Decisions core) fires before the user's first message. Semantic injection on first message adds task-specific facts on top.
+- **Task-completion facts**: Write/edit tool calls queue `Recent Work` facts with 2-day half-life, capturing mid-term "what was accomplished" continuity.
+- **Structural pruning ceiling**: `computeConfidence()` caps effective half-life at 90 days regardless of reinforcement count. Per-section LLM archival pass fires at session_start when any section exceeds 60 facts.
 - **JSONL sync**: `facts.jsonl` exported for git tracking; `merge=union` gitattribute enables multi-branch fact merging.
 - **Global knowledge base**: Cross-project facts stored in `~/.pi/memory/global.db`.
 
@@ -47,11 +54,17 @@ Project memory gives agents persistent knowledge across sessions. It operates at
 ## Design Decisions
 
 - **SQLite+WAL for storage, JSONL for git sync**: Database handles concurrent reads during extraction; JSONL enables cross-branch merging via git union strategy.
-- **Semantic search primary, FTS5 fallback**: Embeddings give better retrieval but require Ollama; FTS5 always works.
+- **Semantic search primary, FTS5 fallback**: Embeddings give better retrieval; FTS5 always works as a fallback.
 - **Pointer facts over inline details**: Facts reference files (`"X does Y. See path/to/file.ts"`) instead of inlining implementation details — keeps facts atomic and maintainable.
 - **Store conclusions, not investigation steps**: Facts capture final state, not debugging journey.
-- **Cheap GPT models for extraction and embeddings**: Memory extraction uses cost-effective models (local or GPT) to avoid burning expensive API calls on background work.
-- **Context pressure auto-compaction**: When context window usage exceeds thresholds, memory triggers compaction to free space while preserving pinned working memory facts.
+- **Proactive startup injection over reactive search**: Session_start injects Architecture + Decisions core sections + recency window + last 3 episodes before the user speaks. Reactive semantic search on first message augments this; it does not replace it.
+- **Core sections = Architecture + Decisions**: These are the structural anchors always in context. Constraints and Specs are retrieved semantically only when task-relevant.
+- **90-day half-life ceiling**: `MAX_HALF_LIFE_DAYS = 90` in `factstore.ts` — reinforcement extends half-life up to 90 days max, then decay has teeth. Facts needing indefinite survival must be pinned via `memory_focus`.
+- **60-fact per-section ceiling**: `runSectionPruningPass()` fires at session_start for any section > 60 facts. Sends section facts to extraction model with instructions to identify archival candidates. `Recent Work` excluded (handled by 2-day decay).
+- **Recent Work section for task-completion**: Write/edit tool calls queue lightweight facts in `Recent Work` with `RECENT_WORK_DECAY` (halfLifeDays=2, reinforcementFactor=1.0 — reinforcement does NOT extend these). Mid-term bridge between architecture facts and ephemeral context.
+- **Episode fallback chain**: Generation tries cloud (haiku → codex-spark) first; Ollama optional. Guaranteed template-floor episode when all models fail — at least date + tool counts + files written.
+- **Cheap models for extraction and embeddings**: Background extraction uses local/GPT models to avoid burning expensive frontier API calls.
+- **Context pressure auto-compaction**: When context window usage exceeds thresholds, memory triggers compaction. Local (45s) → codex-spark (60s) → haiku (30s) fallback chain.
 
 ## Behavioral Contracts
 
@@ -59,10 +72,11 @@ See `openspec/baseline/memory.md`, `openspec/baseline/memory/lifecycle.md`, `ope
 
 ## Constraints & Known Limitations
 
-- Embedding model (qwen3-embedding) requires Ollama running locally — degrades to keyword search without it
+- Embeddings require a running provider (Ollama or cloud) — degrades to FTS5 keyword search without one
 - Working memory capped at 25 facts to control context injection size
-- Episode generation runs at session shutdown — abrupt termination skips episode creation
+- Episode generation runs at session shutdown — abrupt kill (SIGKILL) skips episode; `/exit` uses the full fallback chain
 - JSONL merge=union can create duplicates if the same fact is modified on two branches
+- Global DB injection injects up to 15 facts from `~/.pi/memory/global.db`; global extraction is off by default so the global DB only receives manually stored facts and lifecycle-ingest candidates
 
 ## Related Subsystems
 
