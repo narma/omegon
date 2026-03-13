@@ -1,6 +1,7 @@
 // @config LOCAL_INFERENCE_URL "Ollama / OpenAI-compatible inference server URL" [default: http://localhost:11434]
 
 import type { ExtensionAPI } from "@cwilson613/pi-coding-agent";
+import { Text } from "@cwilson613/pi-tui";
 import { Type } from "@sinclair/typebox";
 import {
   KNOWN_MODELS,
@@ -362,8 +363,41 @@ export default function (pi: ExtensionAPI) {
             text: `${result.success ? "✅" : "❌"} ${result.message}${result.success ? ` (reason: ${params.reason})` : ""}`,
           },
         ],
-        details: undefined,
+        details: { success: result.success, message: result.message },
       };
+    },
+    renderCall(args, t) {
+      const reason = typeof args.reason === "string" ? args.reason : "";
+      const model = typeof args.preferred_model === "string" ? args.preferred_model : "";
+      const truncReason = reason.length > 72 ? `${reason.slice(0, 69)}…` : reason;
+      const modelSuffix = model ? `  ${t.fg("dim", model)}` : "";
+      return new Text(
+        `${t.fg("warning", "⟳")} ${t.fg("toolTitle", "offline-driver")}${modelSuffix}  ${t.fg("muted", truncReason)}`,
+        0, 0
+      );
+    },
+    renderResult(result, _opts, t) {
+      const details = result.details as { success?: boolean; message?: string } | undefined;
+      const firstContent = result.content?.[0];
+      const msg = details?.message ?? (firstContent?.type === "text" ? firstContent.text : "") ?? "";
+      // Parse "Switched to offline driver: Display Name (model-id)"
+      const switchMatch = msg.match(/Switched to offline driver:\s*(.+?)\s*\(([^)]+)\)/);
+      if (switchMatch) {
+        const displayName = switchMatch[1];
+        const modelId = switchMatch[2];
+        return new Text(
+          `${t.fg("success", "✓")} ${t.fg("toolTitle", "offline")}  ${t.fg("accent", t.bold(displayName))}  ${t.fg("dim", modelId)}`,
+          0, 0
+        );
+      }
+      if (details?.success === false) {
+        const errMsg = msg.replace(/^❌\s*/, "").replace(/Failed to switch.*?:\s*/i, "");
+        return new Text(
+          `${t.fg("error", "✗")} ${t.fg("toolTitle", "offline-driver")}  ${t.fg("error", errMsg.slice(0, 80))}`,
+          0, 0
+        );
+      }
+      return new Text(t.fg("toolOutput", msg.replace(/^[✅❌]\s*/, "")), 0, 0);
     },
   });
 }
