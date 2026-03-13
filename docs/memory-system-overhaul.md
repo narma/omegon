@@ -1,7 +1,7 @@
 ---
 id: memory-system-overhaul
 title: Memory System Overhaul — Reliable Cross-Session Context Continuity
-status: exploring
+status: implemented
 tags: [memory, context, sessions, reliability, dx]
 open_questions: []
 ---
@@ -75,6 +75,50 @@ The fundamental design flaw: the system treats memory as a *search index* (query
 
 **Status:** exploring
 **Rationale:** Global DB has 1215 orphan vectors (vectors for archived/superseded facts never cleaned up). This bloats the DB and degrades semantic search performance in global mode. Also, the 15 global facts injected into every session are currently all security-audit facts from unrelated projects — they're noise in Omegon development sessions. Fix: (1) add ON DELETE CASCADE to facts_vec FK or run a cleanup job, (2) add project-relevance scoring to global injection so infrastructure security facts from project X don't inject into project Y sessions.
+
+## Implementation Notes
+
+All five primary fixes shipped as separate child design nodes (all `implemented`):
+
+| Child node | Fix | Status |
+|---|---|---|
+| `memory-session-continuity` | Proactive startup injection — recency window + Architecture/Decisions core + last 3 episodes before first message | implemented |
+| `memory-episode-reliability` | Cloud-first episode generation fallback chain (haiku → codex-spark → template floor) | implemented |
+| `memory-task-completion-facts` | Mid-term Recent Work facts triggered by write/edit tool calls, 2-day half-life decay | implemented |
+| `memory-pruning-ceiling` | 90-day half-life cap + per-section LLM archival pass at session_start when section > 60 facts | implemented |
+
+Fix 6 (global DB orphan vector cleanup) was identified as lower priority and deferred — the global store is not on the hot path for Omegon sessions.
+
+Key files: `extensions/project-memory/index.ts` (injection pipeline, session_start hooks), `extensions/project-memory/factstore.ts` (computeConfidence ceiling), `extensions/project-memory/extraction-v2.ts` (episode fallback chain, runSectionPruningPass).
+
+## Acceptance Criteria
+
+### Scenarios
+
+- **Given** a new session starts after prior work, **when** the user asks a continuation question before any tool call, **then** the agent has Architecture + Decisions facts and the last 3 episode narratives already in context from the startup injection payload.
+- **Given** semantic injection mode is active, **when** it selects core sections, **then** `["Architecture", "Decisions"]` are always included (not `["Constraints", "Specs"]` — the old inverted mapping).
+- **Given** a session ends via `/exit`, **when** episode generation runs, **then** at least a minimum viable episode is stored (template floor) even if all model calls fail.
+- **Given** the agent writes or edits a file during a session, **when** the session ends, **then** a `Recent Work` fact capturing what was written is stored with a 2-day half-life.
+- **Given** a memory section has grown beyond 60 facts, **when** a new session starts, **then** a targeted LLM archival pass runs for that section and archives the least-useful facts to bring it under the ceiling.
+- **Given** a fact has been reinforced 100+ times, **when** 120 days elapse without reinforcement, **then** its confidence has decayed significantly (< 0.25) rather than staying near 1.0.
+
+### Falsifiability
+
+- If the agent fails to answer a continuation question that was answered in a prior session episode, the proactive startup injection is not working.
+- If `core sections` in semantic mode is anything other than `["Architecture", "Decisions"]`, the Fix 2 change was reverted or bypassed.
+- If the total fact count across all sections grows monotonically past ~360 (6 sections × 60 ceiling) across multiple sessions, the pruning ceiling is not firing.
+- If no episode is recorded after a session that used `/exit`, the episode fallback chain has a gap (the template floor should always produce an episode).
+- If `Recent Work` facts appear in the Architecture or Decisions sections, the section isolation is broken.
+
+### Constraints
+
+- [x] Startup injection payload is built at `session_start` before the user's first message, not reactively on first turn.
+- [x] Core sections for semantic injection are `["Architecture", "Decisions"]` — Constraints and Specs retrieved semantically only.
+- [x] Episode generation uses a fallback chain with a deterministic template floor as the guaranteed minimum output.
+- [x] Task-completion facts live in the `Recent Work` section with `RECENT_WORK_DECAY` (halfLifeDays=2, reinforcementFactor=1.0).
+- [x] `computeConfidence()` caps effective half-life at 90 days for all decay profiles.
+- [x] Per-section pruning ceiling is 60 facts; `Recent Work` is explicitly excluded.
+- [x] All child design nodes are `implemented` status before this umbrella node closes.
 
 ## Open Questions
 
