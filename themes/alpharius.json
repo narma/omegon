@@ -13,14 +13,14 @@
 		"surfaceBg": "#192536",
 		"borderColor": "#1a4458",
 		"borderDim": "#122030",
-		"green": "#1ad8d4",
+		"green": "#1ab878",
 		"red": "#c83030",
 		"orange": "#c86418",
 		"yellow": "#78b820",
 		"selectedBg": "#102030",
 		"toolErrorBg": "#140810",
 		"syntaxComment": "#344858",
-		"syntaxType": "#4aa8c0",
+		"syntaxType": "#5aa8e0",
 		"thinkingMedium": "#1a5878"
 	},
 	"colors": {
