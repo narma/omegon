@@ -417,18 +417,25 @@ describe("computeConfidence", () => {
     assert.ok(Math.abs(c - 0.5) < 0.01, `Expected ~0.5, got ${c}`);
   });
 
-  it("decays slower with more reinforcements", () => {
-    const c1 = computeConfidence(14, 1);
-    const c5 = computeConfidence(14, 5);
-    const c10 = computeConfidence(14, 10);
+  it("decays slower with more reinforcements (up to the 90-day ceiling)", () => {
+    const c1 = computeConfidence(14, 1);  // halfLife=14d — significant decay at 14d
+    const c5 = computeConfidence(14, 5);  // halfLife=~147d → capped at 90d — low decay at 14d
 
     assert.ok(c5 > c1, "5 reinforcements should decay slower than 1");
-    assert.ok(c10 > c5, "10 reinforcements should decay slower than 5");
+    // Once both n=5 and n=10 hit the 90-day ceiling they produce identical confidence.
+    // That's correct and expected behavior — the ceiling is the invariant, not monotonic growth.
+    const c10 = computeConfidence(14, 10);
+    assert.ok(c10 >= c5, "10 reinforcements should not decay faster than 5");
   });
 
-  it("highly reinforced facts remain confident for months", () => {
-    const c = computeConfidence(90, 15); // 90 days, 15 reinforcements
-    assert.ok(c > 0.8, `Expected >0.8 after 90 days with 15 reinforcements, got ${c}`);
+  it("highly reinforced facts are capped at 90-day half-life (decay ceiling)", () => {
+    // With MAX_HALF_LIFE_DAYS=90, a fact reinforced 15x has its half-life capped at 90 days.
+    // After exactly 90 days: confidence = e^(-ln2) ≈ 0.5 (half-life by definition).
+    const c = computeConfidence(90, 15); // 90 days at the cap
+    assert.ok(c > 0.45 && c < 0.55, `Expected ~0.5 (90-day ceiling) after 90 days, got ${c}`);
+    // But at 30 days it should still be quite high (~79%)
+    const c30 = computeConfidence(30, 15);
+    assert.ok(c30 > 0.75, `Expected >0.75 at 30 days with ceiling, got ${c30}`);
   });
 
   it("unreinforced facts fade within weeks", () => {

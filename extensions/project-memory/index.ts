@@ -64,7 +64,7 @@ import {
   createTriggerState,
   shouldExtract,
 } from "./triggers.ts";
-import { runExtractionV2, runGlobalExtraction, killActiveExtraction, killAllSubprocesses, generateEpisode, generateEpisodeDirect, generateEpisodeWithFallback, buildTemplateEpisode, type SessionTelemetry } from "./extraction-v2.ts";
+import { runExtractionV2, runGlobalExtraction, killActiveExtraction, killAllSubprocesses, generateEpisode, generateEpisodeDirect, generateEpisodeWithFallback, buildTemplateEpisode, runSectionPruningPass, type SessionTelemetry } from "./extraction-v2.ts";
 import { migrateToFactStore, needsMigration, markMigrated } from "./migration.ts";
 import { SECTIONS } from "./template.ts";
 import { serializeConversation, convertToLlm } from "@cwilson613/pi-coding-agent";
@@ -677,6 +677,42 @@ export default function (pi: ExtensionAPI) {
       }
     } catch {
       embeddingAvailable = false;
+    }
+
+    // --- Per-section pruning ceiling (background, non-blocking) ---
+    // When any section exceeds 60 facts, run a targeted LLM archival pass
+    // to bring it back under the ceiling. This prevents monotonic accumulation.
+    // Runs fire-and-forget so it doesn't block session startup.
+    if (store) {
+      (async () => {
+        try {
+          const SECTION_CEILING = 60;
+          const mind = activeMind();
+          const sectionCounts = store!.getSectionCounts(mind);
+          for (const [section, count] of sectionCounts) {
+            if (count > SECTION_CEILING) {
+              const facts = store!.getFactsBySection(mind, section);
+              // Only prune sections that have excess — skip Recent Work (fast decay handles it)
+              if (section === "Recent Work") continue;
+              const idsToArchive = await runSectionPruningPass(section, facts, SECTION_CEILING, config);
+              // Validate: only archive IDs that exist in this section (safety guard)
+              const validIds = new Set(facts.map(f => f.id));
+              const safeToArchive = idsToArchive.filter(id => validIds.has(id));
+              for (const id of safeToArchive) {
+                store!.archiveFact(id);
+              }
+              if (safeToArchive.length > 0 && ctx.hasUI) {
+                ctx.ui.notify(
+                  `Memory pruned ${safeToArchive.length} stale facts from ${section} section (was ${count}, ceiling ${SECTION_CEILING})`,
+                  "info"
+                );
+              }
+            }
+          }
+        } catch {
+          // Best effort — don't interrupt session
+        }
+      })();
     }
 
     // --- Proactive startup injection (session-continuity) ---

@@ -374,9 +374,14 @@ describe("global decay profile", () => {
     assert.ok(globalConf <= 0.5);
   });
 
-  it("global RC=5 holds strong at 180 days", () => {
+  it("global RC=5 at 90 days is at half-life (90-day ceiling applies)", () => {
     const { computeConfidence, GLOBAL_DECAY } = require("./factstore.js");
-    const conf = computeConfidence(180, 5, GLOBAL_DECAY);
-    assert.ok(conf > 0.85, `RC=5 at 180d should be >85%, got ${(conf * 100).toFixed(1)}%`);
+    // MAX_HALF_LIFE_DAYS=90 caps global decay just like project decay.
+    // At 90 days (= the capped half-life): confidence ≈ 0.5
+    const conf90 = computeConfidence(90, 5, GLOBAL_DECAY);
+    assert.ok(conf90 > 0.45 && conf90 < 0.55, `RC=5 at 90d should be ~0.5, got ${(conf90 * 100).toFixed(1)}%`);
+    // At 30 days it should be well above 0.5
+    const conf30 = computeConfidence(30, 5, GLOBAL_DECAY);
+    assert.ok(conf30 > 0.7, `RC=5 at 30d should be >70%, got ${(conf30 * 100).toFixed(1)}%`);
   });
 });

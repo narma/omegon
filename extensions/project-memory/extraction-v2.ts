@@ -779,3 +779,83 @@ export async function generateEpisodeWithFallback(
   // Step 4: Template episode — guaranteed floor, zero I/O
   return buildTemplateEpisode(telemetry);
 }
+
+// ---------------------------------------------------------------------------
+// Per-section archival pruning pass
+// ---------------------------------------------------------------------------
+
+const SECTION_PRUNING_PROMPT = `You are a memory curator for a project-memory system.
+You will receive a list of facts from a single memory section that has exceeded its size limit.
+Your job: identify facts to archive (remove from active memory) to bring the section under the target count.
+
+Rules:
+- Archive duplicates, overly-specific details, outdated implementation notes, and facts that are
+  superseded by other facts in the same list.
+- KEEP: architectural decisions, design rationale, critical constraints, patterns that prevent bugs,
+  and any fact that is still clearly relevant and has no equivalent in the list.
+- Prefer to archive older, less-reinforced, or more transient facts.
+- Return ONLY a JSON array of fact IDs to archive. Example: ["id1", "id2", "id3"]
+- If unsure whether to archive, keep it.`;
+
+/**
+ * Run a targeted LLM archival pass over a single section when it exceeds the ceiling.
+ * Returns the list of fact IDs recommended for archival.
+ */
+export async function runSectionPruningPass(
+  section: string,
+  facts: Fact[],
+  targetCount: number,
+  config: MemoryConfig,
+): Promise<string[]> {
+  if (facts.length <= targetCount) return [];
+
+  const excessCount = facts.length - targetCount;
+  const factList = facts.map((f, i) =>
+    `${i + 1}. [ID: ${f.id}] [reinforced: ${f.reinforcement_count}x] [age: ${Math.round((Date.now() - new Date(f.created_at).getTime()) / 86400000)}d] ${f.content}`
+  ).join("\n");
+
+  const userMessage = [
+    `Section: ${section}`,
+    `Current count: ${facts.length} (target: ≤${targetCount}, archive at least ${excessCount})`,
+    ``,
+    `Facts (sorted by confidence descending — lowest confidence facts are at the bottom):`,
+    factList,
+    ``,
+    `Return a JSON array of fact IDs to archive. Archive at least ${excessCount} to bring the section under ${targetCount + 1}.`,
+  ].join("\n");
+
+  // Try direct Ollama path for local models
+  if (isLocalModel(config.extractionModel)) {
+    try {
+      const raw = await runExtractionDirect(SECTION_PRUNING_PROMPT, userMessage, config);
+      if (raw) {
+        const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```\s*$/, "").trim();
+        const parsed = JSON.parse(cleaned);
+        if (Array.isArray(parsed)) return parsed.filter((id: unknown) => typeof id === "string");
+      }
+    } catch {
+      // Fall through to cloud
+    }
+  }
+
+  // Cloud fallback: use episodeModel (cloud tier, always available)
+  try {
+    const raw = await spawnExtraction({
+      cwd: process.cwd(),
+      model: config.episodeModel,
+      systemPrompt: SECTION_PRUNING_PROMPT,
+      userMessage,
+      timeout: 30_000,
+      label: `Section pruning (${section})`,
+    });
+    if (raw.trim()) {
+      const cleaned = raw.replace(/^```(?:json)?\n?/, "").replace(/\n?```\s*$/, "").trim();
+      const parsed = JSON.parse(cleaned);
+      if (Array.isArray(parsed)) return parsed.filter((id: unknown) => typeof id === "string");
+    }
+  } catch {
+    // Best effort — return empty (no archival) rather than corrupt state
+  }
+
+  return [];
+}

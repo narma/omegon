@@ -239,12 +239,20 @@ const SECTION_DECAY_OVERRIDES: Partial<Record<string, typeof RECENT_WORK_DECAY>>
  */
 export type DecayProfile = typeof DECAY | typeof GLOBAL_DECAY | typeof RECENT_WORK_DECAY;
 
+/** Maximum effective half-life regardless of reinforcement count.
+ * Prevents immortal facts from accumulating indefinitely — even facts reinforced
+ * every session are capped at 90 days, so decay has teeth. Facts that truly need
+ * to outlive 90 days must be explicitly pinned via memory_focus. */
+const MAX_HALF_LIFE_DAYS = 90;
+
 export function computeConfidence(
   daysSinceReinforced: number,
   reinforcementCount: number,
   profile: DecayProfile = DECAY,
 ): number {
-  const halfLife = profile.halfLifeDays * Math.pow(profile.reinforcementFactor, reinforcementCount - 1);
+  const rawHalfLife = profile.halfLifeDays * Math.pow(profile.reinforcementFactor, reinforcementCount - 1);
+  // Cap half-life so high reinforcement counts cannot create functionally immortal facts.
+  const halfLife = Math.min(rawHalfLife, MAX_HALF_LIFE_DAYS);
   const confidence = Math.exp(-Math.LN2 * daysSinceReinforced / halfLife);
   return Math.max(confidence, 0);
 }
@@ -872,6 +880,37 @@ export class FactStore {
       return facts.slice(0, limit);
     }
     return facts;
+  }
+
+  /** Get active facts for a specific section, sorted by confidence descending. */
+  getFactsBySection(mind: string, section: string): Fact[] {
+    const facts = this.db.prepare(
+      `SELECT * FROM facts WHERE mind = ? AND section = ? AND status = 'active' ORDER BY created_at`
+    ).all(mind, section) as Fact[];
+
+    const NO_DECAY_SECTIONS: readonly string[] = ["Specs"];
+    const now = Date.now();
+    for (const fact of facts) {
+      if (NO_DECAY_SECTIONS.includes(fact.section)) {
+        fact.confidence = 1.0;
+      } else {
+        const lastReinforced = new Date(fact.last_reinforced).getTime();
+        const daysSince = (now - lastReinforced) / (1000 * 60 * 60 * 24);
+        const profile = SECTION_DECAY_OVERRIDES[fact.section] ?? this.decayProfile;
+        fact.confidence = computeConfidence(daysSince, fact.reinforcement_count, profile);
+      }
+    }
+
+    facts.sort((a, b) => b.confidence - a.confidence);
+    return facts;
+  }
+
+  /** Get the count of active facts per section for a mind. */
+  getSectionCounts(mind: string): Map<string, number> {
+    const rows = this.db.prepare(
+      `SELECT section, COUNT(*) as count FROM facts WHERE mind = ? AND status = 'active' GROUP BY section`
+    ).all(mind) as { section: string; count: number }[];
+    return new Map(rows.map(r => [r.section, r.count]));
   }
 
   /** Count active facts for a mind */
