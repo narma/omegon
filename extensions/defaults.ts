@@ -38,6 +38,18 @@ function contentHash(content: string): string {
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
+    // --- Terminal tab title branding ---
+    // Replace the core π symbol with Ω in the terminal tab title.
+    // This fires after the core title is set, so it overwrites it.
+    if (ctx.hasUI) {
+      const sessionName = ctx.sessionManager.getSessionName();
+      const cwdBasename = path.basename(ctx.cwd);
+      const title = sessionName
+        ? `Ω - ${sessionName} - ${cwdBasename}`
+        : `Ω - ${cwdBasename}`;
+      ctx.ui.setTitle(title);
+    }
+
     // --- Theme default ---
     try {
       const raw = fs.readFileSync(SETTINGS_PATH, "utf8");
