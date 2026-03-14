@@ -19,6 +19,17 @@ import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import { SECTIONS, type SectionName } from "./template.ts";
 import { cosineSimilarity, vectorToBlob, blobToVector } from "./embeddings.ts";
+import {
+  computeConfidence as coreComputeConfidence,
+  contentHash as coreContentHash,
+  normalizeForHash as coreNormalizeForHash,
+  type DecayProfile as CoreDecayProfile,
+  type DecayProfileName,
+  resolveDecayProfile,
+  DECAY as CORE_DECAY,
+  GLOBAL_DECAY as CORE_GLOBAL_DECAY,
+  RECENT_WORK_DECAY as CORE_RECENT_WORK_DECAY,
+} from "./core.ts";
 
 /**
  * Resolve the SQLite database constructor.
@@ -86,19 +97,11 @@ function nanoid(size = 12): string {
   return bytes.toString("base64url").slice(0, size);
 }
 
-/** Normalize content for dedup hashing */
-function normalizeForHash(content: string): string {
-  return content
-    .replace(/^-\s*/, "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
+/** Normalize content for dedup hashing — delegates to core.ts */
+const normalizeForHash = coreNormalizeForHash;
 
-/** Compute content hash for dedup */
-function contentHash(content: string): string {
-  return crypto.createHash("sha256").update(normalizeForHash(content)).digest("hex").slice(0, 16);
-}
+/** Compute content hash for dedup — delegates to core.ts */
+const contentHash = coreContentHash;
 
 // --- Types ---
 
@@ -184,78 +187,22 @@ export interface EdgeResult {
   reinforced: number;
 }
 
-// --- Decay math ---
+// --- Decay math (delegated to core.ts — the Rust port target) ---
 
-/** Project-level decay parameters */
-const DECAY = {
-  /** Base rate — how fast a single-reinforcement fact decays */
-  baseRate: 0.05,
-  /** Each reinforcement multiplies the effective half-life by this factor */
-  reinforcementFactor: 1.8,
-  /** Minimum confidence before a fact is considered for exclusion */
-  minimumConfidence: 0.1,
-  /** Days after which an unreinforced fact hits minimumConfidence */
-  halfLifeDays: 14,
-} as const;
-
-/**
- * Global-level decay parameters.
- * Shorter base half-life (30d) means unpromoted one-offs decay faster than project facts.
- * Higher reinforcement factor (2.5x) means each cross-project confirmation dramatically
- * extends durability. A fact reinforced by 3 projects holds 71% after 90 days;
- * 5 reinforcements gives 95% at 90 days. Rewards genuinely cross-cutting knowledge.
- */
-export const GLOBAL_DECAY = {
-  baseRate: 0.023, // ln(2)/30 ≈ 0.023
-  reinforcementFactor: 2.5,
-  minimumConfidence: 0.1,
-  halfLifeDays: 30,
-} as const;
-
-/**
- * Recent Work decay — ephemeral session receipts.
- * halfLifeDays=2 means a fact written Monday is gone by Wednesday at ~50% confidence.
- * reinforcementFactor=1.0 means reinforcement does NOT extend half-life — these
- * are breadcrumbs, not architecture. Gone within a business week regardless.
- */
-export const RECENT_WORK_DECAY = {
-  baseRate: Math.LN2 / 2, // ln(2)/2 — half-life exactly 2 days
-  reinforcementFactor: 1.0, // reinforcement does not extend lifetime
-  minimumConfidence: 0.01, // lower floor — let them go stale faster
-  halfLifeDays: 2,
-} as const;
+/** Re-export canonical decay profiles from core.ts so existing importers are unaffected. */
+export const DECAY = CORE_DECAY;
+export const GLOBAL_DECAY = CORE_GLOBAL_DECAY;
+export const RECENT_WORK_DECAY = CORE_RECENT_WORK_DECAY;
+export type DecayProfile = CoreDecayProfile;
+export { DecayProfileName, resolveDecayProfile };
 
 /** Section-specific decay overrides — keyed by section name */
 const SECTION_DECAY_OVERRIDES: Partial<Record<string, typeof RECENT_WORK_DECAY>> = {
   "Recent Work": RECENT_WORK_DECAY,
 };
 
-/**
- * Compute current confidence for a fact based on time since last reinforcement.
- * Uses exponential decay with reinforcement-adjusted half-life.
- *
- * halfLife = DECAY.halfLifeDays * (DECAY.reinforcementFactor ^ (reinforcement_count - 1))
- * confidence = e^(-ln(2) * daysSinceReinforced / halfLife)
- */
-export type DecayProfile = typeof DECAY | typeof GLOBAL_DECAY | typeof RECENT_WORK_DECAY;
-
-/** Maximum effective half-life regardless of reinforcement count.
- * Prevents immortal facts from accumulating indefinitely — even facts reinforced
- * every session are capped at 90 days, so decay has teeth. Facts that truly need
- * to outlive 90 days must be explicitly pinned via memory_focus. */
-const MAX_HALF_LIFE_DAYS = 90;
-
-export function computeConfidence(
-  daysSinceReinforced: number,
-  reinforcementCount: number,
-  profile: DecayProfile = DECAY,
-): number {
-  const rawHalfLife = profile.halfLifeDays * Math.pow(profile.reinforcementFactor, reinforcementCount - 1);
-  // Cap half-life so high reinforcement counts cannot create functionally immortal facts.
-  const halfLife = Math.min(rawHalfLife, MAX_HALF_LIFE_DAYS);
-  const confidence = Math.exp(-Math.LN2 * daysSinceReinforced / halfLife);
-  return Math.max(confidence, 0);
-}
+/** Delegates to core.ts::computeConfidence — single source of truth. */
+export const computeConfidence = coreComputeConfidence;
 
 // --- FactStore ---
 

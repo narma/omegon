@@ -198,35 +198,5 @@ export async function isEmbeddingAvailable(
   return { available: true, model: result.model, dims: result.dims };
 }
 
-/**
- * Cosine similarity between two Float32Arrays.
- * Optimized inner loop — no allocations.
- */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
-  if (a.length !== b.length) return 0;
-  let dot = 0, normA = 0, normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denom = Math.sqrt(normA) * Math.sqrt(normB);
-  return denom === 0 ? 0 : dot / denom;
-}
-
-/**
- * Serialize Float32Array to Buffer for SQLite BLOB storage.
- */
-export function vectorToBlob(vec: Float32Array): Buffer {
-  return Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
-}
-
-/**
- * Deserialize Buffer from SQLite BLOB to Float32Array.
- */
-export function blobToVector(blob: Buffer): Float32Array {
-  const aligned = new ArrayBuffer(blob.length);
-  const view = new Uint8Array(aligned);
-  view.set(blob);
-  return new Float32Array(aligned);
-}
+// Re-export pure vector math from core.ts — single source of truth and Rust port target.
+export { cosineSimilarity, vectorToBlob, blobToVector } from "./core.ts";
