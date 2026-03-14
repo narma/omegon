@@ -72,9 +72,9 @@
 		]
 	},
 	"dependencies": {
-		"@cwilson613/pi-coding-agent": "^0.57.1-cwilson613.2",
-		"@cwilson613/pi-ai": "^0.57.1-cwilson613.2",
-		"@cwilson613/pi-tui": "^0.57.1-cwilson613.2",
+		"@cwilson613/pi-coding-agent": "file:./vendor/pi-mono/packages/coding-agent",
+		"@cwilson613/pi-ai": "file:./vendor/pi-mono/packages/ai",
+		"@cwilson613/pi-tui": "file:./vendor/pi-mono/packages/tui",
 		"@modelcontextprotocol/sdk": "^1.12.1",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sinclair/typebox": "^0.34.48",
