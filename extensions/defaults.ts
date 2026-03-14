@@ -61,8 +61,8 @@ function contentHash(content: string): string {
  * OSC 11 = set default background color
  * OSC 110/111 = restore saved fg/bg (most terminals support this as a reset)
  *
- * Kitty ignores OSC 10/11 (uses its own theme system) — we cover Kitty via alpharius.conf.
- * All other modern terminals (iTerm2, WezTerm, Alacritty, foot, VTE, xterm) respect these.
+ * Kitty DOES honor OSC 10/11 (confirmed experimentally — overrides conf-based bg at runtime).
+ * All modern terminals (Kitty, iTerm2, WezTerm, Alacritty, foot, VTE, xterm) respect these.
  */
 const ALPHARIUS_FG = "#c4d8e4";
 const ALPHARIUS_BG = "#02030a";
@@ -141,9 +141,18 @@ export default function (pi: ExtensionAPI) {
     // --- Terminal color anchoring (OSC 10/11) ---
     // Clamp the terminal's native fg/bg to Alpharius values so that pi-tui's \x1b[0m
     // line-resets (hardcoded in pi-tui applyLineResets) don't bleed through a
-    // lighter/different terminal background. This runs unconditionally — terminals
-    // that don't support OSC 10/11 (e.g. Kitty) silently ignore the sequences.
+    // lighter/different terminal background. OSC 10/11 works on all modern terminals
+    // including Kitty (confirmed — overrides conf-based colors at runtime).
     emitOsc10_11(ALPHARIUS_FG, ALPHARIUS_BG);
+
+    // Belt-and-suspenders: if Kitty remote control is available, also push via @ set-colors.
+    // This survives cases where OSC sequences are swallowed by multiplexers.
+    try {
+      const { execSync } = await import("child_process");
+      execSync(`kitty @ set-colors background=${ALPHARIUS_BG} foreground=${ALPHARIUS_FG}`, {
+        timeout: 1000, stdio: "ignore",
+      });
+    } catch { /* not Kitty or remote control disabled — OSC 10/11 covers it */ }
 
     // --- Kitty theme sync ---
     if (ctx.hasUI) {
