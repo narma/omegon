@@ -881,13 +881,18 @@ export default function (pi: ExtensionAPI) {
           .slice(0, 10);
 
         // Merge: recent episodes + recency window + core sections (deduplicated)
+        // Budget-capped to prevent context overflow on large fact stores.
+        const STARTUP_MAX_CHARS = 12_000; // ~3K tokens — leaves room for system prompt + design-tree
+        let startupChars = 0;
         const startupFactIds = new Set<string>();
         const startupFacts: typeof allFacts = [];
         for (const f of [...coreFacts, ...archFacts, ...recentFacts]) {
-          if (!startupFactIds.has(f.id)) {
-            startupFacts.push(f);
-            startupFactIds.add(f.id);
-          }
+          if (startupFactIds.has(f.id)) continue;
+          const cost = f.content.length + 20;
+          if (startupChars + cost > STARTUP_MAX_CHARS) break;
+          startupFacts.push(f);
+          startupFactIds.add(f.id);
+          startupChars += cost;
         }
 
         if (recentEpisodes.length > 0 || startupFacts.length > 0) {
