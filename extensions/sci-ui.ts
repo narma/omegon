@@ -25,6 +25,15 @@ export interface SciComponent {
 // ─── Tool glyphs by name ───────────────────────────────────────────────────
 
 export const TOOL_GLYPHS: Record<string, string> = {
+	// Core tools
+	read: "▸",
+	edit: "▸",
+	write: "▸",
+	bash: "▸",
+	grep: "▸",
+	find: "▸",
+	ls: "▸",
+	// Extension tools
 	design_tree: "◈",
 	design_tree_update: "◈",
 	openspec_manage: "◎",
