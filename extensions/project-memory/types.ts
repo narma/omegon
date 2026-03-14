@@ -26,7 +26,7 @@ export interface MemoryConfig {
   /** Max lines in active memory before extraction prunes */
   maxLines: number;
   /** Embedding backend used for semantic retrieval */
-  embeddingProvider: "voyage" | "openai" | "openai-compatible";
+  embeddingProvider: "voyage" | "openai" | "openai-compatible" | "ollama";
   /** Embedding model to use for fact and episode vectors */
   embeddingModel: string;
   /** Minimum total message tokens before first extraction */

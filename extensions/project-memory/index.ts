@@ -626,7 +626,7 @@ export default function (pi: ExtensionAPI) {
     // Auto-detect embedding provider from env vars (Voyage > OpenAI > custom > FTS5)
     // MEMORY_EMBEDDING_PROVIDER can override if user wants to force a specific provider.
     const envEmbeddingProvider = process.env.MEMORY_EMBEDDING_PROVIDER as EmbeddingProvider | undefined;
-    if (envEmbeddingProvider === "voyage" || envEmbeddingProvider === "openai" || envEmbeddingProvider === "openai-compatible") {
+    if (envEmbeddingProvider === "voyage" || envEmbeddingProvider === "openai" || envEmbeddingProvider === "openai-compatible" || envEmbeddingProvider === "ollama") {
       config.embeddingProvider = envEmbeddingProvider;
     } else {
       const detected = resolveEmbeddingProvider();
@@ -1331,98 +1331,144 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    // --- Contextual Auto-Injection ---
-    // If embeddings are available and we have a user message, inject only
-    // relevant facts + core sections. Otherwise fall back to full dump.
-    let rendered: string;
-    let injectionMode: MemoryInjectionMode = "bulk";
-    let injectedProjectFactCount = 0;
-    let injectedEdgeCount = 0;
+    // --- Unified Priority-Ordered Context Pipeline ---
+    //
+    // Single pipeline replaces the old dual bulk/semantic split. Facts are
+    // selected in priority order and rendered within a character budget.
+    // When embeddings are unavailable, tiers 4a (FTS5) and 5/6 naturally
+    // fill the budget — no separate codepath needed.
+    //
+    // Priority tiers:
+    //   1. Working memory (pinned facts) — highest priority
+    //   2. Decisions (top N by confidence) — structural anchor
+    //   3. Architecture (top N by recency) — structural anchor
+    //   4. Hybrid search (FTS5 + embedding via RRF) — query-relevant
+    //   5. Structural fill (top 2 per remaining section) — coverage
+    //   6. Recency fill (most recently reinforced) — fills remaining budget
+
+    const userText = (event as any).prompt ?? "";
+    const usage = ctx.getContextUsage();
+
+    // Budget: reserve space for other context (design-tree, system prompt, etc.)
+    // Use 15% of total context as memory budget, with a floor and ceiling.
+    // Estimate total tokens from current usage: tokens / (percent/100).
+    const usedTokens = usage?.tokens ?? 0;
+    const usedPercent = usage?.percent ?? 0;
+    const estimatedTotalTokens = usedPercent > 0
+      ? Math.round(usedTokens / (usedPercent / 100))
+      : 200_000; // safe default
+    const MAX_MEMORY_CHARS = Math.min(
+      Math.max(Math.round(estimatedTotalTokens * 0.15 * 4), 4_000),  // 15% of context, min 4K chars
+      16_000,  // absolute ceiling
+    );
+
+    const allFacts = store.getActiveFacts(mind);
+    const injectedIds = new Set<string>();
+    const injectedFacts: Fact[] = [];
+    let currentChars = 0;
     let injectedWorkingMemoryFactCount = 0;
     let injectedSemanticHitCount = 0;
 
-    const userText = (event as any).prompt ?? "";
-
-    const vectorCount = store.countFactVectors(mind);
-    const canDoSemantic = embeddingAvailable && vectorCount >= factCount * 0.5 && userText.length > 10;
-
-    if (canDoSemantic && factCount > 20) {
-      // Semantic injection: core sections always + top-k relevant by query
-      const queryVec = await embedText(userText);
-      if (queryVec) {
-        injectionMode = "semantic";
-        // Decisions are the structural anchor — always load in full.
-        // Architecture is capped at 8 most-recently-reinforced (too large to load wholesale).
-        // Constraints and Specs are task-specific; retrieved semantically when relevant.
-        const allFacts = store.getActiveFacts(mind);
-        const decisionFacts = allFacts.filter(f => f.section === "Decisions");
-        const archCoreFacts = [...allFacts]
-          .filter(f => f.section === "Architecture")
-          .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
-          .slice(0, 8);
-        const coreFacts = [...decisionFacts, ...archCoreFacts];
-        const coreIds = new Set(coreFacts.map(f => f.id));
-
-        // Semantic search for most relevant non-core facts
-        const semanticHits = store.semanticSearch(queryVec, mind, { k: 20, minSimilarity: 0.3 });
-        const relevantFacts = semanticHits.filter(f => !coreIds.has(f.id));
-
-        // Working memory facts get priority
-        const wmFacts = [...workingMemory]
-          .map(id => store!.getFact(id))
-          .filter((f): f is Fact => f !== null && f.status === "active" && !coreIds.has(f.id));
-
-        // Merge: core + working memory + semantic hits (deduped, capped)
-        const injectedIds = new Set<string>();
-        const injectedFacts: Fact[] = [];
-
-        for (const f of coreFacts) {
-          injectedFacts.push(f);
-          injectedIds.add(f.id);
-        }
-        for (const f of wmFacts) {
-          if (!injectedIds.has(f.id)) {
-            injectedFacts.push(f);
-            injectedIds.add(f.id);
-          }
-        }
-        for (const f of relevantFacts) {
-          if (!injectedIds.has(f.id) && injectedFacts.length < 30) {
-            injectedFacts.push(f);
-            injectedIds.add(f.id);
-          }
-        }
-
-        injectedProjectFactCount = injectedFacts.length;
-        injectedWorkingMemoryFactCount = wmFacts.filter(f => injectedIds.has(f.id)).length;
-        injectedSemanticHitCount = relevantFacts.filter(f => injectedIds.has(f.id)).length;
-        injectedEdgeCount = 0;
-        rendered = store.renderFactList(injectedFacts, { showIds: false });
-      } else {
-        injectedProjectFactCount = Math.min(factCount, 50);
-        injectedEdgeCount = Math.min(store.getEdgesForFacts(store.getActiveFacts(mind).map(f => f.id), 20).length, 20);
-        rendered = store.renderForInjection(mind);
-      }
-    } else {
-      injectedProjectFactCount = Math.min(factCount, 50);
-      injectedEdgeCount = Math.min(store.getEdgesForFacts(store.getActiveFacts(mind).map(f => f.id), 20).length, 20);
-      rendered = store.renderForInjection(mind);
+    /** Measure a fact's rendered line length */
+    function factCharCost(f: Fact): number {
+      return f.content.length + 20; // bullet + date + newline overhead
     }
 
-    // Include global knowledge only in semantic mode with a relevance match.
-    // Global facts are cross-project (security patterns, k8s ops, etc.) and are
-    // almost never relevant to the current project's active work. Injecting them
-    // unconditionally wastes ~2,000 chars every turn. Use memory_recall to
-    // retrieve global facts on demand when they're actually needed.
+    /** Add a fact if it fits the budget and isn't already included */
+    function tryAdd(f: Fact): boolean {
+      if (injectedIds.has(f.id)) return false;
+      const cost = factCharCost(f);
+      if (currentChars + cost > MAX_MEMORY_CHARS) return false;
+      injectedFacts.push(f);
+      injectedIds.add(f.id);
+      currentChars += cost;
+      return true;
+    }
+
+    // --- Tier 1: Working memory (pinned facts) — always included first ---
+    const wmFacts = [...workingMemory]
+      .map(id => store!.getFact(id))
+      .filter((f): f is Fact => f !== null && f.status === "active");
+    for (const f of wmFacts) {
+      tryAdd(f);
+      injectedWorkingMemoryFactCount++;
+    }
+
+    // --- Tier 2: Decisions (top 8 by confidence) — structural anchor ---
+    const decisionFacts = allFacts
+      .filter(f => f.section === "Decisions")
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 8);
+    for (const f of decisionFacts) tryAdd(f);
+
+    // --- Tier 3: Architecture (top 8 by recency) — structural anchor ---
+    const archFacts = allFacts
+      .filter(f => f.section === "Architecture")
+      .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
+      .slice(0, 8);
+    for (const f of archFacts) tryAdd(f);
+
+    // --- Tier 4: Hybrid search (FTS5 + embedding via RRF) ---
+    // Uses hybridSearch which combines FTS5 keyword matching with semantic
+    // embedding search. When embeddings are unavailable, degrades to FTS5-only.
+    if (userText.length > 5 && currentChars < MAX_MEMORY_CHARS) {
+      const queryVec = await embedText(userText);
+      const hybridHits = store.hybridSearch(userText, queryVec, mind, {
+        k: 15,
+        minSimilarity: 0.3,
+      });
+      for (const f of hybridHits) {
+        if (!tryAdd(f)) break; // budget exhausted
+        injectedSemanticHitCount++;
+      }
+    }
+
+    // --- Tier 5: Structural fill — top 2 per remaining section ---
+    // Ensures every section has representation even without a matching query.
+    // This is what bulk mode got right that old semantic mode missed.
+    const FILL_SECTIONS = ["Constraints", "Known Issues", "Patterns & Conventions", "Specs", "Recent Work"] as const;
+    for (const section of FILL_SECTIONS) {
+      if (currentChars >= MAX_MEMORY_CHARS) break;
+      const sectionFacts = allFacts
+        .filter(f => f.section === section)
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, 3);
+      for (const f of sectionFacts) {
+        if (!tryAdd(f)) break;
+      }
+    }
+
+    // --- Tier 6: Recency fill — most recently reinforced not yet included ---
+    if (currentChars < MAX_MEMORY_CHARS) {
+      const recentFacts = [...allFacts]
+        .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
+        .slice(0, 20);
+      for (const f of recentFacts) {
+        if (!tryAdd(f)) break;
+      }
+    }
+
+    const injectedProjectFactCount = injectedFacts.length;
+    const rendered = store.renderFactList(injectedFacts, { showIds: false });
+
+    // --- Global knowledge: semantic-gated, only when query is available ---
     let globalSection = "";
     let injectedGlobalFactCount = 0;
-    if (globalStore && injectionMode === "semantic") {
+    if (globalStore && userText.length > 10) {
       const globalMind = globalStore.getActiveMind() ?? "default";
       const globalFactCount = globalStore.countActiveFacts(globalMind);
-      if (globalFactCount > 0 && userText.length > 10) {
+      if (globalFactCount > 0) {
         const queryVec = await embedText(userText);
         if (queryVec) {
           const globalHits = globalStore.semanticSearch(queryVec, globalMind, { k: 6, minSimilarity: 0.45 });
+          if (globalHits.length > 0) {
+            injectedGlobalFactCount = globalHits.length;
+            const globalRendered = globalStore.renderFactList(globalHits, { showIds: false });
+            globalSection = `\n\n<!-- Global Knowledge — cross-project facts and connections -->\n${globalRendered}`;
+          }
+        } else {
+          // Embeddings unavailable — use FTS5 for global search
+          const globalHits = globalStore.searchFacts(userText, globalMind).slice(0, 4);
           if (globalHits.length > 0) {
             injectedGlobalFactCount = globalHits.length;
             const globalRendered = globalStore.renderFactList(globalHits, { showIds: false });
@@ -1432,7 +1478,7 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
-    // Include recent episodes if available
+    // --- Episodes: 1 most recent ---
     let episodeSection = "";
     let injectedEpisodeCount = 0;
     const episodeCount = store.countEpisodes(mind);
@@ -1455,14 +1501,9 @@ export default function (pi: ExtensionAPI) {
         "Use **memory_store** to persist important discoveries (architecture decisions, constraints, patterns, known issues). " +
         "Use **memory_search_archive** to search older archived facts.";
 
-    const injectionNote = injectionMode === "semantic"
-      ? ` Showing ${injectionMode} subset — use memory_recall for more.`
-      : "";
-
     // Context pressure — continuous gradient from onset through warning
     let pressureWarning = "";
     if (!autoCompacted) {
-      const usage = ctx.getContextUsage();
       const pct = usage?.percent != null ? Math.round(usage.percent) : null;
       if (pct !== null) {
         const pressure = computeDegeneracyPressure(
@@ -1481,14 +1522,17 @@ export default function (pi: ExtensionAPI) {
     }
 
     // Proactive startup payload — prepend on firstTurn if available.
-    // Already consumed (firstTurn is now false), cleared after use.
     const startupSection = startupInjectionPayload
       ? `\n\n${startupInjectionPayload}`
       : "";
     startupInjectionPayload = null; // consume once
 
+    const budgetNote = currentChars >= MAX_MEMORY_CHARS
+      ? ` (budget-capped at ~${Math.round(MAX_MEMORY_CHARS / 1000)}K chars)`
+      : "";
+
     const injectionContent = [
-      `Project memory available${mindLabel} (${factCount} facts from this and previous sessions).${injectionNote}`,
+      `Project memory available${mindLabel} (${factCount} facts from this and previous sessions).${budgetNote}`,
       memoryTools + "\n\n",
       rendered,
       startupSection,
@@ -1497,11 +1541,11 @@ export default function (pi: ExtensionAPI) {
       pressureWarning,
     ].join(" ");
 
-    const usage = ctx.getContextUsage();
+    const injectionMode: MemoryInjectionMode = "semantic"; // unified pipeline is always "semantic"
     const metrics = createMemoryInjectionMetrics({
       mode: injectionMode,
       projectFactCount: injectedProjectFactCount,
-      edgeCount: injectedEdgeCount,
+      edgeCount: 0,
       workingMemoryFactCount: injectedWorkingMemoryFactCount,
       semanticHitCount: injectedSemanticHitCount,
       episodeCount: injectedEpisodeCount,
@@ -1511,7 +1555,6 @@ export default function (pi: ExtensionAPI) {
       userPromptTokensEstimate: estimateTokensFromChars(userText),
     });
 
-    // Estimate token count (~4 chars per token) and publish for status-bar
     sharedState.memoryTokenEstimate = metrics.estimatedTokens;
     sharedState.lastMemoryInjection = metrics;
     pendingInjectionCalibration = {

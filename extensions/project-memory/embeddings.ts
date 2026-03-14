@@ -19,7 +19,7 @@
  * (factstore purges stale vectors on model change).
  */
 
-export type EmbeddingProvider = "voyage" | "openai" | "openai-compatible";
+export type EmbeddingProvider = "voyage" | "openai" | "openai-compatible" | "ollama";
 
 // --- Endpoint and model defaults ---
 
@@ -91,8 +91,14 @@ export function resolveEmbeddingProvider(): { provider: EmbeddingProvider; model
     return { provider: "openai", model };
   }
 
-  // 4. No provider available → caller falls back to FTS5
-  return null;
+  // 4. Ollama (local inference — zero config, auto-detected)
+  // Ollama exposes an OpenAI-compatible /v1/embeddings endpoint.
+  // We always return a candidate here; isEmbeddingAvailable() validates at startup
+  // by sending a test embedding. If Ollama isn't running, it fails gracefully → FTS5.
+  {
+    const model = process.env.MEMORY_EMBEDDING_MODEL ?? "qwen3-embedding:0.6b";
+    return { provider: "ollama", model };
+  }
 }
 
 // --- Embedding implementations ---
@@ -162,6 +168,15 @@ function resolveOpts(opts?: EmbeddingOptions): {
     const model = opts?.model ?? process.env.MEMORY_EMBEDDING_MODEL ?? DEFAULT_VOYAGE_MODEL;
     if (!apiKey) return null;
     return { provider, model, baseUrl, apiKey, timeout };
+  }
+
+  if (provider === "ollama") {
+    const ollamaHost = process.env.OLLAMA_HOST ?? "http://localhost:11434";
+    const baseUrl = `${ollamaHost.replace(/\/$/, "")}/v1`;
+    const model = opts?.model ?? process.env.MEMORY_EMBEDDING_MODEL ?? "qwen3-embedding:0.6b";
+    // Ollama doesn't require an API key but the OpenAI-compatible endpoint
+    // accepts any non-empty bearer token.
+    return { provider, model, baseUrl, apiKey: "ollama", timeout };
   }
 
   // openai

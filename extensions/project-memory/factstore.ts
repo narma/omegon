@@ -1770,6 +1770,112 @@ export class FactStore {
   }
 
   /**
+   * Hybrid search: combines FTS5 keyword search with embedding-based semantic search
+   * via Reciprocal Rank Fusion (RRF). Produces better recall than either method alone:
+   *   - FTS5 catches exact keyword matches (file paths, function names, identifiers)
+   *   - Embeddings catch semantic matches (synonyms, paraphrases, conceptual similarity)
+   *
+   * When queryVec is null (embeddings unavailable), degrades to FTS5-only.
+   * RRF formula: score(d) = Σ 1/(k + rank_in_list), where k=60 (standard constant).
+   *
+   * Returns facts scored by RRF rank, with similarity and confidence fields populated.
+   */
+  hybridSearch(
+    queryText: string,
+    queryVec: Float32Array | null,
+    mind: string,
+    opts?: { k?: number; minSimilarity?: number; section?: string; ftsK?: number; semanticK?: number },
+  ): (Fact & { similarity: number; score: number })[] {
+    const k = opts?.k ?? 15;
+    const ftsK = opts?.ftsK ?? 20;
+    const semanticK = opts?.semanticK ?? 20;
+    const RRF_K = 60; // Standard RRF constant
+
+    // --- FTS5 leg ---
+    const ftsRanked: Map<string, number> = new Map(); // fact.id → rank (0-indexed)
+    if (queryText.length > 2) {
+      // Use OR mode for broader recall — AND is too restrictive for injection
+      const tokens = queryText.split(/\s+/).filter(t => t.length > 1);
+      if (tokens.length > 0) {
+        const ftsQuery = tokens.join(" OR ");
+        try {
+          let query = `
+            SELECT f.* FROM facts f
+            JOIN facts_fts fts ON f.rowid = fts.rowid
+            WHERE facts_fts MATCH ? AND f.mind = ? AND f.status = 'active'
+          `;
+          const params: any[] = [ftsQuery, mind];
+          if (opts?.section) {
+            query += ` AND f.section = ?`;
+            params.push(opts.section);
+          }
+          query += ` ORDER BY rank LIMIT ?`;
+          params.push(ftsK);
+          const rows = this.db.prepare(query).all(...params) as Fact[];
+          for (let i = 0; i < rows.length; i++) {
+            ftsRanked.set(rows[i].id, i);
+          }
+        } catch {
+          // FTS5 query syntax error (e.g., special characters) — skip FTS leg
+        }
+      }
+    }
+
+    // --- Embedding leg ---
+    const semanticRanked: Map<string, { rank: number; similarity: number }> = new Map();
+    if (queryVec) {
+      const hits = this.semanticSearch(queryVec, mind, {
+        k: semanticK,
+        minSimilarity: opts?.minSimilarity ?? 0.3,
+        section: opts?.section,
+      });
+      for (let i = 0; i < hits.length; i++) {
+        semanticRanked.set(hits[i].id, { rank: i, similarity: hits[i].similarity });
+      }
+    }
+
+    // --- RRF merge ---
+    const allIds = new Set([...ftsRanked.keys(), ...semanticRanked.keys()]);
+    const scored: { id: string; rrfScore: number; similarity: number }[] = [];
+
+    for (const id of allIds) {
+      let rrfScore = 0;
+      let similarity = 0;
+
+      const ftsRank = ftsRanked.get(id);
+      if (ftsRank !== undefined) {
+        rrfScore += 1 / (RRF_K + ftsRank);
+      }
+
+      const semHit = semanticRanked.get(id);
+      if (semHit !== undefined) {
+        rrfScore += 1 / (RRF_K + semHit.rank);
+        similarity = semHit.similarity;
+      }
+
+      scored.push({ id, rrfScore, similarity });
+    }
+
+    scored.sort((a, b) => b.rrfScore - a.rrfScore);
+    const topIds = scored.slice(0, k);
+
+    // Hydrate facts with scores
+    const results: (Fact & { similarity: number; score: number })[] = [];
+    for (const { id, rrfScore, similarity } of topIds) {
+      const fact = this.getFact(id);
+      if (!fact || fact.status !== "active") continue;
+      results.push({ ...fact, similarity, score: rrfScore });
+    }
+
+    // Access reinforcement on returned results
+    for (const fact of results) {
+      try { this.touchFact(fact.id); } catch { /* non-critical */ }
+    }
+
+    return results;
+  }
+
+  /**
    * Find facts similar to a given fact (for conflict detection).
    * Returns facts in the same section with high similarity but different content hash.
    * Skips vectors with mismatched dimensions.
