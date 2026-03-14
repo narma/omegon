@@ -1021,24 +1021,47 @@ export class FactStore {
     const minConfidence = opts?.minConfidence ?? this.decayProfile.minimumConfidence;
     const showIds = opts?.showIds ?? false;
 
+    // Per-section caps: Architecture is the largest section by volume.
+    // Cap it aggressively so it can't crowd out other sections or blow context.
+    // Remaining sections are capped at reasonable defaults.
+    const SECTION_CAPS: Partial<Record<SectionName, number>> = {
+      Architecture: 12,
+      Decisions: 10,
+      Constraints: 6,
+      "Known Issues": 6,
+      "Patterns & Conventions": 6,
+      Specs: 10,
+    };
+
     let facts = this.getActiveFacts(mind);
 
     // Filter by confidence
     facts = facts.filter(f => f.confidence >= minConfidence);
 
-    // Limit
+    // Apply per-section caps (top N by confidence within each section)
+    const cappedFacts: typeof facts = [];
+    for (const section of SECTIONS) {
+      const sectionFacts = facts
+        .filter(f => f.section === section)
+        .sort((a, b) => b.confidence - a.confidence)
+        .slice(0, SECTION_CAPS[section as SectionName] ?? 10);
+      cappedFacts.push(...sectionFacts);
+    }
+    facts = cappedFacts;
+
+    // Apply global cap as a final safety net
     if (facts.length > maxFacts) {
-      // Take top N by confidence, but maintain section grouping
       facts.sort((a, b) => b.confidence - a.confidence);
       facts = facts.slice(0, maxFacts);
-      // Re-sort by section
-      facts.sort((a, b) => {
-        const idxA = SECTIONS.indexOf(a.section as SectionName);
-        const idxB = SECTIONS.indexOf(b.section as SectionName);
-        if (idxA !== idxB) return idxA - idxB;
-        return b.confidence - a.confidence;
-      });
     }
+
+    // Re-sort by section order for display
+    facts.sort((a, b) => {
+      const idxA = SECTIONS.indexOf(a.section as SectionName);
+      const idxB = SECTIONS.indexOf(b.section as SectionName);
+      if (idxA !== idxB) return idxA - idxB;
+      return b.confidence - a.confidence;
+    });
 
     const lines: string[] = [
       "<!-- Project Memory — managed by project-memory extension -->",

@@ -1680,17 +1680,15 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					? `\n\nDecisions:\n${sections.decisions.map((d) => `- ${d.title} (${d.status})`).join("\n")}`
 					: "";
 
-				const body = getDocBody(node.filePath, 6000);
-
 				return {
 					message: {
 						customType: "design-context",
 						content:
 							`[Design Tree — Focused on: ${node.title} (${node.status})]` +
 							depsText + decisionsSummary + openQ +
-							`\n\n--- Document Summary ---\n${body}` +
-							`\n\nYou can use the design_tree and design_tree_update tools to query and modify the design tree. ` +
-							`When this design discussion reaches a conclusion, use design_tree_update to set_status to 'decided'. ` +
+							`\n\nUse design_tree(action='node', node_id='${node.id}') to read the full document including research sections. ` +
+							`Use design_tree_update to modify it. ` +
+							`When this discussion reaches a conclusion, use design_tree_update to set_status to 'decided'. ` +
 							`If new sub-topics emerge, use design_tree_update to branch child nodes.`,
 						display: false,
 					},

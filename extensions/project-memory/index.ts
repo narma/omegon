@@ -718,32 +718,41 @@ export default function (pi: ExtensionAPI) {
     // --- Proactive startup injection (session-continuity) ---
     // Inject three layers before the user's first message so continuation
     // questions work without waiting for semantic retrieval.
-    // Layer 1: last 3 session episodes (what was worked on recently)
-    // Layer 2: top-20 recently-reinforced facts (recency window, cross-section)
-    // Layer 3: Architecture + Decisions sections always (structural context)
+    // Layer 1: last 1 session episode (most recent — use memory_episodes for more)
+    // Layer 2: top-15 recently-reinforced facts (recency window, cross-section)
+    // Layer 3: Decisions + Constraints + Known Issues always; Architecture capped at 10
+    //
+    // Architecture is the largest section by fact count. Loading all Architecture
+    // facts unconditionally blows context on large projects. The top-10 by recency
+    // covers active concerns; older facts are retrievable via memory_recall.
     //
     // This runs asynchronously so it doesn't block the TUI from appearing.
     // The payload is injected as a pre-prompt system message on the first turn.
     if (store) {
       try {
         const mind = activeMind();
-        const recentEpisodes = store.getEpisodes(mind, 3);
+        const recentEpisodes = store.getEpisodes(mind, 1);
         const allFacts = store.getActiveFacts(mind);
 
-        // Recency window: top 20 by last_reinforced (any section)
+        // Recency window: top 15 by last_reinforced (any section)
         const recentFacts = [...allFacts]
           .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
-          .slice(0, 20);
+          .slice(0, 15);
 
-        // Core structural facts: Architecture + Decisions always loaded
+        // Core structural facts: Decisions + Constraints + Known Issues always loaded.
+        // Architecture capped at 10 most-recently-reinforced (largest section by volume).
         const coreFacts = allFacts.filter(f =>
-          f.section === "Architecture" || f.section === "Decisions"
+          f.section === "Decisions" || f.section === "Constraints" || f.section === "Known Issues"
         );
+        const archFacts = [...allFacts]
+          .filter(f => f.section === "Architecture")
+          .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
+          .slice(0, 10);
 
         // Merge: recent episodes + recency window + core sections (deduplicated)
         const startupFactIds = new Set<string>();
         const startupFacts: typeof allFacts = [];
-        for (const f of [...coreFacts, ...recentFacts]) {
+        for (const f of [...coreFacts, ...archFacts, ...recentFacts]) {
           if (!startupFactIds.has(f.id)) {
             startupFacts.push(f);
             startupFactIds.add(f.id);
@@ -1342,11 +1351,16 @@ export default function (pi: ExtensionAPI) {
       const queryVec = await embedText(userText);
       if (queryVec) {
         injectionMode = "semantic";
-        // Architecture + Decisions are the structural anchors — always load.
+        // Decisions are the structural anchor — always load in full.
+        // Architecture is capped at 8 most-recently-reinforced (too large to load wholesale).
         // Constraints and Specs are task-specific; retrieved semantically when relevant.
-        const CORE_SECTIONS = ["Architecture", "Decisions"];
         const allFacts = store.getActiveFacts(mind);
-        const coreFacts = allFacts.filter(f => CORE_SECTIONS.includes(f.section));
+        const decisionFacts = allFacts.filter(f => f.section === "Decisions");
+        const archCoreFacts = [...allFacts]
+          .filter(f => f.section === "Architecture")
+          .sort((a, b) => new Date(b.last_reinforced).getTime() - new Date(a.last_reinforced).getTime())
+          .slice(0, 8);
+        const coreFacts = [...decisionFacts, ...archCoreFacts];
         const coreIds = new Set(coreFacts.map(f => f.id));
 
         // Semantic search for most relevant non-core facts
@@ -1395,16 +1409,26 @@ export default function (pi: ExtensionAPI) {
       rendered = store.renderForInjection(mind);
     }
 
-    // Include global knowledge if available
+    // Include global knowledge only in semantic mode with a relevance match.
+    // Global facts are cross-project (security patterns, k8s ops, etc.) and are
+    // almost never relevant to the current project's active work. Injecting them
+    // unconditionally wastes ~2,000 chars every turn. Use memory_recall to
+    // retrieve global facts on demand when they're actually needed.
     let globalSection = "";
     let injectedGlobalFactCount = 0;
-    if (globalStore) {
+    if (globalStore && injectionMode === "semantic") {
       const globalMind = globalStore.getActiveMind() ?? "default";
       const globalFactCount = globalStore.countActiveFacts(globalMind);
-      if (globalFactCount > 0) {
-        injectedGlobalFactCount = Math.min(globalFactCount, 15);
-        const globalRendered = globalStore.renderForInjection(globalMind, { maxFacts: 15, maxEdges: 0 });
-        globalSection = `\n\n<!-- Global Knowledge — cross-project facts and connections -->\n${globalRendered}`;
+      if (globalFactCount > 0 && userText.length > 10) {
+        const queryVec = await embedText(userText);
+        if (queryVec) {
+          const globalHits = globalStore.semanticSearch(queryVec, globalMind, { k: 6, minSimilarity: 0.45 });
+          if (globalHits.length > 0) {
+            injectedGlobalFactCount = globalHits.length;
+            const globalRendered = globalStore.renderFactList(globalHits, { showIds: false });
+            globalSection = `\n\n<!-- Global Knowledge — cross-project facts and connections -->\n${globalRendered}`;
+          }
+        }
       }
     }
 
@@ -1413,7 +1437,7 @@ export default function (pi: ExtensionAPI) {
     let injectedEpisodeCount = 0;
     const episodeCount = store.countEpisodes(mind);
     if (episodeCount > 0) {
-      const recentEpisodes = store.getEpisodes(mind, 3);
+      const recentEpisodes = store.getEpisodes(mind, 1);
       if (recentEpisodes.length > 0) {
         injectedEpisodeCount = recentEpisodes.length;
         const episodeLines = recentEpisodes.map(e =>
