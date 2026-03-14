@@ -1,0 +1,77 @@
+name: Publish to npm
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Check if version changed or publish needed
+        id: check
+        run: |
+          LOCAL_VER=$(node -p "require('./package.json').version")
+          NPM_VER=$(npm view omegon version 2>/dev/null || echo "0.0.0")
+          echo "local=$LOCAL_VER" >> $GITHUB_OUTPUT
+          echo "npm=$NPM_VER" >> $GITHUB_OUTPUT
+          if [ "$LOCAL_VER" = "$NPM_VER" ]; then
+            # Auto-bump patch for continuous delivery
+            NEW_VER=$(npx semver "$LOCAL_VER" -i patch)
+            echo "version=$NEW_VER" >> $GITHUB_OUTPUT
+            echo "bump=true" >> $GITHUB_OUTPUT
+            echo "Will bump: $LOCAL_VER → $NEW_VER"
+          else
+            echo "version=$LOCAL_VER" >> $GITHUB_OUTPUT
+            echo "bump=false" >> $GITHUB_OUTPUT
+            echo "Publishing: $LOCAL_VER (npm has $NPM_VER)"
+          fi
+
+      - name: Bump version if needed
+        if: steps.check.outputs.bump == 'true'
+        run: |
+          npm version ${{ steps.check.outputs.version }} --no-git-tag-version
+          git add package.json
+          git commit -m "chore(release): ${{ steps.check.outputs.version }} [skip ci]"
+          git tag "v${{ steps.check.outputs.version }}"
+          git push origin main --tags
+
+      - name: Tag if not bumped
+        if: steps.check.outputs.bump == 'false'
+        run: |
+          TAG="v${{ steps.check.outputs.version }}"
+          if ! git tag --list "$TAG" | grep -q "$TAG"; then
+            git tag "$TAG"
+            git push origin --tags
+          fi
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Summary
+        run: |
+          echo "### Published omegon@${{ steps.check.outputs.version }}" >> $GITHUB_STEP_SUMMARY

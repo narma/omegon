@@ -1,9 +1,11 @@
 {
 	"name": "omegon",
 	"version": "0.6.0",
+	"description": "Omegon — agent-native software engineering platform: lifecycle management, memory, orchestration, and visualization for the pi coding agent",
 	"bin": {
 		"pi": "./bin/pi"
 	},
+	"type": "module",
 	"scripts": {
 		"test": "npx tsx --test tests/*.test.ts extensions/**/*.test.ts",
 		"typecheck": "tsc --noEmit",
@@ -11,16 +13,14 @@
 		"check": "tsc --noEmit && npm run check:lifecycle && npx tsx --test extensions/*.test.ts extensions/**/*.test.ts",
 		"build:pi": "cd vendor/pi-mono && npm run build",
 		"update:pi": "git -C vendor/pi-mono pull --ff-only origin main && npm run build:pi",
-		"install:pi": "./scripts/install-pi.sh",
-		"install:pi:quick": "./scripts/install-pi.sh --skip-build",
-		"setup": "git submodule update --init --recursive && cd vendor/pi-mono && npm install && npm run build && cd ../.. && npm link --force",
-		"postinstall": "git submodule update --init --recursive && cd vendor/pi-mono && npm install && npm run build"
+		"setup": "git submodule update --init --recursive && cd vendor/pi-mono && npm install && npm run build && cd ../.. && npm link --force"
 	},
-	"description": "Omegon — agent-native software engineering platform: lifecycle management, memory, orchestration, and visualization for the pi coding agent",
 	"keywords": [
-		"pi-package"
+		"pi-package",
+		"coding-agent",
+		"cli"
 	],
-	"author": "",
+	"author": "cwilson613",
 	"license": "ISC",
 	"pi": {
 		"extensions": [
@@ -62,8 +62,9 @@
 		]
 	},
 	"dependencies": {
+		"@cwilson613/pi-coding-agent": "^0.57.1-cwilson613.2",
 		"@cwilson613/pi-ai": "^0.57.1-cwilson613.2",
-		"@cwilson613/pi-coding-agent": "file:vendor/pi-mono/packages/coding-agent",
+		"@cwilson613/pi-tui": "^0.57.1-cwilson613.2",
 		"@modelcontextprotocol/sdk": "^1.12.1",
 		"@resvg/resvg-js": "^2.6.2",
 		"@sinclair/typebox": "^0.34.48",

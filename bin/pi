@@ -2,14 +2,16 @@
 /**
  * Omegon pi entry point.
  *
- * Sets PI_CODING_AGENT_DIR to the omegon repo root so pi loads all agent
+ * Sets PI_CODING_AGENT_DIR to the omegon package root so pi loads all agent
  * configuration (extensions, themes, skills, AGENTS.md) from omegon rather
- * than from ~/.pi/agent/. The pi core comes from vendor/pi-mono.
+ * than from ~/.pi/agent/.
  *
- * PI_CODING_AGENT_DIR can be overridden at runtime for testing:
- *   PI_CODING_AGENT_DIR=/path/to/other pi ...
+ * Resolution order for pi core:
+ *   1. vendor/pi-mono (dev mode — git submodule present)
+ *   2. node_modules/@cwilson613/pi-coding-agent (installed via npm)
  */
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,4 +22,9 @@ if (!process.env.PI_CODING_AGENT_DIR) {
   process.env.PI_CODING_AGENT_DIR = omegonRoot;
 }
 
-await import(join(omegonRoot, "vendor/pi-mono/packages/coding-agent/dist/cli.js"));
+// Resolve pi core: prefer vendor/ (dev), fall back to node_modules/ (installed)
+const vendorCli = join(omegonRoot, "vendor/pi-mono/packages/coding-agent/dist/cli.js");
+const npmCli = join(omegonRoot, "node_modules/@cwilson613/pi-coding-agent/dist/cli.js");
+
+const cli = existsSync(vendorCli) ? vendorCli : npmCli;
+await import(cli);
