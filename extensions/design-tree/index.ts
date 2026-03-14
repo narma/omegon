@@ -799,21 +799,31 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					const oldStatus = node.status;
 
 					// Hard gate: set_status(decided) requires archived design spec.
+					// Exception: bug/chore/task nodes with no open questions can skip
+					// the design-phase ceremony — the decision IS the diagnosis.
 					if (newStatus === "decided") {
-						const designSpec = resolveDesignSpecBinding(ctx.cwd, node.id);
-						if (designSpec.missing) {
-							return {
-								content: [{ type: "text", text: `Cannot mark '${node.title}' decided: scaffold design spec first via set_status(exploring).` }],
-								details: { id: node.id, blockedBy: "design-openspec-missing" },
-								isError: true,
-							};
-						}
-						if (designSpec.active && !designSpec.archived) {
-							return {
-								content: [{ type: "text", text: `Cannot mark '${node.title}' decided: run /assess design then archive the design change before marking decided.` }],
-								details: { id: node.id, blockedBy: "design-openspec-not-archived" },
-								isError: true,
-							};
+						const lightweightTypes = new Set(["bug", "chore", "task"]);
+						const isLightweight = node.issue_type && lightweightTypes.has(node.issue_type);
+						const hasOpenQuestions = (node.open_questions?.length ?? 0) > 0;
+
+						// Lightweight nodes: allow decided if no open questions remain,
+						// regardless of design-phase spec state.
+						if (!(isLightweight && !hasOpenQuestions)) {
+							const designSpec = resolveDesignSpecBinding(ctx.cwd, node.id);
+							if (designSpec.missing) {
+								return {
+									content: [{ type: "text", text: `Cannot mark '${node.title}' decided: scaffold design spec first via set_status(exploring).` }],
+									details: { id: node.id, blockedBy: "design-openspec-missing" },
+									isError: true,
+								};
+							}
+							if (designSpec.active && !designSpec.archived) {
+								return {
+									content: [{ type: "text", text: `Cannot mark '${node.title}' decided: run \`/assess design ${node.id}\` then archive the design change before marking decided.` }],
+									details: { id: node.id, blockedBy: "design-openspec-not-archived" },
+									isError: true,
+								};
+							}
 						}
 					}
 
@@ -1138,21 +1148,31 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					}
 
 					// Hard gate: design-phase spec must be archived before implementation.
+					// Exception: bug/chore/task nodes that are already decided with no
+					// open questions can proceed directly — they don't need a design-phase
+					// spec because the decision is the bug diagnosis itself.
 					{
-						const designSpec = resolveDesignSpecBinding(ctx.cwd, node.id);
-						if (designSpec.missing) {
-							return {
-								content: [{ type: "text", text: "Scaffold design spec first via set_status(exploring)" }],
-								details: { id: node.id, blockedBy: "design-openspec-missing" },
-								isError: true,
-							};
-						}
-						if (designSpec.active && !designSpec.archived) {
-							return {
-								content: [{ type: "text", text: `Cannot implement '${node.title}': archive the design change first (/opsx:archive on the design change).` }],
-								details: { id: node.id, blockedBy: "design-openspec-not-archived" },
-								isError: true,
-							};
+						const lightweightTypes = new Set(["bug", "chore", "task"]);
+						const isLightweight = node.issue_type && lightweightTypes.has(node.issue_type);
+						const hasOpenQuestions = (node.open_questions?.length ?? 0) > 0;
+						const skipDesignGate = isLightweight && !hasOpenQuestions && node.status === "decided";
+
+						if (!skipDesignGate) {
+							const designSpec = resolveDesignSpecBinding(ctx.cwd, node.id);
+							if (designSpec.missing) {
+								return {
+									content: [{ type: "text", text: "Scaffold design spec first via set_status(exploring)" }],
+									details: { id: node.id, blockedBy: "design-openspec-missing" },
+									isError: true,
+								};
+							}
+							if (designSpec.active && !designSpec.archived) {
+								return {
+									content: [{ type: "text", text: `Cannot implement '${node.title}': archive the design change first (\`/opsx:archive\` on the design change).` }],
+									details: { id: node.id, blockedBy: "design-openspec-not-archived" },
+									isError: true,
+								};
+							}
 						}
 					}
 
