@@ -313,6 +313,9 @@ export default function (pi: ExtensionAPI) {
 		if (!isFirstRun()) return;
 		if (!ctx.hasUI) return;
 
+		// Signal other extensions to suppress redundant "no providers" warnings
+		sharedState.bootstrapPending = true;
+
 		const statuses = checkAll();
 		const missing = statuses.filter((s) => !s.available);
 		const needsProfile = needsOperatorProfileSetup(getConfigRoot(ctx));
@@ -544,13 +547,34 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 		);
 	}
 
+	// API key guidance — check if any cloud provider is configured
+	const providerReadiness = await checkAllProviders(pi);
+	const hasAnyCloudKey = providerReadiness.some(
+		(r: AuthResult) => r.status === "ok" && r.provider !== "local",
+	);
+	if (!hasAnyCloudKey) {
+		ctx.ui.notify(
+			"\n🔑 **No cloud API keys detected.**\n" +
+			"Omegon needs at least one provider key to function. The fastest options:\n" +
+			"  • Anthropic: `/secrets configure ANTHROPIC_API_KEY` (get key at console.anthropic.com)\n" +
+			"  • OpenAI: `/secrets configure OPENAI_API_KEY` (get key at platform.openai.com)\n" +
+			"  • GitHub Copilot: `/login github` (requires Copilot subscription)\n",
+			"warning"
+		);
+	}
+
 	await ensureOperatorProfile(pi, ctx);
 
 	const recheck = checkAll();
 	const stillMissing = recheck.filter((s) => !s.available && (s.dep.tier === "core" || s.dep.tier === "recommended"));
 
-	if (stillMissing.length === 0) {
+	if (stillMissing.length === 0 && hasAnyCloudKey) {
 		ctx.ui.notify("\n🎉 Setup complete! All core and recommended dependencies are available.");
+		markDone();
+	} else if (stillMissing.length === 0) {
+		ctx.ui.notify(
+			"\n✅ Dependencies installed. Configure an API key (see above) to start using Omegon.",
+		);
 		markDone();
 	} else {
 		ctx.ui.notify(

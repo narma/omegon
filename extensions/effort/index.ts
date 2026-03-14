@@ -284,7 +284,7 @@ export default function (pi: ExtensionAPI) {
       const policy = sharedState.routingPolicy ?? getDefaultPolicy();
       const summary = buildProviderSummary(allModels, viable, policy);
 
-      if (summary.level === 0) {
+      if (summary.level === 0 && !sharedState.bootstrapPending) {
         ctx.ui.notify("⚠ No providers configured. Run /bootstrap or /providers for setup hints.", "warning");
       } else if (summary.level < 3) {
         const parts: string[] = [];

@@ -131,6 +131,10 @@ interface SharedState {
 
   /** Per-request retry ledger for bounded recovery decisions across core and extension-driven retries. */
   recoveryRetryCounts?: Record<string, number>;
+
+  /** Set by bootstrap when first-run is detected. Other extensions should suppress
+   *  redundant "no providers" warnings when this is true — bootstrap handles guidance. */
+  bootstrapPending?: boolean;
 }
 
 // Initialize once on first import, reuse thereafter via global symbol.
