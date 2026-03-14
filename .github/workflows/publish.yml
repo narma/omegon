@@ -69,9 +69,3 @@ jobs:
 
       - name: Publish
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Summary
-        run: |
-          echo "### Published omegon@${{ steps.check.outputs.version }}" >> $GITHUB_STEP_SUMMARY
