@@ -765,34 +765,73 @@ export default function (pi: ExtensionAPI) {
       embeddingAvailable = false;
     }
 
-    // --- Per-section pruning ceiling (background, non-blocking) ---
-    // When any section exceeds 60 facts, run a targeted LLM archival pass
-    // to bring it back under the ceiling. This prevents monotonic accumulation.
+    // --- Decay sweep + per-section pruning (background, non-blocking) ---
+    // 1. Archive facts that have decayed below their profile's minimum confidence.
+    //    Converts passive decay (lower score on read) into active archival.
+    //    Without this, decayed facts accumulate forever as active but invisible.
+    // 2. When any section exceeds 60 facts, run a targeted LLM archival pass
+    //    to bring it back under the ceiling. This prevents monotonic accumulation.
     // Runs fire-and-forget so it doesn't block session startup.
     if (store) {
       (async () => {
         try {
-          const SECTION_CEILING = 60;
           const mind = activeMind();
+
+          // Phase 1: Sweep decayed facts (deterministic, no LLM needed)
+          const swept = store!.sweepDecayedFacts(mind);
+          if (swept > 0 && ctx.hasUI) {
+            ctx.ui.notify(`Archived ${swept} decayed facts`, "info");
+          }
+
+          // Phase 2: Section ceiling pruning (LLM-assisted)
+          const SECTION_CEILING = 60;
           const sectionCounts = store!.getSectionCounts(mind);
           for (const [section, count] of sectionCounts) {
-            if (count > SECTION_CEILING) {
-              const facts = store!.getFactsBySection(mind, section);
-              // Only prune sections that have excess — skip Recent Work (fast decay handles it)
-              if (section === "Recent Work") continue;
-              const idsToArchive = await runSectionPruningPass(section, facts, SECTION_CEILING, config);
-              // Validate: only archive IDs that exist in this section (safety guard)
-              const validIds = new Set(facts.map(f => f.id));
+            if (count <= SECTION_CEILING) continue;
+            // Skip Recent Work — decay sweep handles it (fast decay, no LLM needed)
+            if (section === "Recent Work") continue;
+
+            const facts = store!.getFactsBySection(mind, section);
+            const excess = count - SECTION_CEILING;
+            let archived = 0;
+
+            // Phase 2a: Deterministic cull — archive lowest-confidence facts first.
+            // No LLM needed for facts that are obviously lowest-value.
+            // This handles the case where sections grow to 600+ facts and the LLM
+            // can't process them all in one prompt.
+            const sorted = [...facts].sort((a, b) => a.confidence - b.confidence);
+            const deterministicCull = Math.min(Math.floor(excess * 0.6), sorted.length);
+            if (deterministicCull > 0) {
+              const cullCandidates = sorted.slice(0, deterministicCull);
+              for (const f of cullCandidates) {
+                store!.archiveFact(f.id);
+                archived++;
+              }
+            }
+
+            // Phase 2b: LLM-assisted pruning for the remaining excess.
+            // Only send a manageable batch (up to 80 facts) to the LLM for judgment.
+            const remaining = store!.getFactsBySection(mind, section);
+            const stillExcess = remaining.length - SECTION_CEILING;
+            if (stillExcess > 0) {
+              // Send the bottom 80 by confidence for LLM review
+              const batch = [...remaining]
+                .sort((a, b) => a.confidence - b.confidence)
+                .slice(0, Math.min(80, remaining.length));
+              const idsToArchive = await runSectionPruningPass(section, batch, SECTION_CEILING, config);
+              const validIds = new Set(batch.map(f => f.id));
               const safeToArchive = idsToArchive.filter(id => validIds.has(id));
               for (const id of safeToArchive) {
                 store!.archiveFact(id);
+                archived++;
               }
-              if (safeToArchive.length > 0 && ctx.hasUI) {
-                ctx.ui.notify(
-                  `Memory pruned ${safeToArchive.length} stale facts from ${section} section (was ${count}, ceiling ${SECTION_CEILING})`,
-                  "info"
-                );
-              }
+            }
+
+            if (archived > 0 && ctx.hasUI) {
+              ctx.ui.notify(
+                `Memory pruned ${archived} facts from ${section} (was ${count}, ceiling ${SECTION_CEILING})`,
+                "info",
+              );
             }
           }
         } catch {
@@ -1738,7 +1777,7 @@ export default function (pi: ExtensionAPI) {
           sessionFilesEdited.push(shortPath);
         }
 
-        // Store as "Recent Work" fact (fire-and-forget, decay in ≤5 days)
+        // Store as "Recent Work" fact with fast decay (halfLife=2d)
         const mind = activeMind();
         try {
           store.storeFact({
@@ -1746,6 +1785,7 @@ export default function (pi: ExtensionAPI) {
             section: "Recent Work" as any,
             content: factContent,
             source: "tool-call",
+            decayProfile: "recent_work",
           });
         } catch {
           // Best effort — non-blocking

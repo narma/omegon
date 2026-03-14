@@ -619,6 +619,8 @@ export class FactStore {
                 content: action.content,
                 source: "extraction",
                 session,
+                // Recent Work facts get a fast-decay profile (halfLife=2d, no reinforcement extension)
+                decayProfile: action.section === "Recent Work" ? "recent_work" : undefined,
               });
               if (!result.duplicate) newFactIds.push(result.id);
               added++;
@@ -642,6 +644,7 @@ export class FactStore {
                 content: action.content,
                 source: "extraction",
                 session,
+                decayProfile: action.section === "Recent Work" ? "recent_work" : undefined,
                 supersedes: action.id,
               });
               if (!result.duplicate) newFactIds.push(result.id);
@@ -674,6 +677,36 @@ export class FactStore {
     ).run(now, version, id);
     // Clean up orphaned vector (CASCADE only fires on DELETE, not status change)
     this.db.prepare(`DELETE FROM facts_vec WHERE fact_id = ?`).run(id);
+  }
+
+  /**
+   * Sweep facts that have decayed below their profile's minimum confidence.
+   * Archives them in bulk. Returns the number of facts archived.
+   *
+   * This converts passive decay (lower confidence on read) into active archival.
+   * Without this sweep, decayed facts remain status='active' forever — inflating
+   * fact counts, consuming vector storage, and cluttering section ceiling checks.
+   */
+  sweepDecayedFacts(mind: string): number {
+    const facts = this.getActiveFacts(mind);
+    const now = Date.now();
+    let swept = 0;
+
+    for (const fact of facts) {
+      const profile = resolveDecayProfile(fact.decay_profile);
+      const lastReinforced = new Date(fact.last_reinforced).getTime();
+      const daysSince = (now - lastReinforced) / 86_400_000;
+      const effectiveRate = profile.baseRate /
+        (1 + profile.reinforcementFactor * Math.log(1 + fact.reinforcement_count));
+      const confidence = fact.confidence * Math.exp(-effectiveRate * daysSince);
+
+      if (confidence <= profile.minimumConfidence) {
+        this.archiveFact(fact.id);
+        swept++;
+      }
+    }
+
+    return swept;
   }
 
   /** Archive all facts from a specific session */
