@@ -358,7 +358,7 @@ export function classifyModelTier(modelId: string): { tier: Exclude<ModelTier, "
  * Returns candidates sorted by TIER_RULES preference order (earlier rules = preferred).
  * Within the same rule, models are sorted by version descending (newest first).
  */
-function matchTierUniversal(
+export function matchTierUniversal(
   models: RegistryModel[],
   tier: Exclude<ModelTier, "local">,
 ): Array<{ model: RegistryModel; rule: TierRule }> {
@@ -873,4 +873,120 @@ export function getDefaultPolicy(): ProviderRoutingPolicy {
     cheapCloudPreferredOverLocal: false,
     requirePreflightForLargeRuns: true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Provider summary — startup diagnostics
+// ---------------------------------------------------------------------------
+
+export type TierStatus = "operational" | "degraded" | "unavailable";
+
+export interface TierSummary {
+  tier: Exclude<ModelTier, "local">;
+  role: CapabilityRole;
+  status: TierStatus;
+  /** Best candidate for this tier, if any */
+  topCandidate?: { provider: string; modelId: string };
+  /** Total number of candidates across all providers */
+  candidateCount: number;
+}
+
+export interface ProviderSummary {
+  /** Providers with auth configured */
+  authProviders: string[];
+  /** Providers found in registry but no auth */
+  unauthProviders: string[];
+  /** Per-tier operational status */
+  tiers: TierSummary[];
+  /** Human-readable one-liner */
+  headline: string;
+  /** Degradation level (0=nothing, 1=local-only, 2=partial-cloud, 3=full) */
+  level: number;
+}
+
+/**
+ * Build a startup provider summary showing which tiers are operational,
+ * degraded, or unavailable based on current auth and model availability.
+ *
+ * @param allModels - ALL models from registry (getAll), used to identify unauth'd providers
+ * @param viableModels - Auth'd + non-deprecated models (getViableModels output)
+ * @param policy - Routing policy for provider ordering
+ */
+export function buildProviderSummary(
+  allModels: RegistryModel[],
+  viableModels: RegistryModel[],
+  policy: ProviderRoutingPolicy = getDefaultPolicy(),
+): ProviderSummary {
+  // Identify auth'd vs unauth'd providers
+  const allProviders = new Set(allModels.map((m) => m.provider));
+  const viableProviders = new Set(viableModels.map((m) => m.provider));
+  const authProviders = [...viableProviders].filter((p) => p !== "local").sort();
+  const unauthProviders = [...allProviders].filter((p) => !viableProviders.has(p) && p !== "local").sort();
+
+  // Build per-tier status
+  const tierDefs: Array<{ tier: Exclude<ModelTier, "local">; role: CapabilityRole }> = [
+    { tier: "gloriana", role: "archmagos" },
+    { tier: "victory", role: "magos" },
+    { tier: "retribution", role: "adept" },
+  ];
+
+  const tiers: TierSummary[] = tierDefs.map(({ tier, role }) => {
+    const candidates = matchTierUniversal(viableModels, tier);
+    const profile = getDefaultCapabilityProfile(viableModels);
+    const resolution = resolveCapabilityRole(role, viableModels, policy, profile);
+
+    let status: TierStatus;
+    let topCandidate: TierSummary["topCandidate"];
+
+    if (resolution.ok && resolution.selected) {
+      status = "operational";
+      topCandidate = {
+        provider: resolution.selected.candidate.provider,
+        modelId: resolution.selected.candidate.id,
+      };
+    } else if (candidates.length > 0) {
+      // Candidates exist but blocked by policy
+      status = "degraded";
+      topCandidate = {
+        provider: candidates[0].model.provider,
+        modelId: candidates[0].model.id,
+      };
+    } else {
+      status = "unavailable";
+    }
+
+    return { tier, role, status, topCandidate, candidateCount: candidates.length };
+  });
+
+  // Determine overall level
+  const operational = tiers.filter((t) => t.status === "operational").length;
+  const hasLocal = viableModels.some((m) => m.provider === "local");
+  let level: number;
+  if (authProviders.length === 0 && !hasLocal) {
+    level = 0;
+  } else if (authProviders.length === 0 && hasLocal) {
+    level = 1;
+  } else if (operational < 3) {
+    level = 2;
+  } else {
+    level = 3;
+  }
+
+  // Build headline
+  let headline: string;
+  if (level === 0) {
+    headline = "No providers configured. Run /bootstrap to set up API keys.";
+  } else if (level === 1) {
+    headline = "Local inference only — no cloud providers configured.";
+  } else {
+    const opTiers = tiers.filter((t) => t.status === "operational").map((t) => ROLE_DISPLAY_LABELS[t.role]);
+    const unavail = tiers.filter((t) => t.status === "unavailable").map((t) => ROLE_DISPLAY_LABELS[t.role]);
+    if (unavail.length === 0) {
+      headline = `All tiers operational via ${authProviders.join(", ")}.`;
+    } else {
+      headline = `${opTiers.join(", ")} operational. ${unavail.join(", ")} unavailable.`;
+    }
+  }
+
+  return { authProviders, unauthProviders, tiers, headline, level };
 }

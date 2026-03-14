@@ -29,6 +29,8 @@ import {
   getTierDisplayLabel,
   getDefaultPolicy,
   getViableModels,
+  buildProviderSummary,
+  matchTierUniversal as matchTierUniversalExport,
   clampThinkingLevel,
   type ModelTier,
   type RegistryModel,
@@ -273,6 +275,85 @@ export default function (pi: ExtensionAPI) {
       `${icon} Effort: ${state.name} (${state.driver}/${effectiveThinking})${modelNote}`,
       restoredModel || switchedDriver || retainedModel ? "info" : "warning",
     );
+
+    // Provider summary — show what tiers are available
+    try {
+      const allModels = ctx.modelRegistry.getAll() as unknown as RegistryModel[];
+      const viable = getViableModels(ctx.modelRegistry);
+      const policy = sharedState.routingPolicy ?? getDefaultPolicy();
+      const summary = buildProviderSummary(allModels, viable, policy);
+
+      if (summary.level === 0) {
+        ctx.ui.notify("⚠ No providers configured. Run /bootstrap to set up API keys.", "warning");
+      } else if (summary.level < 3) {
+        const parts: string[] = [];
+        for (const t of summary.tiers) {
+          const icon = t.status === "operational" ? "●" : t.status === "degraded" ? "◐" : "○";
+          const detail = t.topCandidate ? ` ${t.topCandidate.provider}/${t.topCandidate.modelId}` : "";
+          parts.push(`${icon} ${getTierDisplayLabel(t.tier)}${detail}`);
+        }
+        ctx.ui.notify(`Routing: ${parts.join("  ")}`, "info");
+      }
+      // level 3 (all operational) = silent — no need to clutter startup
+    } catch {
+      // Non-critical — don't break startup
+    }
+  });
+
+  // ── /providers command ──
+
+  pi.registerCommand("providers", {
+    description: "Show provider auth status and tier routing summary",
+    handler: async (_args, ctx) => {
+      const allModels = ctx.modelRegistry.getAll() as unknown as RegistryModel[];
+      const viable = getViableModels(ctx.modelRegistry);
+      const policy = sharedState.routingPolicy ?? getDefaultPolicy();
+      const summary = buildProviderSummary(allModels, viable, policy);
+
+      const lines: string[] = [];
+
+      // Auth status
+      if (summary.authProviders.length > 0) {
+        lines.push(`**Auth configured:** ${summary.authProviders.join(", ")}`);
+      }
+      if (summary.unauthProviders.length > 0) {
+        const top = summary.unauthProviders.slice(0, 8);
+        const more = summary.unauthProviders.length > 8 ? ` (+${summary.unauthProviders.length - 8} more)` : "";
+        lines.push(`**No auth:** ${top.join(", ")}${more}`);
+      }
+      lines.push("");
+
+      // Tier table
+      lines.push("| Tier | Status | Provider | Model |");
+      lines.push("|------|--------|----------|-------|");
+      for (const t of summary.tiers) {
+        const icon = t.status === "operational" ? "●" : t.status === "degraded" ? "◐" : "○";
+        const status = `${icon} ${t.status}`;
+        const provider = t.topCandidate?.provider ?? "—";
+        const model = t.topCandidate?.modelId ?? "—";
+        lines.push(`| ${getTierDisplayLabel(t.tier)} | ${status} | ${provider} | ${model} |`);
+      }
+      lines.push("");
+
+      // Candidate detail
+      for (const t of summary.tiers) {
+        if (t.candidateCount > 1) {
+          const matches = matchTierUniversalExport(viable, t.tier);
+          const candidateList = matches.slice(0, 5).map((m) => `${m.model.provider}/${m.model.id}`).join(", ");
+          const more = matches.length > 5 ? ` (+${matches.length - 5} more)` : "";
+          lines.push(`**${getTierDisplayLabel(t.tier)} candidates:** ${candidateList}${more}`);
+        }
+      }
+
+      lines.push("");
+      lines.push(`**Headline:** ${summary.headline}`);
+
+      pi.sendMessage({
+        customType: "provider-summary",
+        content: lines.join("\n"),
+        display: true,
+      });
+    },
   });
 
   // ── /effort command ──
