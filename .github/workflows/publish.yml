@@ -70,7 +70,7 @@ jobs:
       - name: Install pi-mono publish dependencies
         run: |
           cd vendor/pi-mono
-          npm ci --ignore-scripts
+          npm install --ignore-scripts
 
       - name: Publish pi-mono fork packages
         env:
