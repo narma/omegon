@@ -471,17 +471,14 @@ function restartOmegon(): never {
 		"done",
 		// Extra grace period for fd/terminal release
 		"sleep 0.3",
-		// Hard terminal reset: RIS (Reset to Initial State) clears ALL protocol
-		// state — kitty keyboard protocol, bracketed paste, mouse tracking,
-		// modifyOtherKeys, SGR, scroll regions, alternate screen, everything.
-		// This is what `reset` does internally and has worked since the VT100.
-		"printf '\\033c' 2>/dev/null",
+		// Hard terminal reset via /dev/tty — avoids stdout buffering that
+		// bleeds into the exec'd process. RIS clears all protocol state
+		// (kitty keyboard protocol, bracketed paste, mouse tracking, etc.).
+		// Do NOT use `reset` here — it outputs terminfo init strings to
+		// stdout which the new TUI interprets as input (causing stray
+		// characters and double renders).
+		"printf '\\033c' >/dev/tty 2>/dev/null",
 		"stty sane 2>/dev/null",
-		// `reset` as belt-and-suspenders — reinitializes terminfo state.
-		// Some terminals (Kitty) maintain protocol state that RIS alone
-		// doesn't fully clear; reset queries terminfo and sends the full
-		// initialization sequence for the current TERM.
-		"reset 2>/dev/null",
 		// Clean up this script
 		`rm -f "${script}"`,
 		// Replace this shell with new omegon

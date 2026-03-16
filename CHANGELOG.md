@@ -3,6 +3,11 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.7.7] - 2026-03-16
+
+### Fixed
+- Restart script no longer runs `reset` before exec'ing the new process — `reset` outputs terminfo init strings to stdout which the new TUI interprets as keyboard input, causing stray characters ("j") and double "press any key" prompts. RIS via `/dev/tty` + `stty sane` is sufficient.
+
 ## [0.7.6] - 2026-03-16
 
 ### Fixed
