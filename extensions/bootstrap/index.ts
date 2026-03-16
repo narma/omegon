@@ -801,7 +801,10 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 	const statuses = checkAll();
 	const missing = statuses.filter((s) => !s.available);
 
-	ctx.ui.notify(formatReport(statuses));
+	// Emit the dep report as a permanent warning-level message so it is never
+	// replaced by subsequent showStatus() calls (showWarning adds nodes to
+	// chatContainer without updating lastStatusText, breaking the deduplication chain).
+	ctx.ui.notify(formatReport(statuses), "warning");
 
 	if (missing.length === 0 && !needsOperatorProfileSetup(getConfigRoot(ctx))) {
 		markDone();
@@ -809,7 +812,7 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 	}
 
 	if (!ctx.hasUI || !ctx.ui) {
-		ctx.ui.notify("\nRun individual install commands above, or use `/bootstrap install` to install all core + recommended deps.");
+		ctx.ui.notify("\nRun individual install commands above, or use `/bootstrap install` to install all core + recommended deps.", "warning");
 		await ensureOperatorProfile(pi, ctx);
 		return;
 	}
@@ -825,6 +828,7 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 			`${coreMissing.length} missing: ${names}`,
 		);
 		if (proceed) {
+			ctx.ui.notify(`Installing ${coreMissing.length} core dep${coreMissing.length > 1 ? "s" : ""}… (this may take a while)`, "info");
 			await installDeps(ctx, coreMissing);
 		}
 	}
@@ -836,14 +840,19 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 			`${recMissing.length} missing: ${names}`,
 		);
 		if (proceed) {
+			ctx.ui.notify(`Installing ${recMissing.length} recommended dep${recMissing.length > 1 ? "s" : ""}… (this may take a while)`, "info");
 			await installDeps(ctx, recMissing);
 		}
 	}
 
+	// Collect remaining summary lines and emit as a single notify at the end
+	// to avoid each line replacing the previous via showStatus() deduplication.
+	const summary: string[] = [];
+
 	if (optMissing.length > 0) {
-		ctx.ui.notify(
-			`\n${optMissing.length} optional dep${optMissing.length > 1 ? "s" : ""} not installed: ${optMissing.map((s) => s.dep.name).join(", ")}.\n`
-			+ "Install individually when needed — see `/bootstrap status` for commands.",
+		summary.push(
+			`${optMissing.length} optional dep${optMissing.length > 1 ? "s" : ""} not installed: ${optMissing.map((s) => s.dep.name).join(", ")}.`
+			+ "\nInstall individually when needed — see `/bootstrap status` for commands.",
 		);
 	}
 
@@ -853,13 +862,12 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 		(r: AuthResult) => r.status === "ok" && r.provider !== "local",
 	);
 	if (!hasAnyCloudKey) {
-		ctx.ui.notify(
-			"\n🔑 **No cloud API keys detected.**\n" +
+		summary.push(
+			"🔑 **No cloud API keys detected.**\n" +
 			"Omegon needs at least one provider key to function. The fastest options:\n" +
 			"  • Anthropic: `/secrets configure ANTHROPIC_API_KEY` (get key at console.anthropic.com)\n" +
 			"  • OpenAI: `/secrets configure OPENAI_API_KEY` (get key at platform.openai.com)\n" +
-			"  • GitHub Copilot: `/login github` (requires Copilot subscription)\n",
-			"warning"
+			"  • GitHub Copilot: `/login github` (requires Copilot subscription)",
 		);
 	}
 
@@ -869,18 +877,20 @@ async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<
 	const stillMissing = recheck.filter((s) => !s.available && (s.dep.tier === "core" || s.dep.tier === "recommended"));
 
 	if (stillMissing.length === 0 && hasAnyCloudKey) {
-		ctx.ui.notify("\n🎉 Setup complete! All core and recommended dependencies are available.");
+		summary.push("🎉 Setup complete! All core and recommended dependencies are available.");
 		markDone();
 	} else if (stillMissing.length === 0) {
-		ctx.ui.notify(
-			"\n✅ Dependencies installed. Configure an API key (see above) to start using Omegon.",
-		);
+		summary.push("✅ Dependencies installed. Configure an API key (see above) to start using Omegon.");
 		markDone();
 	} else {
-		ctx.ui.notify(
-			`\n⚠️  ${stillMissing.length} dep${stillMissing.length > 1 ? "s" : ""} still missing. `
+		summary.push(
+			`⚠️  ${stillMissing.length} dep${stillMissing.length > 1 ? "s" : ""} still missing. `
 			+ "Run `/bootstrap` again after installing manually.",
 		);
+	}
+
+	if (summary.length > 0) {
+		ctx.ui.notify(summary.join("\n\n"), "info");
 	}
 }
 
@@ -1025,11 +1035,10 @@ export function runAsync(
 			resolve(code);
 		};
 
-		// Heartbeat — fires every heartbeatMs while the process is running.
-		const heartbeat = setInterval(() => {
-			elapsedSec += heartbeatMs / 1000;
-			onLine(`   ⏳ still running… (${elapsedSec}s)`);
-		}, heartbeatMs);
+		// Heartbeat intentionally omitted — callers that stream output via onLine
+		// already give the user live feedback, making a separate "still running"
+		// tick redundant. The timeout guard below still enforces the 10-min cap.
+		const heartbeat = setInterval(() => { /* no-op */ }, heartbeatMs);
 
 		// Forward captured lines from both streams.
 		const attachStream = (stream: NodeJS.ReadableStream | null) => {
@@ -1111,6 +1120,15 @@ async function installDeps(ctx: CommandContext, deps: DepStatus[]): Promise<void
 			}
 		}
 
+		// Stream install output: consecutive notify("info") calls update the
+		// same text node in place via showStatus() deduplication. A final
+		// notify("warning") pins the completed output permanently.
+		let output = `${step} 📦 Installing ${dep.name}…`;
+		const stream = (line: string) => {
+			output += `\n${line}`;
+			ctx.ui.notify(output, "info");
+		};
+
 		// Check prerequisites — re-verify availability live (not from stale array)
 		if (dep.requires?.length) {
 			const unmet = dep.requires.filter((reqId) => {
@@ -1118,29 +1136,20 @@ async function installDeps(ctx: CommandContext, deps: DepStatus[]): Promise<void
 				return reqDep ? !reqDep.check() : false;
 			});
 			if (unmet.length > 0) {
-				ctx.ui.notify(`\n${step} ⚠️  Skipping ${dep.name} — requires ${unmet.join(", ")} (not yet available)`);
+				ctx.ui.notify(`${step} ⚠️  Skipping ${dep.name} — requires ${unmet.join(", ")} (not yet available)`, "info");
 				continue;
 			}
 		}
 
 		const cmd = bestInstallCmd(dep);
 		if (!cmd) {
-			ctx.ui.notify(`\n${step} ⚠️  No install command available for ${dep.name} on this platform`);
+			ctx.ui.notify(`${step} ⚠️  No install command available for ${dep.name} on this platform`, "info");
 			continue;
 		}
 
-		ctx.ui.notify(`\n${step} 📦 Installing ${dep.name}…\n   → \`${cmd}\``);
+		stream(`   → \`${cmd}\``);
 
-		// Collect output lines — show progress inline but also keep them
-		// so we can dump a readable block on failure.
-		const outputLines: string[] = [];
-		const exitCode = await runAsync(
-			cmd,
-			(line) => {
-				outputLines.push(line);
-				ctx.ui.notify(line);
-			},
-		);
+		const exitCode = await runAsync(cmd, stream);
 
 		// Patch PATH immediately after installing bootstrapping deps so the rest
 		// of the install sequence can find them without a new shell.
@@ -1152,25 +1161,20 @@ async function installDeps(ctx: CommandContext, deps: DepStatus[]): Promise<void
 		}
 
 		if (exitCode === 0 && dep.check()) {
-			ctx.ui.notify(`${step} ✅ ${dep.name} installed successfully`);
+			output += `\n${step} ✅ ${dep.name} installed successfully`;
 		} else if (exitCode === 124) {
-			ctx.ui.notify(`${step} ❌ ${dep.name} install timed out (10 min limit)`);
+			output += `\n${step} ❌ ${dep.name} install timed out (10 min limit)`;
+		} else if (exitCode === 0) {
+			output += `\n${step} ⚠️  Command succeeded but ${dep.name} not found on PATH — you may need to open a new shell.`;
 		} else {
-			// Dump the last N lines of output so the operator can see what went wrong
-			const tail = outputLines.slice(-20).join("\n");
-			const status = exitCode === 0
-				? `Command succeeded but ${dep.name} not found on PATH`
-				: `Failed to install ${dep.name} (exit ${exitCode})`;
-			const block = [
-				`${step} ❌ ${status}`,
-				"",
-				"Output (last 20 lines):",
-				"```",
-				tail,
-				"```",
-				...(dep.url ? [`Manual install: ${dep.url}`] : []),
-			].join("\n");
-			ctx.ui.notify(block);
+			output += `\n${step} ❌ Failed to install ${dep.name} (exit ${exitCode})`;
+			const hints = dep.install.filter((o) => o.cmd !== cmd);
+			if (hints.length > 0) output += `\n   Alternative: \`${hints[0]!.cmd}\``;
+			if (dep.url) output += `\n   Manual install: ${dep.url}`;
 		}
+
+		// Pin the completed output permanently as warning so subsequent
+		// showStatus() calls cannot overwrite it.
+		ctx.ui.notify(output, "warning");
 	}
 }

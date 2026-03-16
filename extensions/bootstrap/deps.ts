@@ -212,6 +212,20 @@ export const DEPS: Dep[] = [
 
 	// --- Recommended: common workflows ---
 	{
+		id: "vault",
+		name: "Vault CLI",
+		purpose: "HashiCorp Vault authentication status checking and secret management",
+		usedBy: ["01-auth"],
+		tier: "recommended",
+		check: () => hasCmd("vault"),
+		install: [
+			{ platform: "darwin", cmd: "brew install hashicorp/tap/vault" },
+			{ platform: "linux", cmd: "brew install hashicorp/tap/vault" },
+			{ platform: "linux", cmd: "wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --yes --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list && sudo apt update && sudo apt install -y vault" },
+		],
+		url: "https://developer.hashicorp.com/vault/install",
+	},
+	{
 		id: "gh",
 		name: "GitHub CLI",
 		purpose: "GitHub authentication, PR creation, issue management",
