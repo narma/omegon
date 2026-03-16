@@ -32,43 +32,22 @@ jobs:
       - name: Upgrade npm for trusted publishing
         run: npm install -g npm@^11.5.1
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Check npm version
-        run: npm --version
-
-      - name: Check if version changed or publish needed
+      - name: Check if publish needed
         id: check
         run: |
           LOCAL_VER=$(node -p "require('./package.json').version")
           NPM_VER=$(npm view omegon version 2>/dev/null || echo "0.0.0")
-          echo "local=$LOCAL_VER" >> $GITHUB_OUTPUT
-          echo "npm=$NPM_VER" >> $GITHUB_OUTPUT
+          echo "version=$LOCAL_VER" >> $GITHUB_OUTPUT
           if [ "$LOCAL_VER" = "$NPM_VER" ]; then
-            NEW_VER=$(npx semver "$LOCAL_VER" -i patch)
-            echo "version=$NEW_VER" >> $GITHUB_OUTPUT
-            echo "bump=true" >> $GITHUB_OUTPUT
-            echo "Will bump: $LOCAL_VER → $NEW_VER"
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Version $LOCAL_VER already published — skipping"
           else
-            echo "version=$LOCAL_VER" >> $GITHUB_OUTPUT
-            echo "bump=false" >> $GITHUB_OUTPUT
+            echo "skip=false" >> $GITHUB_OUTPUT
             echo "Publishing: $LOCAL_VER (npm has $NPM_VER)"
           fi
 
-      - name: Bump version if needed
-        if: steps.check.outputs.bump == 'true'
-        run: |
-          npm version ${{ steps.check.outputs.version }} --no-git-tag-version
-          git add package.json
-          git commit -m "chore(release): ${{ steps.check.outputs.version }} [skip ci]"
-          git tag "v${{ steps.check.outputs.version }}"
-          git push origin main --tags
-
-      - name: Tag if not bumped
-        if: steps.check.outputs.bump == 'false'
+      - name: Tag release
+        if: steps.check.outputs.skip == 'false'
         run: |
           TAG="v${{ steps.check.outputs.version }}"
           if ! git tag --list "$TAG" | grep -q "$TAG"; then
@@ -77,21 +56,26 @@ jobs:
           fi
 
       - name: Install pi-mono publish dependencies
+        if: steps.check.outputs.skip == 'false'
         run: |
           cd vendor/pi-mono
           rm -f package-lock.json
           npm install --ignore-scripts
 
       - name: Publish pi-mono fork packages
+        if: steps.check.outputs.skip == 'false'
         run: bash scripts/publish-pi-mono.sh
 
       - name: Install Omegon publish dependencies
+        if: steps.check.outputs.skip == 'false'
         run: npm install --ignore-scripts
 
       - name: Publish omegon
+        if: steps.check.outputs.skip == 'false'
         run: npm publish --access public --provenance
 
       - name: Verify tarball is downloadable
+        if: steps.check.outputs.skip == 'false'
         run: |
           VERSION=${{ steps.check.outputs.version }}
           TARBALL_URL="https://registry.npmjs.org/omegon/-/omegon-${VERSION}.tgz"
