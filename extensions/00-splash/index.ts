@@ -282,9 +282,151 @@ class BrandedHeader implements Component {
 // ---------------------------------------------------------------------------
 // Extension entry point
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Fullscreen splash replay component (easter egg)
+// ---------------------------------------------------------------------------
+class SplashReplay implements Component {
+  private tui: TUI;
+  private lines: string[];
+  private frame = 0;
+  private frameMap: ReturnType<typeof assignUnlockFrames>;
+  private noiseSeed = (Date.now() * 7) & 0x7fffffff;
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private holdCount = 0;
+  private done: () => void;
+  private markRows: number;
+  private logoWidth: number;
+  private cachedLines: string[] | undefined;
+  private cachedWidth: number | undefined;
+
+  constructor(tui: TUI, done: () => void, lines: string[], markRows: number, logoWidth: number) {
+    this.tui = tui;
+    this.done = done;
+    this.lines = lines;
+    this.markRows = markRows;
+    this.logoWidth = logoWidth;
+    this.frameMap = assignUnlockFrames(lines, TOTAL_FRAMES, Date.now() & 0xffff);
+  }
+
+  start(): void {
+    this.timer = setInterval(() => this.tick(), FRAME_INTERVAL_MS);
+  }
+
+  private tick(): void {
+    this.frame++;
+    this.cachedLines = undefined;
+
+    if (this.frame >= TOTAL_FRAMES) {
+      this.holdCount++;
+      if (this.holdCount >= HOLD_FRAMES + 12) {
+        this.dispose();
+        this.done();
+        return;
+      }
+    }
+
+    this.tui.requestRender();
+  }
+
+  render(width: number): string[] {
+    if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
+
+    const height = process.stdout.rows ?? 24;
+    const lines: string[] = [];
+
+    const logoFrame = renderFrame(
+      Math.min(this.frame, TOTAL_FRAMES),
+      this.lines,
+      this.frameMap,
+      this.noiseSeed,
+      this.markRows,
+    );
+
+    // Vertically centre
+    const topPad = Math.max(0, Math.floor((height - logoFrame.length) / 2));
+    for (let i = 0; i < topPad; i++) lines.push("");
+
+    // Horizontally centre
+    const pad = Math.max(0, Math.floor((width - this.logoWidth) / 2));
+    const padStr = " ".repeat(pad);
+    for (const row of logoFrame) {
+      lines.push(truncateToWidth(padStr + row, width));
+    }
+
+    // Fill remaining
+    const remaining = height - lines.length;
+    for (let i = 0; i < remaining; i++) lines.push("");
+
+    this.cachedLines = lines;
+    this.cachedWidth = width;
+    return lines;
+  }
+
+  handleInput(input: string): boolean {
+    // Any key dismisses early
+    if (input) {
+      this.dispose();
+      this.done();
+      return true;
+    }
+    return false;
+  }
+
+  invalidate(): void {
+    this.cachedLines = undefined;
+    this.cachedWidth = undefined;
+  }
+
+  dispose(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Extension entry point
+// ---------------------------------------------------------------------------
 export default function splashExtension(pi: ExtensionAPI): void {
   // Initialise shared state immediately so other extensions can write to it
   getSharedState();
+
+  // Easter egg: /splash replays the animation fullscreen
+  pi.registerCommand("splash", {
+    description: "Replay the Omegon splash animation",
+    handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
+      const termWidth = process.stdout.columns ?? 80;
+      const termRows = process.stdout.rows ?? 24;
+
+      // Pick the best art that fits
+      let artLines: string[];
+      let markRows: number;
+      let logoWidth: number;
+      const canFitFull = termWidth >= LINE_WIDTH + 4 && termRows >= LOGO_LINES.length + 4;
+      const canFitCompact = termWidth >= COMPACT_LINE_WIDTH + 4 && termRows >= COMPACT_LOGO_LINES.length + 4;
+      if (canFitFull) {
+        artLines = LOGO_LINES;
+        markRows = 31;
+        logoWidth = LINE_WIDTH;
+      } else if (canFitCompact) {
+        artLines = COMPACT_LOGO_LINES;
+        markRows = COMPACT_MARK_ROWS;
+        logoWidth = COMPACT_LINE_WIDTH;
+      } else {
+        artLines = WORDMARK_LINES;
+        markRows = 0;
+        logoWidth = LINE_WIDTH;
+      }
+
+      await ctx.ui.custom<void>((tui, _theme, _kb, done) => {
+        const replay = new SplashReplay(tui, () => done(undefined), artLines, markRows, logoWidth);
+        replay.start();
+        return replay;
+      });
+    },
+  });
 
   let version = "0.0.0";
 
