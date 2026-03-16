@@ -114,6 +114,13 @@ function styledBranch(b: string, isCurrent: boolean, theme: Theme): string {
 /**
  * Find annotation for a branch from design nodes.
  */
+function compactAnnotationTitle(title: string | undefined): string {
+  if (!title) return "";
+  const trimmed = title.trim();
+  const split = trimmed.split(/\s+[—–:]\s+/, 2);
+  return split[0] || trimmed;
+}
+
 function branchAnnotation(
   b: string,
   designNodes: Array<{ branches?: string[]; title: string }> | undefined,
@@ -122,7 +129,8 @@ function branchAnnotation(
   if (!designNodes) return "";
   const node = designNodes.find((n) => n.branches?.includes(b));
   if (!node) return "";
-  return "  " + theme.fg("dim", T.ann + node.title);
+  const title = compactAnnotationTitle(node.title);
+  return title ? "  " + theme.fg("dim", T.ann + title) : "";
 }
 
 /**

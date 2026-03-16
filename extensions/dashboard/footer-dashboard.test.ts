@@ -88,12 +88,33 @@ describe("dashboard recovery state", () => {
     );
     footer.setContext(makeContext() as any);
 
-    const [line] = footer.render(160);
-    // Compact mode shows only the terse action badge + provider/model, not the full error string.
-    assert.match(line, /↺ went offline/);
-    assert.match(line, /anthropic\/claude-sonnet-4-5/);
-    assert.match(line, /anthropic 1m/);
-    assert.doesNotMatch(line, /Anthropic rate limited the last assistant turn\./);
+    const lines = footer.render(160);
+    const joined = lines.join("\n");
+    // Compact mode keeps the persistent HUD and folds a terse recovery badge into the rightmost lane.
+    assert.match(joined, /↺ Recovery · went offline/);
+    assert.match(joined, /anthropic 1m/);
+    assert.doesNotMatch(joined, /rate_limit/);
+    assert.doesNotMatch(joined, /anthropic\/claude-sonnet-4-5/);
+    assert.doesNotMatch(joined, /Anthropic rate limited the last assistant turn\./);
+  });
+
+  it("suppresses stale compact recovery notices after the compact timeout", () => {
+    (sharedState as any).recovery = makeRecoveryState({
+      timestamp: Date.now() - 60_000,
+    });
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      makeFooterData() as any,
+      { mode: "compact", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(160);
+    const joined = lines.join("\n");
+    assert.doesNotMatch(joined, /Recovery/);
+    assert.doesNotMatch(joined, /went offline/);
   });
 
   it("renders raised recovery section with action, target, and cooldown", () => {
@@ -142,10 +163,11 @@ describe("dashboard recovery state", () => {
     );
     footer.setContext(makeContext() as any);
 
-    const [line] = footer.render(160);
-    assert.match(line, /⚠ escalated/, `Expected ⚠ escalated in: ${line}`);
-    assert.match(line, /\/set-model-tier/, `Expected /set-model-tier hint in: ${line}`);
-    assert.doesNotMatch(line, /↺/, `Should not use ↺ icon for escalate: ${line}`);
+    const lines = footer.render(160);
+    const joined = lines.join("\n");
+    assert.match(joined, /⚠ Recovery · escalated/, `Expected ⚠ escalated in: ${joined}`);
+    assert.match(joined, /\/set-model-tier/, `Expected /set-model-tier hint in: ${joined}`);
+    assert.doesNotMatch(joined, /↺/, `Should not use ↺ icon for escalate: ${joined}`);
   });
 
   it("omits recovery lines when no recovery state is present", () => {

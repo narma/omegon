@@ -37,6 +37,26 @@ function makeContext() {
   };
 }
 
+function hasSectionLabel(lines: string[], label: string): boolean {
+  return lines.some((line) => line.includes(label));
+}
+
+function hasVerticalDivider(line: string): boolean {
+  return line.includes("│") || line.includes("|");
+}
+
+function countVerticalDividers(line: string): number {
+  return [...line].filter((ch) => ch === "│" || ch === "|").length;
+}
+
+function hasHorizontalRule(line: string): boolean {
+  return /[-─]{6,}/.test(line);
+}
+
+function isBoxedRow(line: string): boolean {
+  return /^(│|\|) .*[ ](│|\|)$/.test(line);
+}
+
 describe("DashboardFooter raised mode polish", () => {
   beforeEach(() => {
     (sharedState as any).designTree = {
@@ -67,7 +87,7 @@ describe("DashboardFooter raised mode polish", () => {
     };
   });
 
-  it("keeps wide raised mode stacked instead of bleeding multiple sections across one row", () => {
+  it("uses a separated workspace header and contextual rail in wide raised mode", () => {
     (sharedState as any).cleave = {
       status: "dispatching",
       updatedAt: Date.now(),
@@ -83,12 +103,11 @@ describe("DashboardFooter raised mode polish", () => {
     footer.setContext(makeContext() as any);
 
     const lines = footer.render(160);
+    assert.ok(lines[0]?.includes("Design "), `expected header summary on top border; got:\n${lines.join("\n")}`);
     assert.ok(lines.some((line) => line.includes("◈ Design Tree")));
     assert.ok(lines.some((line) => line.includes("◎ Implementation")));
-    // In wide mode design tree (left col) and OpenSpec (right col) are zipped
-    // by mergeColumns — their headers land on the same output row separated by │.
-    // Verify at least one │ divider row exists (confirms two-column layout).
-    assert.ok(lines.some((line) => line.includes("│")), `expected │ divider in wide layout;\n${lines.join("\n")}`);
+    assert.ok(lines.some((line) => hasHorizontalRule(line)), `expected branch/body separator; got:\n${lines.join("\n")}`);
+    assert.ok(lines.some((line) => hasVerticalDivider(line)), `expected contextual rail divider in wide layout;\n${lines.join("\n")}`);
   });
 
   it("hides stale failed cleave state after it ages out", () => {
@@ -124,7 +143,7 @@ describe("DashboardFooter raised mode polish", () => {
     const lines = footer.render(160);
     // HUD memory section: divider line labels the section, data line uses terse "inj" label.
     // ⌗ appears only when the memory extension reports a fact count in its status text.
-    const memDivider = lines.find((l) => l.includes("── memory"));
+    const memDivider = lines.find((l) => l.includes("memory"));
     assert.ok(memDivider, `expected HUD "memory" section divider; got:\n${lines.join("\n")}`);
     const memDataLine = lines.find((line) => line.includes("inj "));
     assert.ok(memDataLine, `expected memory data line with "inj" label; got:\n${lines.join("\n")}`);
@@ -132,7 +151,7 @@ describe("DashboardFooter raised mode polish", () => {
     assert.ok(!memDataLine?.includes("hits:"));
   });
 
-  it("wide raised mode uses two-column layout — design tree full-width, recovery+cleave left, openspec right", () => {
+  it("wide raised mode keeps design primary and implementation in a narrower rail", () => {
     (sharedState as any).cleave = {
       status: "dispatching",
       updatedAt: Date.now(),
@@ -152,18 +171,13 @@ describe("DashboardFooter raised mode polish", () => {
 
     const lines = footer.render(140);
 
-    // Design tree (left col) and OpenSpec (right col) share the same merged zone —
-    // their headers are zipped into the same row by mergeColumns.
     const dtLine = lines.find((l) => l.includes("◈ Design Tree"));
     assert.ok(dtLine, `expected ◈ Design Tree line; got:\n${lines.join("\n")}`);
-    // OpenSpec header should exist somewhere in the output
     assert.ok(lines.some((l) => l.includes("◎ Implementation")), `expected ◎ Implementation line; got:\n${lines.join("\n")}`);
+    assert.ok(lines.some((l) => l.includes("⚡ Cleave")), `expected ⚡ Cleave line; got:\n${lines.join("\n")}`);
+    const dividerRow = lines.find((l) => hasVerticalDivider(l));
+    assert.ok(dividerRow, `expected a vertical divider row; got:\n${lines.join("\n")}`);
 
-    // There must be a row containing the divider (│) — confirms two-column layout
-    const dividerRow = lines.find((l) => l.includes("│"));
-    assert.ok(dividerRow, `expected a │ divider row; got:\n${lines.join("\n")}`);
-
-    // All rows must fit within the requested width
     for (const line of lines) {
       const vw = visibleWidth(line);
       assert.ok(vw <= 140, `line too wide (${vw} > 140): ${line}`);
@@ -186,7 +200,7 @@ describe("DashboardFooter raised mode polish", () => {
     footer.setContext(makeContext() as any);
 
     const lines = footer.render(120);
-    const columnRows = lines.filter((l) => l.includes("│"));
+    const columnRows = lines.filter((l) => hasVerticalDivider(l));
     assert.ok(columnRows.length > 0, "expected at least one column row");
 
     // All column rows should have the same visible width (= terminal width)
@@ -194,6 +208,34 @@ describe("DashboardFooter raised mode polish", () => {
     const allSame = widths.every((w) => w === widths[0]);
     assert.ok(allSame, `column rows have unequal widths: ${widths.join(", ")}`);
     assert.equal(widths[0], 120);
+  });
+
+  it("wide footer keeps telemetry vertically structured down to the base", () => {
+    (sharedState as any).cleave = {
+      status: "dispatching",
+      updatedAt: Date.now(),
+      children: [{ label: "task-a", status: "running" }],
+    };
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      makeFooterData() as any,
+      { mode: "raised", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(160);
+    const boxedRows = lines.filter((line) => isBoxedRow(line));
+    const footerStart = boxedRows.findIndex((line) => line.includes("context") && line.includes("models"));
+    assert.ok(footerStart >= 0, `expected telemetry footer start row; got:\n${lines.join("\n")}`);
+    const footerRows = boxedRows.slice(footerStart);
+    assert.ok(footerRows.length >= 5, `expected footer rows near the base; got:\n${lines.join("\n")}`);
+
+    for (const row of footerRows) {
+      const rowSplitCount = countVerticalDividers(row);
+      assert.ok(rowSplitCount >= 3, `expected footer row to preserve inner vertical structure to the base: ${row}`);
+    }
   });
 
   it("OSC 8 hyperlinks in rendered lines do not inflate visibleWidth (regression)", () => {
@@ -313,11 +355,49 @@ describe("DashboardFooter raised mode polish", () => {
     const lines = footer.render(99);
     // Box borders use │ on left+right of each content line (2 per line max in stacked mode).
     // A column layout would produce 3+ │ chars per line. Ensure no line has more than 2.
-    const innerDividerLines = lines.filter((l) => (l.match(/│/g) ?? []).length > 2);
+    const innerDividerLines = lines.filter((l) => countVerticalDividers(l) > 2);
     assert.ok(
       innerDividerLines.length === 0,
       `narrow mode must not use inner column divider:\n${innerDividerLines.join("\n")}`,
     );
+  });
+
+  it("wide footer telemetry uses distinct context, models, memory, and system cards", () => {
+    (sharedState as any).cleave = { status: "idle", updatedAt: Date.now(), children: [] };
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      {
+        ...makeFooterData(),
+        getExtensionStatuses: () => new Map<string, string>([["memory", "Memory: 12 facts · semantic"], ["offline-driver", "🏠 OFFLINE: Devstral Small 2 24B"]]),
+      } as any,
+      { mode: "raised", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(180);
+    assert.ok(lines.some((l) => l.includes("context") && hasVerticalDivider(l) && l.includes("models") && l.includes("memory") && l.includes("system")), `expected four distinct wide telemetry cards:\n${lines.join("\n")}`);
+  });
+
+  it("wide footer card headers are sized to their columns instead of ending in ellipses", () => {
+    (sharedState as any).cleave = { status: "idle", updatedAt: Date.now(), children: [] };
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      {
+        ...makeFooterData(),
+        getExtensionStatuses: () => new Map<string, string>([["memory", "Memory: 1820 facts · semantic"], ["offline-driver", "🏠 OFFLINE: Devstral Small 2 24B"]]),
+      } as any,
+      { mode: "raised", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(180);
+    const headerLine = lines.find((l) => l.includes("context") && l.includes("models") && l.includes("memory") && l.includes("system"));
+    assert.ok(headerLine, `expected wide telemetry header row:\n${lines.join("\n")}`);
+    assert.equal(headerLine!.includes("…"), false, `expected telemetry headers to fit their columns without ellipsis:\n${lines.join("\n")}`);
   });
 
   it("pinned bottom block always contains context/model/thinking in raised mode", () => {
@@ -378,8 +458,8 @@ describe("DashboardFooter raised mode polish", () => {
 
     const lines = footer.render(140);
 
-    assert.ok(lines.some((l) => l.includes("── context")), `expected context card:\n${lines.join("\n")}`);
-    assert.ok(lines.some((l) => l.includes("── models")), `expected models card:\n${lines.join("\n")}`);
+    assert.ok(hasSectionLabel(lines, "context"), `expected context card:\n${lines.join("\n")}`);
+    assert.ok(hasSectionLabel(lines, "models"), `expected models card:\n${lines.join("\n")}`);
     assert.ok(lines.some((l) => l.includes("Driver") && l.includes("gpt-5.4")), `expected role-labeled driver line:\n${lines.join("\n")}`);
 
     const legacyStatsLines = lines.filter((l) => l.includes("Context") && l.includes("gpt-5.4") && l.includes("31%"));
@@ -405,8 +485,66 @@ describe("DashboardFooter raised mode polish", () => {
     footer.setContext(makeContext() as any);
 
     const lines = footer.render(120);
-    assert.ok(lines.some((l) => l.includes("── context") && l.includes("│") && l.includes("── models")), `expected horizontally grouped footer cards:\n${lines.join("\n")}`);
-    assert.ok(lines.some((l) => l.includes("Fallback") && l.includes("offline")), `expected fallback/offline topology line:\n${lines.join("\n")}`);
+    assert.ok(lines.some((l) => l.includes("context") && hasVerticalDivider(l) && l.includes("models")), `expected horizontally grouped footer cards:\n${lines.join("\n")}`);
+    assert.ok(lines.some((l) => l.includes("Fallback") && l.includes("Devstral Small 2 24B")), `expected fallback topology line:\n${lines.join("\n")}`);
+  });
+
+  it("collapses the workspace rail when there is no implementation, cleave, or recovery content", () => {
+    (sharedState as any).openspec = { changes: [] };
+    (sharedState as any).cleave = { status: "idle", updatedAt: Date.now(), children: [] };
+    (sharedState as any).recovery = undefined;
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      makeFooterData() as any,
+      { mode: "raised", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(160);
+    const designLine = lines.find((l) => l.includes("◈ Design Tree"));
+    assert.ok(designLine, `expected design tree line; got:\n${lines.join("\n")}`);
+    assert.ok(lines.every((l) => !l.includes("◎ Implementation")), `implementation rail should be absent when empty:\n${lines.join("\n")}`);
+    assert.ok(lines.every((l) => !l.includes("⚡ Cleave")), `cleave rail should be absent when idle:\n${lines.join("\n")}`);
+    const bodyDividerRows = lines.filter((l) => l.includes("◈ Design Tree") && l.includes("◎ Implementation"));
+    assert.equal(bodyDividerRows.length, 0, `design tree should not share a split body row when rail is empty:\n${lines.join("\n")}`);
+    assert.ok(lines.some((l) => hasHorizontalRule(l)), `expected body separator even without extra branch rows:\n${lines.join("\n")}`);
+  });
+
+  it("always separates header from body even when branch tree fits on one line", () => {
+    (sharedState as any).openspec = { changes: [] };
+    (sharedState as any).cleave = { status: "idle", updatedAt: Date.now(), children: [] };
+    (sharedState as any).recovery = undefined;
+    (sharedState as any).designTree = {
+      nodeCount: 2,
+      decidedCount: 1,
+      exploringCount: 1,
+      implementingCount: 0,
+      implementedCount: 0,
+      blockedCount: 0,
+      deferredCount: 0,
+      openQuestionCount: 0,
+      focusedNode: null,
+      implementingNodes: [],
+      nodes: [],
+    };
+
+    const footer = new DashboardFooter(
+      {} as any,
+      makeTheme() as any,
+      {
+        getAvailableProviderCount: () => 2,
+        getGitBranch: () => "main",
+        getExtensionStatuses: () => new Map<string, string>(),
+      } as any,
+      { mode: "raised", turns: 0 } satisfies DashboardState,
+    );
+    footer.setContext(makeContext() as any);
+
+    const lines = footer.render(160);
+    assert.ok(lines[0]?.includes("main"), `expected main branch in top border; got:\n${lines.join("\n")}`);
+    assert.ok(lines.some((l) => hasHorizontalRule(l)), `expected header/body separator even for single-line branch tree:\n${lines.join("\n")}`);
   });
 
   it("compact hint appears in the pinned footer zone, not below duplicate generic rows", () => {
@@ -617,38 +755,39 @@ describe("buildBranchTreeLines", () => {
     assert.ok(!lines[0]!.includes("─"), "should have no connectors");
   });
 
-  it("single branch uses ─── connector", () => {
+  it("single branch uses a single-branch connector", () => {
     const lines = buildBranchTreeLines({ repoName: "omegon", currentBranch: "main", allBranches: ["main"] }, theme);
     assert.equal(lines.length, 1);
-    assert.ok(lines[0]!.includes("───"), lines[0]);
-    assert.ok(!lines[0]!.includes("┬"), lines[0]);
+    assert.ok(lines[0]!.includes("main"), lines[0]);
+    assert.ok(lines[0]!.includes("---") || lines[0]!.includes("───"), lines[0]);
+    assert.ok(!lines[0]!.includes("┬") && !lines[0]!.includes("+") , lines[0]);
   });
 
-  it("two branches use ─┬─ on first line, └─ on second", () => {
+  it("two branches use a fork on first line and a last-branch connector on second", () => {
     const lines = buildBranchTreeLines({
       repoName: "omegon",
       currentBranch: "main",
       allBranches: ["main", "feature/foo"],
     }, theme);
     assert.equal(lines.length, 2);
-    assert.ok(lines[0]!.includes("─┬─"), lines[0]);
-    assert.ok(lines[1]!.includes("└─"), lines[1]);
+    assert.ok(lines[0]!.includes("─┬─") || lines[0]!.includes("-+-"), lines[0]);
+    assert.ok(lines[1]!.includes("└─") || lines[1]!.includes("+-"), lines[1]);
     assert.ok(!lines[1]!.includes("├─"), lines[1]);
   });
 
-  it("three branches use ─┬─, ├─, └─", () => {
+  it("three branches use fork, middle, and last connectors", () => {
     const lines = buildBranchTreeLines({
       repoName: "omegon",
       currentBranch: "main",
       allBranches: ["main", "feature/foo", "feature/bar"],
     }, theme);
     assert.equal(lines.length, 3);
-    assert.ok(lines[0]!.includes("─┬─"), lines[0]);
-    assert.ok(lines[1]!.includes("├─"), lines[1]);
-    assert.ok(lines[2]!.includes("└─"), lines[2]);
+    assert.ok(lines[0]!.includes("─┬─") || lines[0]!.includes("-+-"), lines[0]);
+    assert.ok(lines[1]!.includes("├─") || lines[1]!.includes("+-"), lines[1]);
+    assert.ok(lines[2]!.includes("└─") || lines[2]!.includes("+-"), lines[2]);
   });
 
-  it("indent on continuation lines equals visibleWidth(repoName + ' ─')", () => {
+  it("indent on continuation lines matches the active renderer mode", () => {
     const vw = visibleWidth;
     const repoName = "omegon";
     const lines = buildBranchTreeLines({
@@ -656,7 +795,7 @@ describe("buildBranchTreeLines", () => {
       currentBranch: "main",
       allBranches: ["main", "feature/foo", "feature/bar"],
     }, theme);
-    const expectedIndent = vw(repoName + " ─");
+    const expectedIndent = vw(lines[0]!.includes("-+-") ? repoName + "-" : repoName + " ─");
     // Line 2 (index 1) should start with that many spaces
     const leadingSpaces = lines[1]!.match(/^( *)/)?.[1]?.length ?? 0;
     assert.equal(leadingSpaces, expectedIndent, `indent should be ${expectedIndent}, got ${leadingSpaces}`);
@@ -671,7 +810,7 @@ describe("buildBranchTreeLines", () => {
     }, theme);
     const featureLine = lines.find((l) => l.includes("feature/my-work"))!;
     assert.ok(featureLine, "feature line not found");
-    assert.ok(featureLine.includes("◈"), featureLine);
+    assert.ok(featureLine.includes("◈") || featureLine.includes("# "), featureLine);
     assert.ok(featureLine.includes("My Work Node"), featureLine);
   });
 
