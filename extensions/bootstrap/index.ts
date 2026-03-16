@@ -19,7 +19,7 @@
  *   - Never auto-installs anything — always asks or requires explicit command
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -455,18 +455,45 @@ function restartOmegon(): never {
 
 	const parts = [command, ...argvPrefix, ...userArgs].map(shellEscape);
 	const script = join(tmpdir(), `omegon-restart-${process.pid}.sh`);
+	const oldPid = process.pid;
 	writeFileSync(script, [
 		"#!/bin/sh",
-		// Wait for the old process to fully die and release the terminal
-		"sleep 0.3",
-		// Reset terminal to sane cooked state
+		// Trap signals so Ctrl+C works; ignore HUP so parent death doesn't kill us
+		"trap 'stty sane 2>/dev/null; exit 130' INT TERM",
+		"trap '' HUP",
+		// Wait for the old process to fully die (poll with timeout)
+		"_w=0",
+		`while kill -0 ${oldPid} 2>/dev/null; do`,
+		"  sleep 0.1",
+		"  _w=$((_w + 1))",
+		// Bail after ~5 seconds — proceed anyway
+		'  [ "$_w" -ge 50 ] && break',
+		"done",
+		// Extra grace period for fd/terminal release
+		"sleep 0.2",
+		// Reset terminal to sane cooked state (stty sane is sufficient;
+		// avoid printf '\\033c' which nukes scrollback history)
 		"stty sane 2>/dev/null",
-		"printf '\\033c'",
+		// Clean up this script
+		`rm -f "${script}"`,
 		// Replace this shell with new omegon
 		`exec ${parts.join(" ")}`,
 	].join("\n") + "\n", { mode: 0o755 });
 
-	// Spawn the restart script detached — it will outlive us
+	// Reset terminal to cooked mode BEFORE exiting so the restart script
+	// (and the user) aren't stuck with raw-mode terminal if something goes wrong.
+	try {
+		if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+			process.stdin.setRawMode(false);
+		}
+		// Also reset via stty — timeout guards against blocking on contested stdin
+		spawnSync("stty", ["sane"], { stdio: "inherit", timeout: 2000 });
+	} catch { /* best-effort */ }
+
+	// Spawn restart script detached (survives parent exit) but with SIGHUP
+	// ignored in the script so process-group teardown doesn't kill it.
+	// detached: true puts it in its own process group; the script's signal
+	// traps ensure Ctrl+C still works once the new omegon exec's.
 	const child = spawn("sh", [script], {
 		stdio: "inherit",
 		detached: true,

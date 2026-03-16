@@ -75,9 +75,6 @@ describe("omegon startup state migration", () => {
 		try {
 			mkdirSync(fakeBinDir, { recursive: true });
 			mkdirSync(fakeNodeModulesDir, { recursive: true });
-			mkdirSync(join(fakeInstallRoot, "skills"), { recursive: true });
-			mkdirSync(join(fakeInstallRoot, "prompts"), { recursive: true });
-			mkdirSync(join(fakeInstallRoot, "themes"), { recursive: true });
 			writeFileSync(join(fakeInstallRoot, "auth.json"), JSON.stringify({ provider: "anthropic" }));
 			writeFileSync(join(fakeInstallRoot, "settings.json"), JSON.stringify({ theme: "alpharius" }));
 			writeFileSync(cliStub, "process.stdout.write(JSON.stringify({ agentDir: process.env.PI_CODING_AGENT_DIR, argv: process.argv.slice(2) }));\n");
@@ -94,12 +91,11 @@ describe("omegon startup state migration", () => {
 			assert.equal(data.agentDir, sharedStateDir);
 			assert.ok(data.argv.includes("--extension"));
 			assert.ok(data.argv.some((value: string) => value.endsWith(fakeInstallRoot)));
-			assert.ok(data.argv.includes("--skill"));
-			assert.ok(data.argv.some((value: string) => value.endsWith(join(fakeInstallRoot, "skills"))));
-			assert.ok(data.argv.includes("--prompt-template"));
-			assert.ok(data.argv.some((value: string) => value.endsWith(join(fakeInstallRoot, "prompts"))));
-			assert.ok(data.argv.includes("--theme"));
-			assert.ok(data.argv.some((value: string) => value.endsWith(join(fakeInstallRoot, "themes"))));
+			// Discovery suppression flags — omegon injects --no-* to disable
+			// auto-discovery and only load manifest-declared resources.
+			assert.ok(data.argv.includes("--no-skills"), "expected --no-skills flag");
+			assert.ok(data.argv.includes("--no-prompt-templates"), "expected --no-prompt-templates flag");
+			assert.ok(data.argv.includes("--no-themes"), "expected --no-themes flag");
 		} finally {
 			rmSync(fakeHome, { recursive: true, force: true });
 			rmSync(fakeInstallRoot, { recursive: true, force: true });
