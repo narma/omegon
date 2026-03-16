@@ -25,6 +25,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir, tmpdir } from "node:os";
 import type { ExtensionAPI } from "@styrene-lab/pi-coding-agent";
+import { resolveOmegonSubprocess } from "../lib/omegon-subprocess.ts";
 import { checkAllProviders, type AuthResult } from "../01-auth/auth.ts";
 import { loadPiConfig } from "../lib/model-preferences.ts";
 import {
@@ -413,9 +414,47 @@ export default function (pi: ExtensionAPI) {
 			await ctx.reload();
 		},
 	});
+
+	// --- /restart: full process restart ---
+	pi.registerCommand("restart", {
+		description: "Restart Omegon (clears cache, spawns fresh process)",
+		handler: async (_args, ctx) => {
+			clearJitiCache(ctx);
+			ctx.ui.notify("Restarting Omegon…", "info");
+			await new Promise((r) => setTimeout(r, 500));
+			restartOmegon();
+		},
+	});
 }
 
 // ── /update helpers ──────────────────────────────────────────────────────
+
+/**
+ * Replace the current Omegon process with a fresh instance.
+ *
+ * Spawns a new detached Omegon process with inherited stdio, then exits
+ * the current process. The user sees the terminal briefly reset and the
+ * new session starts automatically — no manual re-launch needed.
+ */
+function restartOmegon(): never {
+	const { command, argvPrefix } = resolveOmegonSubprocess();
+	// Pass through any user-facing args from the original invocation
+	// (skip argv[0]=node, argv[1]=omegon.mjs which argvPrefix covers)
+	const userArgs = process.argv.slice(2).filter(a =>
+		// Strip injected resource flags — the new process injects its own
+		!a.startsWith("--extensions-dir=") &&
+		!a.startsWith("--themes-dir=") &&
+		!a.startsWith("--skills-dir=") &&
+		!a.startsWith("--prompts-dir=")
+	);
+	const child = spawn(command, [...argvPrefix, ...userArgs], {
+		stdio: "inherit",
+		detached: true,
+		env: process.env,
+	});
+	child.unref();
+	process.exit(0);
+}
 
 /** Run a command, collect stdout+stderr, resolve with exit code. */
 function run(
@@ -613,11 +652,15 @@ async function updateDevMode(
 	}
 	steps.push(formatVerification(verification));
 
-	// ── Step 7: clear cache + explicit restart handoff ───────────────
+	// ── Step 7: clear cache + restart ────────────────────────────────
 	const cleared = clearJitiCache(ctx);
 	if (cleared > 0) steps.push(`✓ cleared ${cleared} cached transpilations`);
-	steps.push("✓ update complete — restart Omegon now (/exit, then `omegon`) to load the rebuilt runtime");
+	steps.push("✓ update complete — restarting Omegon…");
 	ctx.ui.notify(steps.join("\n"), "info");
+
+	// Brief pause so the user sees the summary before the terminal resets
+	await new Promise((r) => setTimeout(r, 1500));
+	restartOmegon();
 }
 
 /** Installed mode: npm install -g omegon@latest → verify → cache clear → restart handoff. */
@@ -691,9 +734,12 @@ async function updateInstalledMode(
 		`✅ Updated to ${PKG}@${latestVersion}.` +
 		`\n${formatVerification(verification)}` +
 		(cleared > 0 ? `\nCleared ${cleared} cached transpilations.` : "") +
-		"\nRestart Omegon to use the new version (/exit, then omegon).",
+		"\nRestarting Omegon…",
 		"info"
 	);
+
+	await new Promise((r) => setTimeout(r, 1500));
+	restartOmegon();
 }
 
 async function interactiveSetup(pi: ExtensionAPI, ctx: CommandContext): Promise<void> {
