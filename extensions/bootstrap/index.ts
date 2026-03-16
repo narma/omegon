@@ -471,9 +471,9 @@ function restartOmegon(): never {
 		"done",
 		// Extra grace period for fd/terminal release
 		"sleep 0.2",
-		// Pop kitty keyboard protocol and bracketed paste before resetting —
-		// stty sane only resets line discipline, not terminal protocol state
-		"printf '\\033[<u\\033[>4;0m\\033[?2004l' 2>/dev/null",
+		// Full terminal protocol reset — stty sane only resets line discipline,
+		// not terminal protocol state (kitty keyboard, bracketed paste, cursor, SGR)
+		"printf '\\033[<u\\033[>4;0m\\033[?2004l\\033[?25h\\033[0m\\033[r' 2>/dev/null",
 		"stty sane 2>/dev/null",
 		// Clean up this script
 		`rm -f "${script}"`,
@@ -484,15 +484,20 @@ function restartOmegon(): never {
 	// Reset terminal to cooked mode BEFORE exiting so the restart script
 	// (and the user) aren't stuck with raw-mode terminal if something goes wrong.
 	try {
-		// Pop kitty keyboard protocol and disable bracketed paste BEFORE
-		// releasing raw mode — the terminal needs these escape sequences to
-		// stop encoding keystrokes in CSI-u format. Without this, the restart
-		// script (and any keystrokes during the wait) dump raw kitty sequences.
+		// Full terminal protocol teardown: pop kitty keyboard protocol,
+		// disable modifyOtherKeys, disable bracketed paste, show cursor,
+		// reset SGR attributes, and clear any pending scroll region.
 		process.stdout.write(
 			"\x1b[<u" +        // Pop kitty keyboard protocol flags
 			"\x1b[>4;0m" +     // Disable modifyOtherKeys
-			"\x1b[?2004l"      // Disable bracketed paste
+			"\x1b[?2004l" +    // Disable bracketed paste
+			"\x1b[?25h" +      // Show cursor
+			"\x1b[0m" +        // Reset all SGR attributes
+			"\x1b[r"           // Reset scroll region to full screen
 		);
+		// Pause stdin to prevent buffered input from being re-interpreted
+		// after raw mode is disabled (prevents Ctrl+D from closing parent shell).
+		process.stdin.pause();
 		if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
 			process.stdin.setRawMode(false);
 		}

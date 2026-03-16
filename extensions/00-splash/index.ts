@@ -295,8 +295,9 @@ export default function splashExtension(pi: ExtensionAPI): void {
     // after a version update), it renders as a one-liner below the splash.
     // This is acceptable — it only appears once per update.
     const termWidth = process.stdout.columns ?? 80;
-    if (termWidth < LINE_WIDTH + 4) {
-      // Too narrow for the ASCII art — use minimal header immediately
+    const termRows = process.stdout.rows ?? 24;
+    if (termWidth < LINE_WIDTH + 4 || termRows < LOGO_LINES.length + 6) {
+      // Too narrow or too short for the ASCII art — use minimal header immediately
       ctx.ui.setHeader(() => new BrandedHeader(version));
     } else {
       ctx.ui.setHeader((tui, _theme) => {
