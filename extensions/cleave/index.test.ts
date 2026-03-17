@@ -163,19 +163,22 @@ function runDirtyTreePreflightScenario(mode: "clean" | "volatile-only" | "checkp
     checkpoint: [dirtyCheckpointStatus, ''],
     'checkpoint-clipboard': [dirtyCheckpointStatus, ''],
     generic: [' M README.md\n'],
-    unknowns: [' M openspec/changes/other-change/tasks.md\n?? scratch/notes.md\n'],
-    // call 0: initial dirty; call 1: post-checkpoint still dirty (excluded file remains); call 2+: operator resolves via stash
-    'checkpoint-post-dirty': [dirtyCheckpointStatus, '?? docs/cleave-dirty-tree-checkpointing.md\n'],
+    // call 0: initial dirty; call 1: post-stash → clean
+    unknowns: [' M openspec/changes/other-change/tasks.md\n?? scratch/notes.md\n', ''],
+    // call 0: initial dirty; call 1: post-checkpoint still dirty (excluded file remains); call 2: stash resolves → clean
+    'checkpoint-post-dirty': [dirtyCheckpointStatus, '?? docs/cleave-dirty-tree-checkpointing.md\n', ''],
     // commit-fail: status always dirty (commit never actually happens)
     'checkpoint-commit-fail': [dirtyCheckpointStatus],
     // empty-scope: only untracked docs file — checkpoint now commits it (call 0: dirty, call 1: clean)
     'checkpoint-empty-scope': ['?? docs/cleave-dirty-tree-checkpointing.md\n', ''],
     // select modal modes
     'select-checkpoint': [dirtyCheckpointStatus, ''],
-    'select-stash-unrelated': [' M openspec/changes/other-change/tasks.md\n?? scratch/notes.md\n'],
+    // call 0: initial dirty; call 1: post-stash → clean
+    'select-stash-unrelated': [' M openspec/changes/other-change/tasks.md\n?? scratch/notes.md\n', ''],
     'select-proceed-without-cleave': [' M README.md\n'],
     'select-cancel': [' M README.md\n'],
-    'select-checkpoint-post-dirty': [dirtyCheckpointStatus, '?? docs/cleave-dirty-tree-checkpointing.md\n'],
+    // call 0: initial dirty; call 1: post-checkpoint still dirty; call 2: stash resolves → clean
+    'select-checkpoint-post-dirty': [dirtyCheckpointStatus, '?? docs/cleave-dirty-tree-checkpointing.md\n', ''],
   };
 
   const pi = {
@@ -362,7 +365,7 @@ describe("dirty-tree preflight acceptance coverage", () => {
 		const result = runDirtyTreePreflightScenario("checkpoint-post-dirty");
 		// After the first checkpoint attempt, a diagnosis update fires before the operator resolves remaining files.
 		const diagnosisUpdate = result.updates.find((u: { content: Array<{ text: string }> }) =>
-			/checkpoint committed successfully.*dirty files remain/i.test(u.content?.[0]?.text ?? "")
+			/checkpoint committed.*dirty files remain/i.test(u.content?.[0]?.text ?? "")
 		);
 		assert.ok(diagnosisUpdate, "expected post-checkpoint diagnosis naming remaining dirty paths");
 		const diagText: string = diagnosisUpdate.content[0].text;
