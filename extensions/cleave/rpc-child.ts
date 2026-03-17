@@ -231,8 +231,16 @@ export function mapEventToProgress(event: RpcChildEvent): RpcProgressUpdate | nu
 		case "pipe_closed":
 			return { kind: "error", summary: "Pipe closed" };
 
-		default:
+		case "extension_ui_request":
+			// UI requests from child extensions — not progress-relevant
 			return null;
+
+		default: {
+			// Exhaustiveness check: if a new event type is added to RpcChildEvent
+			// but not handled here, TypeScript will report an error on this line.
+			const _exhaustive: never = event;
+			return null;
+		}
 	}
 }
 

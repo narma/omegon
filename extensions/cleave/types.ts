@@ -255,10 +255,10 @@ export interface ReunificationResult {
 export type RpcChildEvent =
 	// Agent lifecycle
 	| { type: "agent_start" }
-	| { type: "agent_end"; messages?: unknown[] }
+	| { type: "agent_end"; messages: unknown[] }
 	// Turn lifecycle
 	| { type: "turn_start" }
-	| { type: "turn_end"; message?: unknown; toolResults?: unknown[] }
+	| { type: "turn_end"; message: unknown; toolResults: unknown[] }
 	// Message lifecycle
 	| { type: "message_start"; message?: unknown }
 	| { type: "message_update"; message?: unknown; assistantMessageEvent?: unknown }
@@ -272,6 +272,8 @@ export type RpcChildEvent =
 	| { type: "auto_compaction_end"; result?: unknown; aborted: boolean; willRetry: boolean; errorMessage?: string }
 	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
 	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
+	// Extension UI requests (from child extensions calling ui.select/ui.confirm)
+	| { type: "extension_ui_request"; requestId: string; extensionId: string; method: string; params: unknown }
 	// RPC command response
 	| { type: "response"; id?: string; command: string; success: boolean; data?: unknown; error?: string }
 	// Synthetic: stdout pipe closed (graceful degradation)

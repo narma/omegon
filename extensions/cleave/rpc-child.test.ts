@@ -284,7 +284,7 @@ describe("mapEventToProgress", () => {
 	});
 
 	it("maps agent_end to lifecycle", () => {
-		const result = mapEventToProgress({ type: "agent_end" });
+		const result = mapEventToProgress({ type: "agent_end", messages: [] });
 		assert.deepEqual(result, { kind: "lifecycle", summary: "Agent completed" });
 	});
 
