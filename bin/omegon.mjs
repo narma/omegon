@@ -82,6 +82,11 @@ if (process.argv.includes("--where")) {
 }
 
 process.env.PI_CODING_AGENT_DIR = stateDir;
+
+// Suppress the upstream runtime's version check and changelog display.
+// Omegon has its own /update command and version-check extension —
+// the pi-coding-agent's built-in checks leak upstream version numbers.
+process.env.PI_SKIP_VERSION_CHECK = "1";
 migrateLegacyStatePath("auth.json");
 migrateLegacyStatePath("settings.json");
 migrateLegacyStatePath("sessions", "directory");
