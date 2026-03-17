@@ -3,6 +3,26 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-03-17
+
+### Added
+- **Mind-per-directive lifecycle**: `implement` forks a scoped memory mind from `default`; all fact reads/writes auto-scope to the directive. `archive` ingests discoveries back to `default` and cleans up. Zero-copy fork with parent-chain inheritance — no fact duplication, parent embeddings and edges are reused.
+- **Substance-over-ceremony lifecycle gates**: `set_status(decided)` checks for open questions and recorded decisions instead of artifact directory existence. Design specs are auto-extracted from doc content and archived — no manual scaffolding ceremony.
+- **Auto-transition seed → exploring**: `add_research` and `add_decision` on seed nodes automatically transition to exploring and scaffold the design spec.
+- **Branch↔mind consistency check**: session start detects if the active directive mind doesn't match the current git branch and surfaces a context message.
+- **Dashboard directive indicator**: raised footer shows `▸ directive: name ✓` (branch match) or `▸ directive: name ⚠ main` (mismatch) when a directive mind is active.
+- **Multi-layer testing directive**: AGENTS.md "Testing Standards" section, cleave child contract, task file contract, and system prompt guideline all enforce test-writing as a mandatory part of code changes.
+- **Design exploration**: directive-branch-lifecycle, multi-instance coordination, lifecycle gate ergonomics, test coverage directive gap, and omegon directive authority design nodes.
+
+### Fixed
+- Design tree footer no longer lists decided/implemented/resolved nodes individually — shows only actionable work (exploring, seed, blocked, implementing).
+- Context card model/thinking line no longer overflows to `...` — width-aware rendering drops provider prefix and abbreviates thinking in narrow cards.
+- Memory card `~30...` truncation fixed — compact separators, width-aware stat selection, `k` suffix for token counts.
+- Models card `Driver claude-...` truncation fixed — very compact mode drops role label.
+- `getFactsBySection` dedup was backwards (kept parent, discarded child shadow) — fixed to match `getActiveFacts` chain-index pattern.
+- `extractAndArchiveDesignSpec` preserves existing scaffold files (tasks.md) in archive.
+- Actionable error messages follow `⚠ what → how` pattern with specific commands to run.
+
 ## [0.7.8] - 2026-03-17
 
 ### Fixed
