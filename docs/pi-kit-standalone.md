@@ -2,6 +2,7 @@
 id: Omegon-standalone
 title: Make Omegon Standalone — Subsume the pi Harness
 status: implemented
+related: [rust-agent-loop]
 tags: [architecture, fork, standalone, strategic]
 open_questions: []
 ---
