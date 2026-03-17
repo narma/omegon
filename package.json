@@ -58,7 +58,6 @@
 			"./extensions/cleave",
 			"./extensions/openspec",
 			"./extensions/defaults.ts",
-			"./extensions/distill.ts",
 			"./extensions/render",
 			"./extensions/local-inference",
 			"./extensions/mcp-bridge",
