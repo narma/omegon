@@ -427,9 +427,13 @@ export function computeAssessmentSnapshot(repoPath: string, changeName: string):
 	const gitHead = safeReadGit(repoPath, ["rev-parse", "HEAD"]);
 	const dirty = detectGitDirty(repoPath, snapshotPaths);
 
+	// Fingerprint represents implementation file content — NOT git HEAD.
+	// Including gitHead would create a chicken-and-egg: committing the
+	// assessment.json (which lives in-repo) changes HEAD, which invalidates
+	// the fingerprint, making the assessment permanently stale.
+	// Git HEAD is stored separately in the snapshot for informational use.
 	const fingerprintSeed = JSON.stringify({
 		changeName,
-		gitHead,
 		dirty,
 		files,
 	});
