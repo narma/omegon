@@ -139,6 +139,10 @@ interface SharedState {
   /** Pending mind lifecycle operations from design-tree/openspec for project-memory to process.
    *  Written by implement/archive flows, consumed by project-memory on next turn. */
   mindLifecycleQueue?: MindLifecycleRequest[];
+
+  /** Active directive: the design node currently being implemented.
+   *  Set by design_tree_update(implement), read by session-start and dashboard. */
+  activeDirective?: { nodeId: string; branch: string } | null;
 }
 
 export type MindLifecycleAction = "fork" | "activate" | "ingest" | "delete";

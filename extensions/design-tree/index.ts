@@ -1180,9 +1180,18 @@ export default function designTreeExtension(pi: ExtensionAPI): void {
 					reload(ctx.cwd);
 					emitCurrentState();
 
-					// Fork a directive-scoped memory mind so facts discovered during
-					// this work are isolated until archive merges them back.
+					// Auto-focus the design node and fork a directive-scoped memory mind
+					// so context injection and fact isolation track the active directive.
 					if (implResult.ok) {
+						// Auto-focus so context injection immediately tracks this node
+						focusedNode = node.id;
+
+						// Publish active directive for session-start and dashboard
+						sharedState.activeDirective = {
+							nodeId: node.id,
+							branch: implResult.branch ?? `feature/${node.id}`,
+						};
+
 						const mindName = `directive/${node.id}`;
 						(sharedState.mindLifecycleQueue ??= []).push(
 							{ action: "fork", mind: mindName, description: `Memory scope for ${implResult.branch ?? node.id}` },
