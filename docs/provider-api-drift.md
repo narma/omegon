@@ -1,7 +1,7 @@
 ---
 id: provider-api-drift
 title: Provider API drift detection — CI cron watches pi-mono for upstream changes that affect Rust clients
-status: exploring
+status: implemented
 parent: core-distribution
 tags: [ci, providers, api-drift, upstream, rust, testing]
 open_questions: []
