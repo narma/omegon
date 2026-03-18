@@ -408,6 +408,130 @@ Each @omegon/ platform package needs its own npm trusted publisher configuration
 
 `execFileSync(bin, args, { stdio: 'inherit' })` works for launching the Rust binary and inheriting terminal I/O. It also blocks the Node process (which is what we want — Node is just the launcher). Signal forwarding (SIGINT, SIGTERM) to the child works correctly with `stdio: 'inherit'` because the child is in the same process group. No changes needed.
 
+### Installation paths — what exists now and what users need
+
+**Current state: the Rust binary runs but has no distribution story.**
+
+To run `omegon-agent interactive` today, a user needs:
+1. The compiled Rust binary (7.5MB, arm64 macOS — must `cargo build --release` from source)
+2. Node.js on PATH (for the LLM bridge subprocess)
+3. `@styrene-lab/pi-ai` installed somewhere Node can find it (the bridge `import`s `streamSimple`)
+4. The `llm-bridge.mjs` file at a discoverable path relative to the binary
+5. API keys (ANTHROPIC_API_KEY, etc.) in environment or `~/.pi/agent/settings.json`
+
+**Three viable installation paths, simplest first:**
+
+**Path A: npm install (transition path — ships binary inside npm package)**
+```
+npm install -g omegon
+```
+User gets: the TS Omegon (current) + the Rust binary as a platform-specific optional dep. The `omegon` command runs the TS interactive mode (unchanged). The Rust binary is used internally for cleave children and available as `omegon-agent` for headless/interactive use. Bridge and pi-ai come with the npm package.
+
+This is the `core-distribution` design node's approach. Requires: platform npm packages (@omegon/darwin-arm64 etc.), CI build matrix.
+
+**Path B: Standalone binary + npm bridge package (new, minimal)**
+```
+# Install the binary (one of):
+brew install omegon        # Homebrew
+curl -fsSL https://omegon.dev/install.sh | sh  # Script
+cargo install omegon       # From source
+
+# Install the LLM bridge (one-time):
+npm install -g @styrene-lab/pi-ai
+```
+User gets: the Rust binary + Node.js as a runtime dependency for the bridge. The binary auto-discovers pi-ai via `node -e "import(...)"`. This is the leanest path — no 191MB npm package, no TS runtime, just the binary + bridge.
+
+**Path C: Fully standalone (Phase 3 — no Node.js)**
+```
+brew install omegon  # or curl | sh
+```
+User gets: the Rust binary with native Anthropic/OpenAI HTTP clients. No Node.js needed. This is Phase 3 — requires implementing reqwest-based provider clients.
+
+**What's blocking Path A:** CI build matrix for 4 platforms, npm trusted publishing for platform packages.
+**What's blocking Path B:** A `brew` formula or install script, and the bridge's pi-ai discovery.
+**What's blocking Path C:** Native Rust HTTP clients for Anthropic + OpenAI streaming.
+
+**The immediate question: what's the cheapest path to "someone else can install and run this"?**
+
+Path B is cheapest. It needs:
+1. GitHub Release with the binary (we already build `cargo build --release`)
+2. The bridge bundled next to the binary (copy `bridge/llm-bridge.mjs` alongside)
+3. A simple install script that downloads the binary + bridge for the platform
+4. Documentation: "install Node.js, run `npm install -g @styrene-lab/pi-ai`, then run `omegon-agent interactive`"
+
+Path A is more polished (single `npm install`) but requires the platform package infrastructure.
+
+**Recommendation: Path B first (unblocks testing), then Path A for production distribution.**
+
+### Exact npm/Node.js dependency chain — what must become Rust
+
+**The single Node.js dependency is the LLM bridge (307 lines of JS).** It does three things:
+
+1. **API key resolution** — reads env vars or `~/.pi/agent/auth.json` for OAuth tokens. **Trivially portable to Rust** — it's just file reads + JSON parsing. ~30 lines of Rust.
+
+2. **Model resolution** — maps `"anthropic:claude-sonnet-4-20250514"` to a provider + model config. **Trivially portable** — it's a lookup table. ~20 lines of Rust.
+
+3. **LLM streaming** — calls `streamSimple(model, context, options)` from `@styrene-lab/pi-ai`, which delegates to the provider-specific SDK. **This is the actual dependency.**
+
+**What `streamSimple` does for the Anthropic provider (our primary):**
+```
+streamSimple(model, context, options)
+  → anthropic.js: streamSimpleAnthropic()
+    → new Anthropic({apiKey, baseUrl})
+    → client.messages.create({model, messages, system, tools, stream: true})
+    → iterate SSE stream, emit events (text_delta, tool_use, thinking, etc.)
+```
+
+The Anthropic SDK (`@anthropic-ai/sdk`) is an HTTP client that:
+- POST to `https://api.anthropic.com/v1/messages` with JSON body
+- Sets headers: `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`
+- Reads SSE (Server-Sent Events) streaming response
+- Parses `event: content_block_delta` / `data: {"type":"content_block_delta","delta":{"text":"..."}}` lines
+
+**That's it.** The entire npm dependency tree exists to make one HTTP POST with SSE streaming.
+
+**What Rust needs to replace it:**
+
+```rust
+// 1. Build the request
+let body = json!({
+    "model": "claude-sonnet-4-20250514",
+    "max_tokens": 8192,
+    "system": system_prompt,
+    "messages": messages,
+    "tools": tools,
+    "stream": true,
+});
+
+// 2. Send it
+let response = reqwest::Client::new()
+    .post("https://api.anthropic.com/v1/messages")
+    .header("x-api-key", &api_key)
+    .header("anthropic-version", "2023-06-01")
+    .header("content-type", "application/json")
+    .json(&body)
+    .send()
+    .await?;
+
+// 3. Parse SSE stream
+let mut stream = response.bytes_stream();
+// Parse "event: " and "data: " lines, emit typed events
+```
+
+**For OpenAI (secondary):**
+Same pattern, different URL (`https://api.openai.com/v1/chat/completions`), different headers (`Authorization: Bearer {key}`), different SSE format (`data: {"choices":[{"delta":{"content":"..."}}]}`).
+
+**The dependency is ~200-400 lines of Rust per provider.** We already have `reqwest` as a dependency (for web_search). SSE parsing is ~50 lines of state machine code.
+
+**What we DON'T need:**
+- The Anthropic JS SDK (3,000+ files, ~2MB)
+- The OpenAI JS SDK (similar)
+- The 8 other provider SDKs (Bedrock, Google, Mistral, etc.)
+- Node.js runtime
+- npm
+
+**The 95% case:** Anthropic + OpenAI. These two cover >95% of actual usage. Bedrock/Google/Mistral are nice-to-have. We can add them later or keep the bridge as an optional fallback for long-tail providers.
+
 ## Decisions
 
 ### Decision: Platform-specific npm packages for the Rust binary (esbuild/swc model)
@@ -449,6 +573,11 @@ Each @omegon/ platform package needs its own npm trusted publisher configuration
 
 **Status:** decided
 **Rationale:** Omegon doesn't support native Windows (pi/Claude Code doesn't either). The upstream runtime requires Unix signal handling, process groups, and pty support. WSL users get the linux-x64 binary. Native Windows support would require significant work (terminal rendering, process management, path handling) for minimal audience. This can be revisited if demand materializes.
+
+### Decision: Standalone install: binary from GitHub Release + `npm install -g @omegon/bridge` for LLM providers
+
+**Status:** decided
+**Rationale:** The Rust binary is 7.5MB and self-contained except for the LLM bridge (307 lines of JS that imports pi-ai for streaming provider clients). Rather than bundling Node.js or trying to eliminate it (Phase 3), the immediate install path is: (1) download the binary from GitHub Releases, (2) npm install -g @omegon/bridge which pulls in pi-ai and installs the bridge script. The binary auto-discovers the bridge via `which omegon-bridge` or the --bridge flag. This is two commands, clear separation of concerns, and works today without platform npm packages or CI build matrices. Path A (binary inside npm omegon package) remains the long-term distribution channel.
 
 ## Open Questions
 
