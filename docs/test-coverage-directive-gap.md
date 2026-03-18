@@ -1,7 +1,7 @@
 ---
 id: test-coverage-directive-gap
 title: Test coverage directive gap — agents consistently omit tests unless explicitly forced
-status: decided
+status: implemented
 parent: lifecycle-gate-ergonomics
 tags: [testing, directives, system-prompt, cleave, quality, agents]
 open_questions: []
