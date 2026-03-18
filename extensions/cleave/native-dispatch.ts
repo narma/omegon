@@ -26,7 +26,7 @@ export interface NativeDispatchConfig {
 export type NativeProgressEvent =
 	| { event: "wave_start"; wave: number; children: string[] }
 	| { event: "child_spawned"; child: string; pid: number }
-	| { event: "child_status"; child: string; status: "running" | "completed" | "failed"; duration_secs?: number; error?: string }
+	| { event: "child_status"; child: string; status: "completed" | "failed"; duration_secs?: number; error?: string }
 	| { event: "child_activity"; child: string; turn?: number; tool?: string; target?: string }
 	| { event: "auto_commit"; child: string; files: number }
 	| { event: "merge_start" }

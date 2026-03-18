@@ -2633,8 +2633,7 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 						const childId = labelToChildId.get(event.child);
 						if (childId !== undefined) {
 							const dashStatus = event.status === "completed" ? "done" as const
-								: event.status === "failed" ? "failed" as const
-								: "running" as const;
+								: "failed" as const;
 							emitCleaveChildProgress(pi, childId, {
 								status: dashStatus,
 								...(event.duration_secs != null && { elapsed: event.duration_secs * 1000 }),

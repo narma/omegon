@@ -8,7 +8,6 @@ describe("native-dispatch", () => {
 			const sampleEvents: NativeProgressEvent[] = [
 				{ event: "wave_start", wave: 0, children: ["task-a", "task-b"] },
 				{ event: "child_spawned", child: "task-a", pid: 1234 },
-				{ event: "child_status", child: "task-a", status: "running" },
 				{ event: "child_activity", child: "task-a", tool: "write", target: "tmp/foo.txt" },
 				{ event: "child_activity", child: "task-a", turn: 2 },
 				{ event: "child_status", child: "task-a", status: "completed", duration_secs: 45.2 },
