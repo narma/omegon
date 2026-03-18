@@ -47,6 +47,9 @@ export interface NativeAgentSpec {
 }
 
 let nativeCached: NativeAgentSpec | null | undefined;
+/** Timestamp of last successful resolution — stale after 30s so mid-session builds are picked up. */
+let nativeCachedAt = 0;
+const NATIVE_CACHE_TTL_MS = 30_000;
 
 /**
  * Resolve the native omegon-agent binary if available.
@@ -57,11 +60,15 @@ let nativeCached: NativeAgentSpec | null | undefined;
  * 3. Adjacent to the Omegon package: node_modules/.omegon/omegon-agent (npm install)
  *
  * Returns null if no binary is found — callers must fall back to TS subprocess.
- * Result is cached for the process lifetime.
+ * Result is cached for 30 s — long enough to avoid redundant stat() within a single
+ * cleave_run but short enough that a mid-session `cargo build` is picked up.
  */
 export function resolveNativeAgent(): NativeAgentSpec | null {
-  // NO CACHING. The binary may be built mid-session (cargo build --release).
-  // A stale null cache was the reason native dispatch silently never activated.
+  // Return cached result if still fresh, but never cache a null result
+  // (the binary may be built mid-session).
+  if (nativeCached && Date.now() - nativeCachedAt < NATIVE_CACHE_TTL_MS) {
+    return nativeCached;
+  }
 
   const here = dirname(fileURLToPath(import.meta.url));
   const repoRoot = resolve(here, "..", "..");
@@ -73,6 +80,7 @@ export function resolveNativeAgent(): NativeAgentSpec | null {
   const envPath = process.env.OMEGON_AGENT_BINARY;
   if (envPath && existsSync(envPath)) {
     nativeCached = { binaryPath: envPath, bridgePath };
+    nativeCachedAt = Date.now();
     return nativeCached;
   }
 
@@ -80,6 +88,7 @@ export function resolveNativeAgent(): NativeAgentSpec | null {
   const devBinary = join(repoRoot, "core", "target", "release", "omegon-agent");
   if (existsSync(devBinary)) {
     nativeCached = { binaryPath: devBinary, bridgePath };
+    nativeCachedAt = Date.now();
     return nativeCached;
   }
 
@@ -87,10 +96,11 @@ export function resolveNativeAgent(): NativeAgentSpec | null {
   const npmBinary = join(repoRoot, "node_modules", ".omegon", "omegon-agent");
   if (existsSync(npmBinary)) {
     nativeCached = { binaryPath: npmBinary, bridgePath };
+    nativeCachedAt = Date.now();
     return nativeCached;
   }
 
-  nativeCached = null;
+  // Don't cache null — allow immediate retry after cargo build
   return null;
 }
 
@@ -100,4 +110,5 @@ export function resolveNativeAgent(): NativeAgentSpec | null {
  */
 export function _clearNativeAgentCache(): void {
   nativeCached = undefined;
+  nativeCachedAt = 0;
 }

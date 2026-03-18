@@ -19,9 +19,35 @@ export interface NativeDispatchConfig {
 	maxTurns: number;
 }
 
+/** Shape of the Rust CleaveState.ChildState after serde(rename_all = "camelCase"). */
+export interface RustChildState {
+	childId: number;
+	label: string;
+	description: string;
+	scope: string[];
+	dependsOn: string[];
+	status: "pending" | "running" | "completed" | "failed";
+	error?: string;
+	branch?: string;
+	worktreePath?: string;
+	backend: string;
+	executeModel?: string;
+	durationSecs?: number;
+}
+
+/** Shape of the Rust CleaveState after serde. */
+export interface RustCleaveState {
+	runId: string;
+	directive: string;
+	repoPath: string;
+	workspacePath: string;
+	children: RustChildState[];
+	plan: unknown;
+}
+
 export interface NativeDispatchResult {
 	exitCode: number;
-	state: any;
+	state: RustCleaveState | null;
 	stderr: string;
 }
 
@@ -78,13 +104,17 @@ export async function dispatchViaNative(
 
 		log(`spawned pid=${proc.pid}`);
 
+		/** Capped stderr buffer — keeps last 64 KB for diagnostics without unbounded growth. */
+		const STDERR_CAP = 64 * 1024;
 		let stderr = "";
-		let stdout = "";
 		let stderrLines = 0;
 
-		proc.stderr?.on("data", (data) => {
+		proc.stderr?.on("data", (data: Buffer) => {
 			const text = data.toString();
-			stderr += text;
+			if (stderr.length < STDERR_CAP) {
+				stderr += text;
+				if (stderr.length > STDERR_CAP) stderr = stderr.slice(-STDERR_CAP);
+			}
 			for (const line of text.split("\n")) {
 				const trimmed = line.trim();
 				if (trimmed) {
@@ -92,10 +122,6 @@ export async function dispatchViaNative(
 					onProgress?.(trimmed);
 				}
 			}
-		});
-
-		proc.stdout?.on("data", (data) => {
-			stdout += data.toString();
 		});
 
 		if (signal) {
@@ -122,15 +148,21 @@ export async function dispatchViaNative(
 		});
 
 		proc.on("close", (code, sig) => {
-			log(`proc closed: code=${code} signal=${sig} stderrLines=${stderrLines} stdoutLen=${stdout.length}`);
+			log(`proc closed: code=${code} signal=${sig} stderrLines=${stderrLines}`);
 
-			let state: any = null;
+			let state: RustCleaveState | null = null;
 			try {
 				const statePath = join(config.workspacePath, "state.json");
 				const raw = readFileSync(statePath, "utf-8");
-				state = JSON.parse(raw);
-				const statuses = state?.children?.map((c: any) => `${c.label}=${c.status}`).join(", ");
-				log(`state.json loaded: ${state?.children?.length} children, [${statuses}]`);
+				const parsed = JSON.parse(raw) as RustCleaveState;
+				// Validate minimum shape
+				if (parsed && Array.isArray(parsed.children)) {
+					state = parsed;
+					const statuses = state.children.map((c) => `${c.label}=${c.status}`).join(", ");
+					log(`state.json loaded: ${state.children.length} children, [${statuses}]`);
+				} else {
+					log("state.json loaded but missing children array");
+				}
 			} catch (e: any) {
 				log(`state.json read failed: ${e.message}`);
 			}

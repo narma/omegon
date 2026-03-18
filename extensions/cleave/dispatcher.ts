@@ -873,6 +873,22 @@ async function spawnChildRpc(
 	});
 }
 
+/** Options for spawning a child process. */
+interface SpawnChildOpts {
+	prompt: string;
+	cwd: string;
+	timeoutMs: number;
+	signal?: AbortSignal;
+	localModel?: string;
+	onLine?: (line: string) => void;
+	useRpc?: boolean;
+	onEvent?: (event: RpcChildEvent) => void;
+	nativeAgent?: NativeAgentSpec | null;
+	useNative?: boolean;
+	model?: string;
+	idleTimeoutMs?: number;
+}
+
 /**
  * Spawn a child process — dispatches to native, RPC, or pipe mode.
  *
@@ -880,36 +896,17 @@ async function spawnChildRpc(
  * 1. Native (Rust binary) — when nativeAgent is provided and useNative=true
  * 2. RPC (JSON events) — when useRpc=true and not using native
  * 3. Pipe (legacy) — fallback
- *
- * @param useRpc      When true, uses RPC mode with structured events.
- * @param nativeAgent When provided, attempts native dispatch (Ship of Theseus).
- * @param useNative   When true (and nativeAgent is available), use the native binary.
- * @param model       Model ID string (for native binary --model flag).
  */
-async function spawnChild(
-	prompt: string,
-	cwd: string,
-	timeoutMs: number,
-	signal?: AbortSignal,
-	localModel?: string,
-	onLine?: (line: string) => void,
-	useRpc?: boolean,
-	onEvent?: (event: RpcChildEvent) => void,
-	nativeAgent?: NativeAgentSpec | null,
-	useNative?: boolean,
-	model?: string,
-	idleTimeoutMs?: number,
-): Promise<ChildResult> {
-	// Native dispatch: use the Rust binary — MANDATORY.
-	// The TypeScript child path is dead. If native isn't available, fail loud.
-	if (useNative && nativeAgent && model) {
-		return spawnChildNative(nativeAgent, prompt, cwd, timeoutMs, model, signal, onLine);
+async function spawnChild(opts: SpawnChildOpts): Promise<ChildResult> {
+	// Native dispatch: use the Rust binary — MANDATORY on primary path.
+	if (opts.useNative && opts.nativeAgent && opts.model) {
+		return spawnChildNative(opts.nativeAgent, opts.prompt, opts.cwd, opts.timeoutMs, opts.model, opts.signal, opts.onLine);
 	}
 
-	if (useRpc) {
-		return spawnChildRpc(prompt, cwd, timeoutMs, signal, localModel, onEvent, idleTimeoutMs);
+	if (opts.useRpc) {
+		return spawnChildRpc(opts.prompt, opts.cwd, opts.timeoutMs, opts.signal, opts.localModel, opts.onEvent, opts.idleTimeoutMs);
 	}
-	return spawnChildPipe(prompt, cwd, timeoutMs, signal, localModel, onLine);
+	return spawnChildPipe(opts.prompt, opts.cwd, opts.timeoutMs, opts.signal, opts.localModel, opts.onLine);
 }
 
 // ─── Concurrency control ────────────────────────────────────────────────────
@@ -962,6 +959,14 @@ export class AsyncSemaphore {
  * Children within a wave run in parallel (up to maxParallel).
  * Waves are executed sequentially.
  */
+/**
+ * Dispatch children via the TypeScript path (RPC/pipe mode).
+ *
+ * **⚠️  RESUME-ONLY** — the primary `cleave_run` path uses the Rust orchestrator
+ * (`dispatchViaNative` in native-dispatch.ts). This function is only reachable
+ * from the `/cleave resume` command for runs that were started under the old TS
+ * dispatcher and need to complete remaining pending children.
+ */
 export async function dispatchChildren(
 	pi: ExtensionAPI,
 	state: CleaveState,
@@ -973,9 +978,6 @@ export async function dispatchChildren(
 	reviewConfig?: ReviewConfig,
 	idleTimeoutMs?: number,
 ): Promise<void> {
-	// HARD TRACE: writeFileSync + stderr — cannot be swallowed
-	try { writeFileSync("/tmp/cleave-trace-hard.log", `[${Date.now()}] dispatchChildren ENTERED children=${state.children.length}\n`); } catch {}
-	process.stderr.write(`[cleave-trace] dispatchChildren ENTERED children=${state.children.length}\n`);
 	_dlog(`dispatchChildren: entry signal=${!!signal} signalAborted=${signal?.aborted} children=${state.children.length}`);
 	const statusResult = await pi.exec("git", ["status", "--porcelain"], {
 		cwd: state.repoPath,
@@ -1240,24 +1242,29 @@ async function dispatchSingleChild(
 		execute: async (execPrompt: string, execCwd: string, _execModelFlag?: string) => {
 			if (useNative) {
 				// Native dispatch: Rust binary with pipe mode (stdout=final text)
-				// Uses nativeModelSpec (provider:model) instead of the bare model ID
-				return spawnChild(
-					execPrompt, execCwd, timeoutMs, signal, undefined,
-					onChildLine, false /* not RPC */, undefined,
-					nativeAgent, true /* useNative */, nativeModelSpec,
-				);
+				return spawnChild({
+					prompt: execPrompt, cwd: execCwd, timeoutMs, signal,
+					onLine: onChildLine,
+					nativeAgent, useNative: true, model: nativeModelSpec,
+				});
 			}
 			// TS dispatch: RPC mode for structured events
-			return spawnChild(execPrompt, execCwd, timeoutMs, signal, _execModelFlag,
-				useRpc ? undefined : onChildLine, useRpc, useRpc ? onRpcEvent : undefined,
-				undefined, undefined, undefined, idleTimeoutMs);
+			return spawnChild({
+				prompt: execPrompt, cwd: execCwd, timeoutMs, signal,
+				localModel: _execModelFlag,
+				onLine: useRpc ? undefined : onChildLine,
+				useRpc,
+				onEvent: useRpc ? onRpcEvent : undefined,
+				idleTimeoutMs,
+			});
 		},
 		review: async (reviewPrompt: string, reviewCwd: string) => {
 			// Reviews always use TS + pipe mode (Phase 1) + gloriana tier.
-			// The native binary doesn't have review infrastructure yet.
 			const reviewModelId = resolveModelIdForTier("gloriana", registryModels, activePolicy, localModel);
-			return spawnChild(reviewPrompt, reviewCwd, timeoutMs, signal, reviewModelId,
-				undefined, false /* pipe mode for review */);
+			return spawnChild({
+				prompt: reviewPrompt, cwd: reviewCwd, timeoutMs, signal,
+				localModel: reviewModelId,
+			});
 		},
 		readFile: (path: string) => readFileSync(path, "utf-8"),
 	};

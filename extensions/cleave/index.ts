@@ -52,6 +52,7 @@ import {
 import { detectConflicts, parseTaskResult } from "./conflicts.ts";
 import { emitResolvedBugCandidate } from "./lifecycle-emitter.ts";
 import { DEFAULT_CHILD_TIMEOUT_MS, dispatchChildren, resolveExecuteModel } from "./dispatcher.ts";
+import type { RustChildState } from "./native-dispatch.ts";
 import { DEFAULT_REVIEW_CONFIG, type ReviewConfig } from "./review.ts";
 import {
 	detectOpenSpec,
@@ -2551,6 +2552,15 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 			// The Rust binary handles: worktree creation, child spawning,
 			// idle/wall-clock timeouts, state persistence, and merge.
 			// Task files were already written by initWorkspace with OpenSpec enrichment.
+
+			// Review mode is not yet supported in native dispatch — warn if requested
+			if (params.review) {
+				onUpdate?.({
+					content: [{ type: "text", text: "⚠️  review mode is not supported with native dispatch — review params will be ignored" }],
+					details: { phase: "dispatch", children: state.children },
+				});
+			}
+
 			emitCleaveState(pi, "dispatching", state.runId, state.children);
 
 			onUpdate?.({
@@ -2603,41 +2613,32 @@ export default function cleaveExtension(pi: ExtensionAPI) {
 				});
 			});
 
-			// Reload state from the Rust binary's output
-			const dbg = (msg: string) => onUpdate?.({
-				content: [{ type: "text", text: `[cleave-debug] ${msg}` }],
-				details: { phase: "dispatch", children: state.children },
-			});
-			dbg(`nativeResult: exitCode=${nativeResult.exitCode}, hasState=${!!nativeResult.state}, stderrLen=${nativeResult.stderr.length}`);
-			if (nativeResult.stderr.length < 2000) {
-				dbg(`stderr: ${nativeResult.stderr.slice(0, 2000)}`);
-			}
+			// ── MAP RUST STATE → TS STATE ─────────────────────────────
 			if (nativeResult.state) {
-				// Map Rust state format back to TS state
-				const rustState = nativeResult.state;
-				dbg(`rustState.children: ${JSON.stringify(rustState.children?.map((c: any) => ({ id: c.childId, label: c.label, status: c.status })))}`);
-				for (const rustChild of rustState.children ?? []) {
+				for (const rustChild of nativeResult.state.children) {
 					const tsChild = state.children.find(
 						(c: ChildState) => c.childId === rustChild.childId || c.label === rustChild.label,
 					);
-					dbg(`mapping rustChild ${rustChild.label}(id=${rustChild.childId},status=${rustChild.status}) → tsChild=${tsChild?.label ?? "NOT FOUND"}(id=${tsChild?.childId})`);
-					if (tsChild) {
-						const oldStatus = tsChild.status;
-						tsChild.status = rustChild.status === "completed" ? "completed"
-							: rustChild.status === "failed" ? "failed"
-							: tsChild.status;
-						dbg(`  ${tsChild.label}: ${oldStatus} → ${tsChild.status}`);
-						tsChild.error = rustChild.error ?? tsChild.error;
-						tsChild.branch = rustChild.branch ?? tsChild.branch;
-						tsChild.worktreePath = rustChild.worktreePath ?? tsChild.worktreePath;
-						tsChild.backend = "native";
-						if (rustChild.durationSecs != null) {
-							(tsChild as any).durationSecs = rustChild.durationSecs;
-						}
+					if (!tsChild) continue;
+					tsChild.status = rustChild.status === "completed" ? "completed"
+						: rustChild.status === "failed" ? "failed"
+						: tsChild.status;
+					tsChild.error = rustChild.error ?? tsChild.error;
+					tsChild.branch = rustChild.branch ?? tsChild.branch;
+					tsChild.worktreePath = rustChild.worktreePath ?? tsChild.worktreePath;
+					tsChild.backend = "native";
+					if (rustChild.durationSecs != null) {
+						(tsChild as any).durationSecs = rustChild.durationSecs;
 					}
 				}
-			} else {
-				dbg("NO state from native result — children will remain pending");
+			} else if (nativeResult.exitCode !== 0) {
+				// Rust binary failed without producing state — mark all pending children as failed
+				for (const child of state.children) {
+					if (child.status === "pending" || child.status === "running") {
+						child.status = "failed";
+						child.error = `Native dispatch exited ${nativeResult.exitCode} without state`;
+					}
+				}
 			}
 
 			// ── HARVEST + CONFLICTS ────────────────────────────────────
