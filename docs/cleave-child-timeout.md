@@ -1,9 +1,11 @@
 ---
 id: cleave-child-timeout
 title: Cleave child timeout and idle detection
-status: decided
+status: implementing
 tags: [cleave, reliability, timeout]
 open_questions: []
+branches: ["feature/cleave-child-timeout"]
+openspec_change: cleave-child-timeout
 ---
 
 # Cleave child timeout and idle detection
