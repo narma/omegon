@@ -1,7 +1,7 @@
 ---
 id: ts-to-rust-migration
 title: "TS→Rust Migration: Make omegon repo Rust-primary"
-status: exploring
+status: decided
 tags: [migration, architecture, rust]
 open_questions: []
 ---
