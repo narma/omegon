@@ -1,13 +1,11 @@
 ---
 id: git-harness-integration
 title: Git as first-class harness citizen — commit hygiene and repo-aware lifecycle
-status: exploring
+status: resolved
 tags: [architecture, git, harness, lifecycle]
-open_questions:
-  - Should the harness take full ownership of git commits (agent never runs git commit), or should it be a coordinator that intercepts and improves agent commits?
-  - Where does RepoModel live — TS extension, Rust core, or shared state? Who is the source of truth for repo structure?
-  - Is squash-merge-on-close sufficient for history cleanliness, or do we also need to fix the intermediate commit frequency?
-  - How does lifecycle commit batching interact with multi-session work? If a session ends with unbatched lifecycle changes, what happens?
+open_questions: []
+issue_type: epic
+priority: 2
 ---
 
 # Git as first-class harness citizen — commit hygiene and repo-aware lifecycle
@@ -159,9 +157,28 @@ These need to be separated. The harness should own working-state persistence (vi
 
 5. **LifecycleCommitBatching** — OpenSpec and design-tree file changes are batched into the next real commit instead of creating their own. A "pending lifecycle changes" queue accumulates file writes that get folded in when the agent next commits real work.
 
+## Decisions
+
+### Decision: The Rust harness takes full ownership of git commits — the agent never runs git commit directly
+
+**Status:** decided
+**Rationale:** The Rust agent already intercepts every file mutation through its tool layer (edit, write, change, bash). It already has a speculate tool that uses git stash internally. The cleave orchestrator already has auto_commit_worktree and commit_dirty_submodules. The pattern is established — the agent makes file changes, the harness decides when and how to commit. Making this explicit: the agent's bash tool should not be used for git commit/add/stash (those can be intercepted or replaced with structured tools). A new `commit` tool replaces bash-based git commits with harness-controlled commits that apply the commit policy. The cleave child contract already says "commit your work" — the harness can do this automatically on child completion instead of relying on the child.
+
+### Decision: RepoModel lives in the Rust core as a shared struct initialized at agent startup
+
+**Status:** decided
+**Rationale:** The Rust core is where all file mutations happen (tools layer) and where all git operations already live (cleave orchestrator, speculate). RepoModel should be initialized at agent startup by scanning .git, .gitmodules, and current branch. It gets updated by the edit/write/change tools (track which files were touched) and by the commit tool (reset the dirty set). The TS extensions can query it via the bridge or shared state, but Rust is the source of truth. This is also where the submodule model naturally fits — the Rust worktree.rs already has detect_submodules.
+
+### Decision: Squash-merge is sufficient for feature branches — intermediate commit frequency is not the primary fix target
+
+**Status:** decided
+**Rationale:** The intermediate commits serve a real purpose during development: they're recovery points if the agent gets stuck or the session crashes. Trying to reduce their frequency (amend logic, commit batching) adds complexity with marginal benefit — the real problem is that they leak into main. Squash-merge on feature-branch close gives main one clean commit per feature while preserving the full diary on the branch for debugging. The cleave orchestrator already does this implicitly (it creates one merge commit per child). For interactive sessions, the harness should offer squash-merge when a feature branch is completed. Intermediate commit count on the branch is not a problem to solve.
+
+### Decision: Lifecycle file changes queue in RepoModel and flush with the next real commit
+
+**Status:** decided
+**Rationale:** OpenSpec task-complete markers, archive operations, and design-tree status updates currently create their own commits. Instead, these file writes should be tracked in RepoModel as "pending lifecycle changes" and included in the next commit the agent makes for real work. If the session ends with unflushed lifecycle changes, the harness auto-commits them as a single "chore: lifecycle sync" commit on session close — this is the only ceremony commit that should survive. This eliminates the "mark tasks complete" and "archive" noise commits during normal flow while ensuring nothing is lost on session end.
+
 ## Open Questions
 
-- Should the harness take full ownership of git commits (agent never runs git commit), or should it be a coordinator that intercepts and improves agent commits?
-- Where does RepoModel live — TS extension, Rust core, or shared state? Who is the source of truth for repo structure?
-- Is squash-merge-on-close sufficient for history cleanliness, or do we also need to fix the intermediate commit frequency?
-- How does lifecycle commit batching interact with multi-session work? If a session ends with unbatched lifecycle changes, what happens?
+*No open questions.*
