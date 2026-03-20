@@ -1,10 +1,9 @@
 ---
 id: cleave-prerequisite-prompting
 title: Cleave prerequisite prompting — project context and finalization instructions
-status: exploring
+status: decided
 parent: cleave-child-dispatch-quality
-open_questions:
-  - "What project-specific context should be injected into the task file? Cargo.lock dependency versions? Key API patterns from existing code? Or should this be delegated to the mind system's project memory?"
+open_questions: []
 priority: 2
 ---
 
@@ -34,9 +33,14 @@ The `build_task_file` function in orchestrator.rs should be extended with severa
 **Status:** exploring
 **Rationale:** Each layer addresses a different failure class. Structural context prevents wrong-path errors (submodule detection, dependency versions). Convention sampling prevents API misuse (show a real test, not just say 'write tests'). The finalization contract prevents uncommitted work and untested code. The layers are additive — each can be implemented and tested independently. Structural discovery runs once per cleave (shared across children). Convention sampling is per-child (scope-specific). Finalization is a static template expanded with project-specific paths.
 
+### Decision: All three sources — Cargo.toml versions, code samples, and memory facts — each solving distinct failure classes
+
+**Status:** decided
+**Rationale:** Dependency versions from Cargo.toml prevent API version mismatches (mockito 0.x vs 1.x). Code samples from existing tests prevent convention drift. Memory facts provide project-specific knowledge that neither source captures. The 4K token budget is sufficient for all three when extracted surgically — dep sections are ~20 lines, one test example is ~30 lines, 3-5 facts are ~15 lines. Memory recall is best-effort (skip if unavailable in child mode).
+
 ## Open Questions
 
-- What project-specific context should be injected into the task file? Cargo.lock dependency versions? Key API patterns from existing code? Or should this be delegated to the mind system's project memory?
+*No open questions.*
 
 ## Implementation Notes
 

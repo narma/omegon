@@ -1,10 +1,9 @@
 ---
 id: cleave-task-progress
 title: Cleave task-level progress tracking and operator display
-status: exploring
+status: decided
 parent: cleave-child-dispatch-quality
-open_questions:
-  - How should task-level progress be reported? Should children emit structured progress events, or should the orchestrator parse task checkboxes from committed files?
+open_questions: []
 priority: 3
 ---
 
@@ -30,9 +29,14 @@ The task file already contains a checklist (from OpenSpec tasks.md). The orchest
 **Status:** exploring
 **Rationale:** Children are LLM agents — they'll forget to emit progress events or do it inconsistently. The orchestrator has everything it needs: task count parsed from the checklist at dispatch, turn number from stderr parsing, tool calls from ChildActivity, and file sizes from the worktree filesystem. Combine these into a synthetic progress bar rather than adding a reporting contract to the child prompt. This keeps the child focused on implementation and avoids prompt token budget spent on progress reporting instructions.
 
+### Decision: Orchestrator-side heuristics from task count + turns + file stats — no child reporting contract
+
+**Status:** decided
+**Rationale:** Decided above — the orchestrator has all the data it needs. Child-reported events add prompt complexity and are unreliable.
+
 ## Open Questions
 
-- How should task-level progress be reported? Should children emit structured progress events, or should the orchestrator parse task checkboxes from committed files?
+*No open questions.*
 
 ## Implementation Notes
 

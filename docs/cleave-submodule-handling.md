@@ -1,10 +1,9 @@
 ---
 id: cleave-submodule-handling
 title: Cleave submodule-aware commit and merge
-status: exploring
+status: decided
 parent: cleave-child-dispatch-quality
-open_questions:
-  - "Should the orchestrator's submodule auto-commit be transparent (always run) or gated (only when submodules detected in scope paths)?"
+open_questions: []
 priority: 2
 ---
 
@@ -34,9 +33,14 @@ priority: 2
 **Status:** exploring
 **Rationale:** Submodule init is a prerequisite (worktrees don't inherit submodule checkouts). Prompt instructions teach the child the correct procedure. Auto-commit catches failures deterministically. The three pieces are each independently useful and compose cleanly. The auto-commit runs after every child regardless — it's a no-op when the submodule is clean, and a safety net when it's dirty. Gate on `git submodule status` in the worktree to avoid unnecessary work in repos without submodules.
 
+### Decision: Auto-commit runs always but gates on git submodule status — transparent when no submodules, active when dirty
+
+**Status:** decided
+**Rationale:** The auto-commit calls git submodule status first. If no submodules exist, it's a no-op (~1ms). If submodules exist but are clean, it's a no-op. Only when dirty does it commit. This means it's safe to run unconditionally after every child — no scope-path gating needed. Simpler code, no false negatives.
+
 ## Open Questions
 
-- Should the orchestrator's submodule auto-commit be transparent (always run) or gated (only when submodules detected in scope paths)?
+*No open questions.*
 
 ## Implementation Notes
 
