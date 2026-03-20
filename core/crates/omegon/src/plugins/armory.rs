@@ -36,9 +36,124 @@ pub struct ArmoryManifest {
     pub tone: Option<ToneConfig>,
     #[serde(default)]
     pub skill: Option<SkillConfig>,
+    /// Functional tools — script-backed, HTTP-backed, or WASM-backed.
+    #[serde(default)]
+    pub tools: Vec<ToolEntry>,
+    /// Dynamic context injection — script or HTTP endpoint.
+    #[serde(default)]
+    pub context: Option<ContextEntry>,
     #[serde(default)]
     pub detect: Option<DetectConfig>,
 }
+
+/// Tool runner — how the tool is executed.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolRunner {
+    Python,
+    Node,
+    Bash,
+    Wasm,
+}
+
+impl std::fmt::Display for ToolRunner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Python => write!(f, "python"),
+            Self::Node => write!(f, "node"),
+            Self::Bash => write!(f, "bash"),
+            Self::Wasm => write!(f, "wasm"),
+        }
+    }
+}
+
+/// A tool declaration — can be script-backed or HTTP-backed.
+#[derive(Debug, Deserialize)]
+pub struct ToolEntry {
+    pub name: String,
+    pub description: String,
+    /// Script runner (python/node/bash/wasm). Mutually exclusive with `endpoint`.
+    #[serde(default)]
+    pub runner: Option<ToolRunner>,
+    /// Path to script file, relative to plugin root.
+    #[serde(default)]
+    pub script: Option<String>,
+    /// HTTP endpoint URL. Mutually exclusive with `runner`.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    /// HTTP method (default: POST).
+    #[serde(default)]
+    pub method: Option<String>,
+    /// WASM module path, relative to plugin root.
+    #[serde(default)]
+    pub module: Option<String>,
+    /// JSON Schema for parameters.
+    #[serde(default = "default_params")]
+    pub parameters: serde_json::Value,
+    /// Execution timeout in seconds (default: 30).
+    #[serde(default = "default_tool_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_params() -> serde_json::Value {
+    serde_json::json!({"type": "object", "properties": {}})
+}
+fn default_tool_timeout() -> u64 { 30 }
+
+impl ToolEntry {
+    /// Is this a script-backed tool?
+    pub fn is_script(&self) -> bool {
+        self.runner.is_some() && self.script.is_some()
+    }
+
+    /// Is this an HTTP-backed tool?
+    pub fn is_http(&self) -> bool {
+        self.endpoint.is_some()
+    }
+
+    /// Validate the tool entry.
+    pub fn validate(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+        if self.runner.is_some() && self.endpoint.is_some() {
+            errors.push(format!(
+                "tool '{}': runner and endpoint are mutually exclusive",
+                self.name
+            ));
+        }
+        if self.runner.is_some() && self.script.is_none() && self.module.is_none() {
+            errors.push(format!(
+                "tool '{}': runner specified but no script or module path",
+                self.name
+            ));
+        }
+        if self.runner.is_none() && self.endpoint.is_none() {
+            errors.push(format!(
+                "tool '{}': must have either runner+script or endpoint",
+                self.name
+            ));
+        }
+        errors
+    }
+}
+
+/// Dynamic context entry — generates context at runtime.
+#[derive(Debug, Deserialize)]
+pub struct ContextEntry {
+    /// Script runner for context generation.
+    #[serde(default)]
+    pub runner: Option<ToolRunner>,
+    /// Script path for context generation.
+    #[serde(default)]
+    pub script: Option<String>,
+    /// HTTP endpoint for context retrieval.
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    /// How many turns the context stays active (default: 20).
+    #[serde(default = "default_context_ttl")]
+    pub ttl_turns: u32,
+}
+
+fn default_context_ttl() -> u32 { 20 }
 
 /// Required metadata for every plugin.
 #[derive(Debug, Deserialize)]
@@ -242,8 +357,16 @@ impl ArmoryManifest {
                 }
             }
             PluginType::Extension => {
-                // Extensions are more flexible — no strict requirements beyond meta
+                // Extensions must have at least one tool or context entry
+                if self.tools.is_empty() && self.context.is_none() {
+                    errors.push("extension plugin must have at least one [[tools]] entry or [context]".into());
+                }
             }
+        }
+
+        // Validate tool entries
+        for tool in &self.tools {
+            errors.extend(tool.validate());
         }
 
         errors
@@ -440,6 +563,208 @@ mod tests {
         assert_eq!(PluginType::Tone.to_string(), "tone");
         assert_eq!(PluginType::Skill.to_string(), "skill");
         assert_eq!(PluginType::Extension.to_string(), "extension");
+    }
+
+    // ── Functional plugin tests ────────────────────────────
+
+    #[test]
+    fn parse_script_backed_extension() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.csv-analyzer"
+            name = "CSV Analyzer"
+            version = "1.0.0"
+            description = "Analyze CSV files with pandas"
+
+            [[tools]]
+            name = "analyze_csv"
+            description = "Run statistical analysis on a CSV file"
+            runner = "python"
+            script = "tools/analyze.py"
+            timeout_secs = 60
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        assert_eq!(manifest.plugin.plugin_type, PluginType::Extension);
+        assert_eq!(manifest.tools.len(), 1);
+        assert!(manifest.validate().is_empty());
+
+        let tool = &manifest.tools[0];
+        assert_eq!(tool.runner, Some(ToolRunner::Python));
+        assert_eq!(tool.script.as_deref(), Some("tools/analyze.py"));
+        assert!(tool.is_script());
+        assert!(!tool.is_http());
+        assert_eq!(tool.timeout_secs, 60);
+    }
+
+    #[test]
+    fn parse_http_backed_extension() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.scribe"
+            name = "Scribe"
+            version = "1.0.0"
+            description = "Engagement tracking"
+
+            [[tools]]
+            name = "scribe_status"
+            description = "Get engagement status"
+            endpoint = "http://localhost:3000/api/status"
+            method = "GET"
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        assert!(manifest.validate().is_empty());
+
+        let tool = &manifest.tools[0];
+        assert!(tool.is_http());
+        assert!(!tool.is_script());
+        assert_eq!(tool.method.as_deref(), Some("GET"));
+    }
+
+    #[test]
+    fn parse_persona_with_tools() {
+        let toml = r#"
+            [plugin]
+            type = "persona"
+            id = "dev.styrene.omegon.pcb-designer"
+            name = "PCB Designer"
+            version = "1.0.0"
+            description = "PCB design persona with KiCad integration"
+
+            [persona.identity]
+            directive = "PERSONA.md"
+
+            [persona.mind]
+            seed_facts = "mind/facts.jsonl"
+
+            [[tools]]
+            name = "drc_check"
+            description = "Run KiCad Design Rule Check"
+            runner = "python"
+            script = "tools/drc_check.py"
+            timeout_secs = 60
+
+            [[tools]]
+            name = "bom_export"
+            description = "Export Bill of Materials"
+            runner = "python"
+            script = "tools/bom_export.py"
+
+            [detect]
+            file_patterns = ["*.kicad_pcb", "*.kicad_sch"]
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        assert_eq!(manifest.plugin.plugin_type, PluginType::Persona);
+        assert_eq!(manifest.tools.len(), 2);
+        assert!(manifest.validate().is_empty());
+        assert!(manifest.detect.is_some());
+    }
+
+    #[test]
+    fn parse_context_entry() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.context-gen"
+            name = "Context Gen"
+            version = "1.0.0"
+            description = "Dynamic context generator"
+
+            [context]
+            runner = "python"
+            script = "context/generate.py"
+            ttl_turns = 50
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        let ctx = manifest.context.unwrap();
+        assert_eq!(ctx.runner, Some(ToolRunner::Python));
+        assert_eq!(ctx.script.as_deref(), Some("context/generate.py"));
+        assert_eq!(ctx.ttl_turns, 50);
+    }
+
+    #[test]
+    fn validate_tool_runner_without_script() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.broken"
+            name = "Broken"
+            version = "1.0.0"
+            description = "Missing script path"
+
+            [[tools]]
+            name = "bad_tool"
+            description = "Has runner but no script"
+            runner = "python"
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        let errors = manifest.validate();
+        assert!(errors.iter().any(|e| e.contains("no script or module")));
+    }
+
+    #[test]
+    fn validate_tool_runner_and_endpoint_conflict() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.conflict"
+            name = "Conflict"
+            version = "1.0.0"
+            description = "Has both runner and endpoint"
+
+            [[tools]]
+            name = "confused_tool"
+            description = "Can't be both"
+            runner = "python"
+            script = "tools/run.py"
+            endpoint = "http://localhost:3000/api"
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        let errors = manifest.validate();
+        assert!(errors.iter().any(|e| e.contains("mutually exclusive")));
+    }
+
+    #[test]
+    fn validate_tool_no_runner_no_endpoint() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.empty-tool"
+            name = "Empty"
+            version = "1.0.0"
+            description = "Tool with no execution method"
+
+            [[tools]]
+            name = "orphan_tool"
+            description = "No runner, no endpoint"
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        let errors = manifest.validate();
+        assert!(errors.iter().any(|e| e.contains("must have either")));
+    }
+
+    #[test]
+    fn validate_extension_needs_tools_or_context() {
+        let toml = r#"
+            [plugin]
+            type = "extension"
+            id = "dev.example.empty-ext"
+            name = "Empty Extension"
+            version = "1.0.0"
+            description = "Extension with nothing"
+        "#;
+        let manifest = ArmoryManifest::parse(toml).unwrap();
+        let errors = manifest.validate();
+        assert!(errors.iter().any(|e| e.contains("at least one")));
+    }
+
+    #[test]
+    fn tool_runner_display() {
+        assert_eq!(ToolRunner::Python.to_string(), "python");
+        assert_eq!(ToolRunner::Node.to_string(), "node");
+        assert_eq!(ToolRunner::Bash.to_string(), "bash");
+        assert_eq!(ToolRunner::Wasm.to_string(), "wasm");
     }
 
     #[test]
