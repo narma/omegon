@@ -4,6 +4,7 @@ title: "mdserve: Dioxus WASM frontend — lifecycle/intelligence views"
 status: seed
 parent: markdown-viewport
 dependencies: [mdserve-lifecycle-backend]
+related: [native-plan-mode]
 tags: [rendering, dioxus, wasm, frontend, lifecycle]
 open_questions: []
 issue_type: feature
