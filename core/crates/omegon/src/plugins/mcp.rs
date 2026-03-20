@@ -29,18 +29,60 @@ use tokio::process::Command;
 use tokio::sync::Mutex;
 
 /// Configuration for a single MCP server.
+///
+/// Supports three execution modes:
+/// 1. **Local process** (default): `command` + `args` spawned directly
+/// 2. **OCI container**: `image` specified, spawned via podman/docker
+/// 3. **Docker MCP Gateway**: `docker_mcp` flag, uses `docker mcp gateway run`
+///
+/// Examples:
+/// ```toml
+/// # Local process
+/// [mcp_servers.filesystem]
+/// command = "npx"
+/// args = ["-y", "@modelcontextprotocol/server-filesystem", "/home"]
+///
+/// # OCI container (podman or docker)
+/// [mcp_servers.postgres]
+/// image = "ghcr.io/modelcontextprotocol/server-postgres:latest"
+/// env = { DATABASE_URL = "{DATABASE_URL}" }
+///
+/// # Docker MCP Toolkit gateway
+/// [mcp_servers.github]
+/// docker_mcp = "github"
+/// ```
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpServerConfig {
-    pub command: String,
+    /// Command to spawn (for local process mode).
+    #[serde(default)]
+    pub command: Option<String>,
+    /// Arguments to the command.
     #[serde(default)]
     pub args: Vec<String>,
+    /// Environment variables to pass.
     #[serde(default)]
     pub env: HashMap<String, String>,
+    /// OCI image reference — spawns the MCP server in a container.
+    /// The container must expose MCP via stdio (ENTRYPOINT reads stdin, writes stdout).
+    #[serde(default)]
+    pub image: Option<String>,
+    /// Mount the operator's working directory into the container (default: false).
+    #[serde(default)]
+    pub mount_cwd: bool,
+    /// Allow container network access (default: true for MCP servers).
+    #[serde(default = "default_true")]
+    pub network: bool,
+    /// Docker MCP Toolkit gateway server name.
+    /// If set, uses `docker mcp gateway run <name>` instead of direct spawn.
+    #[serde(default)]
+    pub docker_mcp: Option<String>,
+    /// Timeout for tool calls in seconds (default: 30).
     #[serde(default = "default_timeout")]
     pub timeout_secs: u64,
 }
 
 fn default_timeout() -> u64 { 30 }
+fn default_true() -> bool { true }
 
 /// A discovered tool from an MCP server.
 #[derive(Debug, Clone)]
@@ -118,12 +160,7 @@ impl McpFeature {
         server_name: &str,
         config: &McpServerConfig,
     ) -> anyhow::Result<(Vec<McpTool>, McpConnection)> {
-        let mut cmd = Command::new(&config.command);
-        cmd.args(&config.args);
-        for (key, value) in &config.env {
-            cmd.env(key, resolve_env_template(value));
-        }
-
+        let cmd = Self::build_command(server_name, config)?;
         let transport = TokioChildProcess::new(cmd)?;
         let client = service::serve_client(OmegonMcpClient, transport).await?;
 
@@ -146,6 +183,65 @@ impl McpFeature {
             .collect();
 
         Ok((tools, client))
+    }
+
+    /// Build the command to spawn an MCP server based on its config mode.
+    fn build_command(server_name: &str, config: &McpServerConfig) -> anyhow::Result<Command> {
+        // Mode 1: Docker MCP Toolkit gateway
+        if let Some(ref gateway_name) = config.docker_mcp {
+            let mut cmd = Command::new("docker");
+            cmd.args(["mcp", "gateway", "run", gateway_name]);
+            for (key, value) in &config.env {
+                cmd.env(key, resolve_env_template(value));
+            }
+            return Ok(cmd);
+        }
+
+        // Mode 2: OCI container (podman preferred, docker fallback)
+        if let Some(ref image) = config.image {
+            let runtime = detect_container_runtime();
+            let mut cmd = Command::new(&runtime);
+            cmd.arg("run");
+            cmd.args(["--rm", "-i"]); // interactive stdin/stdout
+
+            // Network policy
+            if !config.network {
+                cmd.arg("--network=none");
+            }
+
+            // Mount cwd if requested
+            if config.mount_cwd {
+                if let Ok(cwd) = std::env::current_dir() {
+                    cmd.arg(format!("-v={}:/work", cwd.display()));
+                    cmd.args(["-w", "/work"]);
+                }
+            }
+
+            // Environment variables
+            for (key, value) in &config.env {
+                cmd.arg(format!("-e={}={}", key, resolve_env_template(value)));
+            }
+
+            cmd.arg(image);
+            cmd.args(&config.args);
+            return Ok(cmd);
+        }
+
+        // Mode 3: Local process (default)
+        let command = config.command.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "MCP server '{}': must specify command, image, or docker_mcp",
+                server_name
+            )
+        })?;
+
+        let mut cmd = Command::new(command);
+        cmd.args(&config.args);
+        for (key, value) in &config.env {
+            cmd.env(key, resolve_env_template(value));
+        }
+
+        Ok(cmd)
     }
 
     /// Parse "servername_toolname" → ("servername", "toolname").
@@ -227,6 +323,40 @@ impl Feature for McpFeature {
     }
 }
 
+/// Detect the available OCI container runtime.
+/// Prefers podman (rootless, daemonless), falls back to docker.
+fn detect_container_runtime() -> String {
+    // Check OMEGON_CONTAINER_RUNTIME env var first (operator override)
+    if let Ok(runtime) = std::env::var("OMEGON_CONTAINER_RUNTIME") {
+        return runtime;
+    }
+
+    // Prefer podman (rootless, no daemon)
+    if which_exists("podman") {
+        return "podman".into();
+    }
+
+    // Fall back to docker
+    if which_exists("docker") {
+        return "docker".into();
+    }
+
+    // Last resort — assume docker and let the error surface at spawn time
+    tracing::warn!("no container runtime found (podman or docker) — MCP container tools will fail");
+    "docker".into()
+}
+
+/// Check if a binary exists in PATH.
+fn which_exists(name: &str) -> bool {
+    std::process::Command::new("which")
+        .arg(name)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Resolve `{ENV_VAR}` patterns from environment variables.
 fn resolve_env_template(template: &str) -> String {
     let mut result = template.to_string();
@@ -281,16 +411,44 @@ mod tests {
     }
 
     #[test]
-    fn mcp_server_config_deserialize() {
+    fn mcp_server_config_local_process() {
         let toml = r#"
             command = "npx"
             args = ["-y", "@modelcontextprotocol/server-filesystem", "/home"]
             timeout_secs = 60
         "#;
         let config: McpServerConfig = toml::from_str(toml).unwrap();
-        assert_eq!(config.command, "npx");
+        assert_eq!(config.command.as_deref(), Some("npx"));
         assert_eq!(config.args.len(), 3);
         assert_eq!(config.timeout_secs, 60);
+        assert!(config.image.is_none());
+        assert!(config.docker_mcp.is_none());
+    }
+
+    #[test]
+    fn mcp_server_config_oci_container() {
+        let toml = r#"
+            image = "ghcr.io/mcp/server-postgres:latest"
+            mount_cwd = true
+            network = true
+            [env]
+            DATABASE_URL = "{DATABASE_URL}"
+        "#;
+        let config: McpServerConfig = toml::from_str(toml).unwrap();
+        assert!(config.command.is_none());
+        assert_eq!(config.image.as_deref(), Some("ghcr.io/mcp/server-postgres:latest"));
+        assert!(config.mount_cwd);
+        assert!(config.network);
+        assert_eq!(config.env["DATABASE_URL"], "{DATABASE_URL}");
+    }
+
+    #[test]
+    fn mcp_server_config_docker_gateway() {
+        let toml = r#"docker_mcp = "github""#;
+        let config: McpServerConfig = toml::from_str(toml).unwrap();
+        assert!(config.command.is_none());
+        assert!(config.image.is_none());
+        assert_eq!(config.docker_mcp.as_deref(), Some("github"));
     }
 
     #[test]
@@ -312,6 +470,90 @@ mod tests {
         assert!(config.args.is_empty());
         assert!(config.env.is_empty());
         assert_eq!(config.timeout_secs, 30);
+        assert!(config.network); // defaults to true for MCP servers
+    }
+
+    #[test]
+    fn build_command_local_process() {
+        let config = McpServerConfig {
+            command: Some("npx".into()),
+            args: vec!["-y".into(), "server".into()],
+            env: HashMap::new(),
+            image: None,
+            mount_cwd: false,
+            network: true,
+            docker_mcp: None,
+            timeout_secs: 30,
+        };
+        let cmd = McpFeature::build_command("test", &config).unwrap();
+        let prog = cmd.as_std().get_program().to_str().unwrap();
+        assert_eq!(prog, "npx");
+    }
+
+    #[test]
+    fn build_command_oci_container() {
+        let config = McpServerConfig {
+            command: None,
+            args: vec![],
+            env: HashMap::from([("DB".into(), "postgres://localhost".into())]),
+            image: Some("ghcr.io/mcp/server:latest".into()),
+            mount_cwd: false,
+            network: false,
+            docker_mcp: None,
+            timeout_secs: 30,
+        };
+        let cmd = McpFeature::build_command("test", &config).unwrap();
+        let prog = cmd.as_std().get_program().to_str().unwrap();
+        // Should use detected runtime (podman or docker)
+        assert!(prog == "podman" || prog == "docker",
+            "expected podman or docker, got: {prog}");
+        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        assert!(args.contains(&"--network=none"), "should disable network: {args:?}");
+        assert!(args.contains(&"ghcr.io/mcp/server:latest"), "should include image: {args:?}");
+    }
+
+    #[test]
+    fn build_command_docker_gateway() {
+        let config = McpServerConfig {
+            command: None,
+            args: vec![],
+            env: HashMap::new(),
+            image: None,
+            mount_cwd: false,
+            network: true,
+            docker_mcp: Some("github".into()),
+            timeout_secs: 30,
+        };
+        let cmd = McpFeature::build_command("test", &config).unwrap();
+        let prog = cmd.as_std().get_program().to_str().unwrap();
+        assert_eq!(prog, "docker");
+        let args: Vec<_> = cmd.as_std().get_args().map(|a| a.to_str().unwrap()).collect();
+        assert!(args.contains(&"mcp"), "should have mcp subcommand: {args:?}");
+        assert!(args.contains(&"gateway"), "should have gateway: {args:?}");
+        assert!(args.contains(&"github"), "should have server name: {args:?}");
+    }
+
+    #[test]
+    fn build_command_no_execution_method() {
+        let config = McpServerConfig {
+            command: None,
+            args: vec![],
+            env: HashMap::new(),
+            image: None,
+            mount_cwd: false,
+            network: true,
+            docker_mcp: None,
+            timeout_secs: 30,
+        };
+        let result = McpFeature::build_command("test", &config);
+        assert!(result.is_err(), "should error without command, image, or docker_mcp");
+    }
+
+    #[test]
+    fn detect_runtime_returns_something() {
+        let runtime = detect_container_runtime();
+        // Should always return a string (podman, docker, or docker as fallback)
+        assert!(!runtime.is_empty());
     }
 
     #[test]

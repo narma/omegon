@@ -1,7 +1,7 @@
 ---
 id: mcp-transport
 title: MCP transport for plugin tools — Model Context Protocol as first-class tool source
-status: exploring
+status: implementing
 tags: [architecture, plugins, mcp, tools, interoperability, standards]
 open_questions: []
 issue_type: feature
@@ -44,6 +44,13 @@ args = ["-y", "@modelcontextprotocol/server-brave-search"]
 env = { BRAVE_API_KEY = "{BRAVE_API_KEY}" }
 ```
 Tools from MCP servers register alongside native tools in the tool registry. The agent sees a flat tool list regardless of source.
+
+## Decisions
+
+### Decision: Use official rmcp crate (v1.2) with child-process transport for MCP server connections
+
+**Status:** decided
+**Rationale:** The official modelcontextprotocol/rust-sdk crate (rmcp) is stable at v1.2, supports child-process spawning of MCP servers via TokioChildProcess, and provides the full MCP protocol (tools, resources, prompts). McpFeature implements the Omegon Feature trait — tools from MCP servers register alongside native tools in a flat list. Server names prefix tool names to avoid collisions. ArmoryManifest gains mcp_servers section so plugins can declare MCP servers alongside script/HTTP/OCI tools.
 
 ## Open Questions
 

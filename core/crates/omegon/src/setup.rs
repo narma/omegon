@@ -248,7 +248,7 @@ impl AgentSetup {
         )));
 
         // ─── External plugins (TOML manifests) ────────────────────────
-        let plugins = crate::plugins::discover_plugins(&cwd);
+        let plugins = crate::plugins::discover_plugins(&cwd).await;
         for plugin in plugins {
             bus.register(plugin);
         }
