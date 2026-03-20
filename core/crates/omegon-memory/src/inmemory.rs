@@ -307,7 +307,7 @@ impl MemoryBackend for InMemoryBackend {
             target_id: req.target_id,
             relation: req.relation,
             description: req.description,
-            weight: 1.0,
+            confidence: 1.0,
             created_at: now_iso(),
         };
         s.edges.push(edge.clone());

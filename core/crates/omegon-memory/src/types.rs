@@ -146,7 +146,9 @@ pub struct Edge {
     pub relation: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub weight: f64,
+    /// Edge confidence (1.0 = full). Replaces legacy `weight` field.
+    #[serde(alias = "weight")]
+    pub confidence: f64,
     pub created_at: String,
 }
 

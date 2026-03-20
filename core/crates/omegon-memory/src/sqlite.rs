@@ -627,13 +627,13 @@ impl MemoryBackend for SqliteBackend {
         let id = gen_id();
         let ts = now_iso();
         conn.execute(
-            "INSERT INTO edges (id, source_fact_id, target_fact_id, relation, description, weight, created_at) \
+            "INSERT INTO edges (id, source_fact_id, target_fact_id, relation, description, confidence, created_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, 1.0, ?6)",
             params![id, req.source_id, req.target_id, req.relation, req.description, ts],
         ).map_err(|e| MemoryError::Storage(e.into()))?;
 
         Ok(Edge { id, source_id: req.source_id, target_id: req.target_id,
-            relation: req.relation, description: req.description, weight: 1.0, created_at: ts })
+            relation: req.relation, description: req.description, confidence: 1.0, created_at: ts })
     }
 
     async fn get_edges(&self, _mind: &str, fact_id: &str) -> Result<Vec<Edge>> {
@@ -649,7 +649,7 @@ impl MemoryBackend for SqliteBackend {
                 target_id: row.get("target_fact_id")?,
                 relation: row.get("relation")?,
                 description: row.get("description")?,
-                weight: row.get("weight")?,
+                confidence: row.get("confidence")?,
                 created_at: row.get("created_at")?,
             })
         }).map_err(|e| MemoryError::Storage(e.into()))?
@@ -763,7 +763,7 @@ impl MemoryBackend for SqliteBackend {
             Ok(Edge {
                 id: row.get("id")?, source_id: row.get("source_fact_id")?,
                 target_id: row.get("target_fact_id")?, relation: row.get("relation")?,
-                description: row.get("description")?, weight: row.get("weight")?,
+                description: row.get("description")?, confidence: row.get("confidence")?,
                 created_at: row.get("created_at")?,
             })
         }).map_err(|e| MemoryError::Storage(e.into()))?
@@ -851,10 +851,10 @@ impl MemoryBackend for SqliteBackend {
                 }
                 Ok(JsonlRecord::Edge(edge)) => {
                     tx.execute(
-                        "INSERT OR IGNORE INTO edges (id, source_fact_id, target_fact_id, relation, description, weight, created_at) \
+                        "INSERT OR IGNORE INTO edges (id, source_fact_id, target_fact_id, relation, description, confidence, created_at) \
                          VALUES (?1,?2,?3,?4,?5,?6,?7)",
                         params![edge.id, edge.source_id, edge.target_id, edge.relation,
-                                edge.description, edge.weight, edge.created_at],
+                                edge.description, edge.confidence, edge.created_at],
                     ).map_err(|e| MemoryError::Storage(e.into()))?;
                     stats.imported += 1;
                 }
@@ -925,44 +925,86 @@ mod tests {
         run_backend_tests(&backend).await;
     }
 
-    /// Validate that the actual SQLite schema matches schema-contract.json.
-    /// If this test fails, either the Rust schema or the contract needs updating.
-    /// The contract is consumed by the TS omegon-pi repo to prevent drift.
+    /// Generate schema-contract.json from the actual Rust schema.
+    /// This is the canonical contract — TS validates against it.
+    /// If the Rust schema changes, re-run this test to update the contract:
+    ///   cargo test -p omegon-memory schema_contract -- --ignored
+    /// Then commit the updated schema-contract.json.
     #[test]
-    fn schema_matches_contract() {
+    #[ignore] // Run manually: cargo test -p omegon-memory schema_contract -- --ignored
+    fn schema_contract_generate() {
         let backend = SqliteBackend::in_memory().unwrap();
         let conn = backend.conn.lock().unwrap();
 
-        // Load the contract
+        let contract = generate_schema_contract(&conn);
         let contract_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("schema-contract.json");
-        let contract_text = std::fs::read_to_string(&contract_path)
-            .unwrap_or_else(|e| panic!("Failed to read {}: {}", contract_path.display(), e));
-        let contract: serde_json::Value = serde_json::from_str(&contract_text)
-            .expect("schema-contract.json is not valid JSON");
+        std::fs::write(&contract_path, &contract)
+            .unwrap_or_else(|e| panic!("Failed to write {}: {}", contract_path.display(), e));
+        println!("Updated {}", contract_path.display());
+    }
 
-        let tables = contract["tables"].as_object().expect("tables must be an object");
-        for (table_name, table_spec) in tables {
-            // Get actual columns from SQLite
-            let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table_name))
-                .unwrap_or_else(|_| panic!("Table '{}' does not exist in Rust schema", table_name));
-            let actual_cols: Vec<String> = stmt
+    /// Validate that schema-contract.json is up to date with the actual Rust schema.
+    /// Fails CI if someone changed sqlite.rs without regenerating the contract.
+    #[test]
+    fn schema_contract_is_current() {
+        let backend = SqliteBackend::in_memory().unwrap();
+        let conn = backend.conn.lock().unwrap();
+
+        let contract_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("schema-contract.json");
+        let on_disk = std::fs::read_to_string(&contract_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {}. Run: cargo test -p omegon-memory schema_contract_generate -- --ignored", contract_path.display(), e));
+        let generated = generate_schema_contract(&conn);
+
+        assert_eq!(
+            on_disk.trim(), generated.trim(),
+            "schema-contract.json is stale. Regenerate with:\n  cargo test -p omegon-memory schema_contract_generate -- --ignored"
+        );
+    }
+
+    fn generate_schema_contract(conn: &Connection) -> String {
+        use std::collections::BTreeMap;
+
+        // Get all real tables (not sqlite_ internal, not FTS virtual tables)
+        let mut stmt = conn.prepare(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' ORDER BY name"
+        ).unwrap();
+        let table_names: Vec<String> = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        let mut tables = BTreeMap::new();
+        for table in &table_names {
+            let mut col_stmt = conn.prepare(&format!("PRAGMA table_info({})", table)).unwrap();
+            let cols: Vec<String> = col_stmt
                 .query_map([], |row| row.get::<_, String>(1))
                 .unwrap()
                 .filter_map(|r| r.ok())
                 .collect();
-
-            let required_cols = table_spec["columns"].as_object()
-                .unwrap_or_else(|| panic!("columns must be an object for table {}", table_name));
-
-            for col_name in required_cols.keys() {
-                assert!(
-                    actual_cols.contains(col_name),
-                    "Contract requires column '{}.{}' but it's missing from the Rust schema. \
-                     Either add it to sqlite.rs or update schema-contract.json.",
-                    table_name, col_name
-                );
-            }
+            tables.insert(table.clone(), cols);
         }
+
+        let mut out = String::from("{\n");
+        out.push_str("  \"description\": \"Canonical memory DB schema. Generated from Rust omegon-memory. Do not edit — regenerate with: cargo test -p omegon-memory schema_contract_generate -- --ignored\",\n");
+        let version: i64 = conn.query_row("SELECT COALESCE(MAX(version), 0) FROM schema_version", [], |r| r.get(0)).unwrap_or(0);
+        out.push_str(&format!("  \"schema_version\": {},\n", version));
+        out.push_str("  \"tables\": {\n");
+        let table_count = tables.len();
+        for (i, (table, cols)) in tables.iter().enumerate() {
+            out.push_str(&format!("    \"{}\": [", table));
+            for (j, col) in cols.iter().enumerate() {
+                out.push_str(&format!("\"{}\"", col));
+                if j < cols.len() - 1 { out.push_str(", "); }
+            }
+            out.push(']');
+            if i < table_count - 1 { out.push(','); }
+            out.push('\n');
+        }
+        out.push_str("  }\n");
+        out.push_str("}\n");
+        out
     }
 }
