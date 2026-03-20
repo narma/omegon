@@ -1,7 +1,7 @@
 ---
 id: cleave-prerequisite-prompting
 title: Cleave prerequisite prompting — project context and finalization instructions
-status: decided
+status: implemented
 parent: cleave-child-dispatch-quality
 open_questions: []
 priority: 2

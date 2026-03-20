@@ -1,7 +1,7 @@
 ---
 id: cleave-task-progress
 title: Cleave task-level progress tracking and operator display
-status: decided
+status: implemented
 parent: cleave-child-dispatch-quality
 open_questions: []
 priority: 3

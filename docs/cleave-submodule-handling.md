@@ -1,7 +1,7 @@
 ---
 id: cleave-submodule-handling
 title: Cleave submodule-aware commit and merge
-status: decided
+status: implemented
 parent: cleave-child-dispatch-quality
 open_questions: []
 priority: 2
