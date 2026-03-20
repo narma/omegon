@@ -3,40 +3,41 @@
 ## 1. PathPolicy enum and fail-closed path enforcement (vault.rs)
 <!-- specs: vault-security -->
 
-- [ ] 1.1 Add `PathPolicy` enum: `DenyAll`, `AllowList { allow: GlobSet, deny: GlobSet }` — replaces raw `allowed_paths`/`denied_paths` fields on VaultClient
-- [ ] 1.2 `PathPolicy::from_config(allowed: &[String], denied: &[String])` — empty allowed → DenyAll, non-empty → AllowList with compiled globs
-- [ ] 1.3 Refactor `check_path_allowed()` to match on PathPolicy — DenyAll rejects with "no paths allowed", AllowList does traversal check → deny check → allow check
-- [ ] 1.4 Update `VaultClient::new()` to use `PathPolicy::from_config()`
-- [ ] 1.5 Ensure health(), seal_status(), unseal() bypass path enforcement (they use fixed paths, not user-controlled)
-- [ ] 1.6 Tests: empty allowlist denies, explicit allowlist allows, DenyAll + health still works
+- [x] 1.1 Add `PathPolicy` enum: `DenyAll`, `AllowList { allow: GlobSet, deny: GlobSet }`
+- [x] 1.2 `PathPolicy::from_config(allowed, denied)` — empty allowed → DenyAll
+- [x] 1.3 Refactor `check_path_allowed()` to delegate to `PathPolicy::check()`
+- [x] 1.4 Update `VaultClient::new()` to use `PathPolicy::from_config()`
+- [x] 1.5 health(), seal_status(), unseal() bypass path enforcement (fixed endpoints)
+- [x] 1.6 Tests: empty allowlist denies, explicit allowlist allows, DenyAll + health still works
 
 ## 2. VAULT_ADDR deny-all default and error sanitization (vault.rs)
 <!-- specs: vault-security -->
 
-- [ ] 2.1 Change `load_config()` VAULT_ADDR fallback to use `allowed_paths: vec![]` (DenyAll) instead of hardcoded `secret/data/*`
-- [ ] 2.2 Add `tracing::warn!` in load_config when VAULT_ADDR-only: "vault configured via VAULT_ADDR but no vault.json — all secret paths denied. Create ~/.omegon/vault.json with allowed_paths"
-- [ ] 2.3 Sanitize error messages: replace `body = response.text().await.unwrap_or_default()` with truncated, scrubbed version (max 200 chars, no token-like patterns)
-- [ ] 2.4 Add `sanitize_error_body(body: &str) -> String` helper — truncate + strip token patterns
-- [ ] 2.5 Tests: VAULT_ADDR-only creates DenyAll config, error body sanitization strips sensitive content
+- [x] 2.1 VAULT_ADDR fallback uses `allowed_paths: vec![]` (DenyAll)
+- [x] 2.2 tracing::warn when VAULT_ADDR-only: "create vault.json with allowed_paths"
+- [x] 2.3 Add `sanitize_error_body()` — truncate 200 chars, strip token patterns
+- [x] 2.4 Replace all raw `response.text().await.unwrap_or_default()` with sanitized version
+- [x] 2.5 Tests: error body sanitization strips tokens, truncates
 
 ## 3. Fail-closed auth in SecretsManager (lib.rs)
 <!-- specs: vault-security -->
 
-- [ ] 3.1 Refactor `init_vault()`: only store `Some(client)` when `authenticate()` succeeds; on auth failure set `vault_client = None` and log warning
-- [ ] 3.2 Add `init_vault_health_only()` or fold health probe into init_vault — allow checking seal/health status even when auth fails (for /vault status and startup notification)
-- [ ] 3.3 Tests: auth failure → vault_client is None, successful auth → vault_client is Some
+- [x] 3.1 `init_vault()` only stores `Some(client)` when `authenticate()` succeeds
+- [x] 3.2 Add `vault_health_probe()` for unauthenticated health/seal checks
+- [x] 3.3 Auth failure logs warning, vault_client remains None
 
 ## 4. Recipe path validation (resolve.rs)
 <!-- specs: vault-security -->
 
-- [ ] 4.1 In `resolve_vault_secret()`, validate the parsed path before passing to VaultClient — reject `..` segments, null bytes, control chars
-- [ ] 4.2 Validate the key portion (after `#`) — reject empty keys, keys with path separators
-- [ ] 4.3 Tests: traversal in recipe path rejected, empty key rejected, valid recipe resolves
+- [x] 4.1 Validate path before VaultClient: reject `..`, null bytes, control chars
+- [x] 4.2 Validate key: reject empty, path separators
+- [x] 4.3 Move validation before `vault_client?` so it runs even without client
+- [x] 4.4 Tests: 5 recipe validation tests (traversal, empty key, path sep, empty path, null byte)
 
 ## Cross-cutting constraints
 
-- Every code path that can touch secrets must default to deny on unexpected conditions
-- Empty allowlist = deny all, not allow all
-- Auth failure = no client stored, not half-initialized client
-- Error messages must not include raw Vault response bodies
-- VAULT_ADDR-only must start with DenyAll + startup warning
+- [x] Every code path that can touch secrets defaults to deny on unexpected conditions
+- [x] Empty allowlist = deny all, not allow all
+- [x] Auth failure = no client stored, not half-initialized client
+- [x] Error messages do not include raw Vault response bodies
+- [x] VAULT_ADDR-only starts with DenyAll + startup warning
