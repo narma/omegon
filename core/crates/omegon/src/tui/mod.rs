@@ -226,10 +226,11 @@ impl App {
                 value: level.as_str().to_string(),
                 label: format!("{} {}", level.icon(), level.as_str()),
                 description: match level {
-                    crate::settings::ThinkingLevel::Off => "no extended thinking".into(),
-                    crate::settings::ThinkingLevel::Low => "~5k token budget".into(),
-                    crate::settings::ThinkingLevel::Medium => "~10k token budget".into(),
-                    crate::settings::ThinkingLevel::High => "~50k token budget".into(),
+                    crate::settings::ThinkingLevel::Off => "Servitor — no extended thinking".into(),
+                    crate::settings::ThinkingLevel::Minimal => "Functionary — ~2k token budget".into(),
+                    crate::settings::ThinkingLevel::Low => "Adept — ~5k token budget".into(),
+                    crate::settings::ThinkingLevel::Medium => "Magos — ~10k token budget".into(),
+                    crate::settings::ThinkingLevel::High => "Archmagos — ~50k token budget".into(),
                 },
                 active: *level == current,
             }
@@ -421,6 +422,7 @@ impl App {
             self.footer_data.model_id = s.model.clone();
             self.footer_data.model_provider = s.provider().to_string();
             self.footer_data.context_window = s.context_window;
+            self.footer_data.context_class = s.context_class;
             self.footer_data.context_mode = s.context_mode;
         }
         self.footer_data.turn = self.turn;

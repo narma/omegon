@@ -191,6 +191,7 @@ pub async fn run(
                 let guard = s.lock().ok()?;
                 match guard.thinking {
                     crate::settings::ThinkingLevel::Off => None,
+                    crate::settings::ThinkingLevel::Minimal => Some("minimal".to_string()),
                     crate::settings::ThinkingLevel::Low => Some("low".to_string()),
                     crate::settings::ThinkingLevel::Medium => Some("medium".to_string()),
                     crate::settings::ThinkingLevel::High => Some("high".to_string()),

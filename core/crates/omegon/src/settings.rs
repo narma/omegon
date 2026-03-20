@@ -5,6 +5,12 @@
 //! The agent loop reads before each turn.
 //!
 //! Settings persist for the session. Serialized to session snapshot on save.
+//!
+//! ## Three-axis routing model
+//!
+//! - **Capability tier**: local / retribution / victory / gloriana
+//! - **Thinking level**: off / minimal / low / medium / high
+//! - **Context class**: Squad (128k) / Maniple (272k) / Clan (400k) / Legion (1M+)
 
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
@@ -15,7 +21,7 @@ pub struct Settings {
     /// Active model (provider:model-id format).
     pub model: String,
 
-    /// Thinking level: off, low, medium, high.
+    /// Thinking level: off, minimal, low, medium, high.
     pub thinking: ThinkingLevel,
 
     /// Maximum turns per agent invocation. 0 = no limit.
@@ -24,14 +30,23 @@ pub struct Settings {
     /// Context compaction threshold (fraction of context window).
     pub compaction_threshold: f32,
 
-    /// Context window size (tokens). Inferred from model + context_mode.
+    /// Context window size (tokens). Inferred from model via route matrix.
     pub context_window: usize,
 
-    /// Extended context mode — controls 200k vs 1M for Anthropic models.
+    /// Context class — named abstraction over context_window.
+    /// Derived from context_window, not set directly.
+    pub context_class: ContextClass,
+
+    /// Extended context mode — legacy Anthropic 200k/1M toggle.
+    /// Deprecated: derived from context_class. Kept for backward compat.
     pub context_mode: ContextMode,
 
     /// Tool display detail level.
     pub tool_detail: ToolDetail,
+
+    /// Provider preference order for routing. First = most preferred.
+    #[serde(default)]
+    pub provider_order: Vec<String>,
 }
 
 /// Tool card display mode in the conversation view.
@@ -61,8 +76,120 @@ impl ToolDetail {
     }
 }
 
+// ─── Context Class ──────────────────────────────────────────────────────────
+
+/// Context class — named context window categories.
+///
+/// Abstracts provider-specific token ceilings into operator-friendly categories.
+/// Internal routing still compares exact token counts; these are the policy
+/// and UX abstraction.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum ContextClass {
+    /// 128k tokens. Compact context for lightweight tasks.
+    #[default]
+    Squad,
+    /// 272k tokens. Standard working context.
+    Maniple,
+    /// 400k tokens. Extended context for large codebases.
+    Clan,
+    /// 1M+ tokens. Full context for massive sessions.
+    Legion,
+}
+
+/// Token ceiling thresholds — a model with ceiling ≤ threshold belongs to that class.
+const CONTEXT_CLASS_THRESHOLDS: &[(ContextClass, usize)] = &[
+    (ContextClass::Squad, 131_072),     // 128k
+    (ContextClass::Maniple, 278_528),   // ~272k
+    (ContextClass::Clan, 450_560),      // ~440k (covers 400k models)
+    // Legion: everything above
+];
+
+impl ContextClass {
+    /// Classify a raw token count into a context class.
+    pub fn from_tokens(tokens: usize) -> Self {
+        for &(class, threshold) in CONTEXT_CLASS_THRESHOLDS {
+            if tokens <= threshold {
+                return class;
+            }
+        }
+        Self::Legion
+    }
+
+    /// Nominal token count for this class.
+    pub fn nominal_tokens(self) -> usize {
+        match self {
+            Self::Squad => 131_072,
+            Self::Maniple => 278_528,
+            Self::Clan => 409_600,
+            Self::Legion => 1_048_576,
+        }
+    }
+
+    /// Operator-facing display label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Squad => "Squad (128k)",
+            Self::Maniple => "Maniple (272k)",
+            Self::Clan => "Clan (400k)",
+            Self::Legion => "Legion (1M)",
+        }
+    }
+
+    /// Short name for dashboard badges.
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::Squad => "Squad",
+            Self::Maniple => "Maniple",
+            Self::Clan => "Clan",
+            Self::Legion => "Legion",
+        }
+    }
+
+    /// Ordinal for comparison and delta calculation.
+    pub fn ordinal(self) -> u8 {
+        match self {
+            Self::Squad => 0,
+            Self::Maniple => 1,
+            Self::Clan => 2,
+            Self::Legion => 3,
+        }
+    }
+
+    /// Delta between two classes. Positive = downgrade (self > other).
+    pub fn delta(self, other: Self) -> i8 {
+        self.ordinal() as i8 - other.ordinal() as i8
+    }
+
+    /// Derive the legacy ContextMode from this class.
+    pub fn context_mode(self) -> ContextMode {
+        match self {
+            Self::Legion => ContextMode::Extended,
+            _ => ContextMode::Standard,
+        }
+    }
+
+    /// All classes in ascending order.
+    pub fn all() -> &'static [Self] {
+        &[Self::Squad, Self::Maniple, Self::Clan, Self::Legion]
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "squad" | "128k" => Some(Self::Squad),
+            "maniple" | "272k" => Some(Self::Maniple),
+            "clan" | "400k" => Some(Self::Clan),
+            "legion" | "1m" => Some(Self::Legion),
+            _ => None,
+        }
+    }
+}
+
+// ─── Context Mode (legacy, derived from ContextClass) ───────────────────────
+
 /// Context window mode for providers that support multiple sizes.
-/// Anthropic models default to 200k but support 1M via beta header.
+/// **Deprecated**: use `ContextClass` instead. Kept for Anthropic beta header derivation
+/// and backward compatibility with existing profile.json files.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContextMode {
     /// Standard context window (200k for Anthropic, varies for OpenAI).
@@ -106,14 +233,17 @@ impl ContextMode {
 
 impl Default for Settings {
     fn default() -> Self {
+        let context_window = 200_000;
         Self {
             model: "anthropic:claude-sonnet-4-6".into(),
             thinking: ThinkingLevel::Medium,
             max_turns: 50,
             compaction_threshold: 0.75,
-            context_window: 200_000,
+            context_window,
+            context_class: ContextClass::from_tokens(context_window),
             context_mode: ContextMode::Standard,
             tool_detail: ToolDetail::Detailed,
+            provider_order: Vec::new(),
         }
     }
 }
@@ -121,20 +251,32 @@ impl Default for Settings {
 impl Settings {
     pub fn new(model: &str) -> Self {
         let context_window = infer_context_window(model);
+        let context_class = ContextClass::from_tokens(context_window);
         Self {
             model: model.to_string(),
             context_window,
+            context_class,
+            context_mode: context_class.context_mode(),
             ..Default::default()
         }
     }
 
-    /// Recalculate context_window based on current model + context_mode.
+    /// Recalculate context_window and context_class based on current model.
     pub fn apply_context_mode(&mut self) {
         let base = infer_context_window(&self.model);
         self.context_window = match self.context_mode {
             ContextMode::Extended if self.provider() == "anthropic" => 1_000_000,
             _ => base,
         };
+        self.context_class = ContextClass::from_tokens(self.context_window);
+    }
+
+    /// Update model and recalculate derived fields.
+    pub fn set_model(&mut self, model: &str) {
+        self.model = model.to_string();
+        self.context_window = infer_context_window(model);
+        self.context_class = ContextClass::from_tokens(self.context_window);
+        self.context_mode = self.context_class.context_mode();
     }
 
     pub fn model_short(&self) -> &str {
@@ -149,10 +291,14 @@ impl Settings {
 }
 
 /// Thinking level — controls extended thinking budget.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Display names use the Mechanicum cognition ladder:
+/// Off → Servitor, Minimal → Functionary, Low → Adept, Medium → Magos, High → Archmagos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ThinkingLevel {
     Off,
+    Minimal,
     Low,
     Medium,
     High,
@@ -162,18 +308,31 @@ impl ThinkingLevel {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Off => "off",
+            Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
         }
     }
 
+    /// Operator-facing display name (Mechanicum cognition ladder).
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Off => "Servitor",
+            Self::Minimal => "Functionary",
+            Self::Low => "Adept",
+            Self::Medium => "Magos",
+            Self::High => "Archmagos",
+        }
+    }
+
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "off" | "none" => Some(Self::Off),
-            "low" | "min" | "minimal" => Some(Self::Low),
-            "medium" | "med" | "default" => Some(Self::Medium),
-            "high" | "max" => Some(Self::High),
+            "off" | "none" | "servitor" => Some(Self::Off),
+            "minimal" | "functionary" => Some(Self::Minimal),
+            "low" | "min" | "adept" => Some(Self::Low),
+            "medium" | "med" | "default" | "magos" => Some(Self::Medium),
+            "high" | "max" | "archmagos" => Some(Self::High),
             _ => None,
         }
     }
@@ -181,6 +340,7 @@ impl ThinkingLevel {
     pub fn budget_tokens(&self) -> Option<u32> {
         match self {
             Self::Off => None,
+            Self::Minimal => Some(2_000),
             Self::Low => Some(5_000),
             Self::Medium => Some(10_000),
             Self::High => Some(50_000),
@@ -190,6 +350,7 @@ impl ThinkingLevel {
     pub fn icon(&self) -> &'static str {
         match self {
             Self::Off => "○",
+            Self::Minimal => "◔",
             Self::Low => "◔",
             Self::Medium => "◑",
             Self::High => "◉",
@@ -197,22 +358,80 @@ impl ThinkingLevel {
     }
 
     pub fn all() -> &'static [Self] {
-        &[Self::Off, Self::Low, Self::Medium, Self::High]
+        &[Self::Off, Self::Minimal, Self::Low, Self::Medium, Self::High]
     }
 }
 
+// ─── Route matrix (compile-time embedded) ───────────────────────────────────
+
+/// Reviewed route matrix — embedded from the same JSON the TS side loads.
+/// Updated by the Argo refresh pipeline, checked in, compiled into the binary.
+const ROUTE_MATRIX_JSON: &str = include_str!("../../../../data/route-matrix.json");
+
+/// Parsed route entry from the embedded matrix.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RouteEntry {
+    provider: String,
+    model_id_pattern: String,
+    context_ceiling: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct RouteMatrix {
+    routes: Vec<RouteEntry>,
+}
+
+/// Lazy-parsed route matrix.
+fn route_matrix() -> &'static [RouteEntry] {
+    use std::sync::OnceLock;
+    static MATRIX: OnceLock<Vec<RouteEntry>> = OnceLock::new();
+    MATRIX.get_or_init(|| {
+        serde_json::from_str::<RouteMatrix>(ROUTE_MATRIX_JSON)
+            .map(|m| m.routes)
+            .unwrap_or_default()
+    })
+}
+
+/// Match a model ID against the route matrix using glob-style patterns.
+fn lookup_context_ceiling(provider: &str, model_id: &str) -> Option<usize> {
+    route_matrix().iter().find_map(|entry| {
+        if entry.provider != provider {
+            return None;
+        }
+        let pattern = &entry.model_id_pattern;
+        let matches = if pattern.ends_with('*') {
+            model_id.starts_with(&pattern[..pattern.len() - 1])
+        } else {
+            model_id == pattern
+        };
+        matches.then_some(entry.context_ceiling)
+    })
+}
+
 /// Infer context window from model identifier.
+/// Uses the embedded route matrix first, falls back to heuristics.
 fn infer_context_window(model: &str) -> usize {
-    let name = model.split(':').next_back().unwrap_or(model);
-    // Anthropic — all current models are 200k
-    if name.contains("opus") { return 200_000; }
-    if name.contains("sonnet") { return 200_000; }
+    let parts: Vec<&str> = model.splitn(2, ':').collect();
+    let (provider, model_id) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        ("anthropic", model)
+    };
+
+    // Try route matrix lookup
+    if let Some(ceiling) = lookup_context_ceiling(provider, model_id) {
+        return ceiling;
+    }
+
+    // Fallback heuristics for models not in the matrix
+    let name = model_id;
+    if name.contains("opus") || name.contains("sonnet") { return 200_000; }
     if name.contains("haiku") { return 200_000; }
-    // OpenAI — GPT-5.x is 1M, GPT-4.1 is 1M, o-series is 200k
-    if name.contains("gpt-5") { return 1_000_000; }
-    if name.contains("gpt-4.1") { return 1_000_000; }
-    if name.contains("o3") || name.contains("o4") { return 200_000; }
-    200_000 // safe default
+    if name.contains("gpt-5") { return 272_000; }
+    if name.contains("gpt-4.1") { return 200_000; }
+
+    131_072 // fail-closed: default to Squad
 }
 
 /// Thread-safe shared settings handle.
@@ -224,7 +443,7 @@ pub fn shared(model: &str) -> SharedSettings {
 
 // ─── Profile persistence ────────────────────────────────────────────────────
 
-/// Profile: settings that persist with the project in .pi/config.json.
+/// Profile: settings that persist with the project in .omegon/profile.json.
 /// Read on startup, written on change. Travels with git.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -235,6 +454,22 @@ pub struct Profile {
     pub thinking_level: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_turns: Option<u32>,
+
+    // ── Context class routing ──
+
+    /// Provider preference order. First = most preferred.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_order: Vec<String>,
+    /// Providers to skip unless no alternative exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub avoid_providers: Vec<String>,
+    /// Pinned context floor — minimum context class the session should maintain.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_floor_pin: Option<String>,
+    /// Durable downgrade overrides — accepted transitions that won't prompt again.
+    /// Format: "Legion→Squad" (from_class→to_class).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downgrade_overrides: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -264,7 +499,15 @@ impl Profile {
                     return profile;
                 }
 
-        Self { last_used_model: None, thinking_level: None, max_turns: None }
+        Self {
+            last_used_model: None,
+            thinking_level: None,
+            max_turns: None,
+            provider_order: Vec::new(),
+            avoid_providers: Vec::new(),
+            context_floor_pin: None,
+            downgrade_overrides: Vec::new(),
+        }
     }
 
     /// Save to the project-level profile.
@@ -292,8 +535,7 @@ impl Profile {
     /// Apply profile to settings (called at startup).
     pub fn apply_to(&self, settings: &mut Settings) {
         if let Some(ref m) = self.last_used_model {
-            settings.model = format!("{}:{}", m.provider, m.model_id);
-            settings.context_window = infer_context_window(&settings.model);
+            settings.set_model(&format!("{}:{}", m.provider, m.model_id));
         }
         if let Some(ref t) = self.thinking_level
             && let Some(level) = ThinkingLevel::parse(t) {
@@ -301,6 +543,9 @@ impl Profile {
             }
         if let Some(turns) = self.max_turns {
             settings.max_turns = turns;
+        }
+        if !self.provider_order.is_empty() {
+            settings.provider_order = self.provider_order.clone();
         }
     }
 
@@ -312,6 +557,33 @@ impl Profile {
         });
         self.thinking_level = Some(settings.thinking.as_str().to_string());
         self.max_turns = Some(settings.max_turns);
+        if !settings.provider_order.is_empty() {
+            self.provider_order = settings.provider_order.clone();
+        }
+    }
+
+    /// Check if a downgrade transition has been accepted durably.
+    pub fn is_downgrade_accepted(&self, from: ContextClass, to: ContextClass) -> bool {
+        let key = format!("{}→{}", from.short(), to.short());
+        self.downgrade_overrides.contains(&key)
+    }
+
+    /// Accept a downgrade transition durably.
+    pub fn accept_downgrade(&mut self, from: ContextClass, to: ContextClass) {
+        let key = format!("{}→{}", from.short(), to.short());
+        if !self.downgrade_overrides.contains(&key) {
+            self.downgrade_overrides.push(key);
+        }
+    }
+
+    /// Get the pinned context floor, if set.
+    pub fn pinned_floor(&self) -> Option<ContextClass> {
+        self.context_floor_pin.as_deref().and_then(ContextClass::parse)
+    }
+
+    /// Pin the context floor.
+    pub fn pin_floor(&mut self, class: ContextClass) {
+        self.context_floor_pin = Some(class.short().to_string());
     }
 }
 
@@ -329,6 +601,7 @@ mod tests {
         let s = Settings::default();
         assert_eq!(s.thinking, ThinkingLevel::Medium);
         assert_eq!(s.context_window, 200_000);
+        assert_eq!(s.context_class, ContextClass::Maniple);
     }
 
     #[test]
@@ -347,19 +620,162 @@ mod tests {
     }
 
     #[test]
-    fn context_window_inference() {
-        assert_eq!(infer_context_window("anthropic:claude-sonnet-4-6"), 200_000);
-        assert_eq!(infer_context_window("anthropic:claude-opus-4-6"), 200_000);
-        assert_eq!(infer_context_window("anthropic:claude-haiku-4-5-20251001"), 200_000);
-        assert_eq!(infer_context_window("openai:gpt-5.4"), 1_000_000);
-        assert_eq!(infer_context_window("openai:gpt-4.1"), 1_000_000);
-        assert_eq!(infer_context_window("openai:o3"), 200_000);
-        assert_eq!(infer_context_window("openai:o4-mini"), 200_000);
+    fn thinking_level_display_names() {
+        assert_eq!(ThinkingLevel::Off.display_name(), "Servitor");
+        assert_eq!(ThinkingLevel::Minimal.display_name(), "Functionary");
+        assert_eq!(ThinkingLevel::Low.display_name(), "Adept");
+        assert_eq!(ThinkingLevel::Medium.display_name(), "Magos");
+        assert_eq!(ThinkingLevel::High.display_name(), "Archmagos");
+    }
+
+    #[test]
+    fn thinking_level_parse_mechanicum_names() {
+        assert_eq!(ThinkingLevel::parse("servitor"), Some(ThinkingLevel::Off));
+        assert_eq!(ThinkingLevel::parse("functionary"), Some(ThinkingLevel::Minimal));
+        assert_eq!(ThinkingLevel::parse("adept"), Some(ThinkingLevel::Low));
+        assert_eq!(ThinkingLevel::parse("magos"), Some(ThinkingLevel::Medium));
+        assert_eq!(ThinkingLevel::parse("archmagos"), Some(ThinkingLevel::High));
+    }
+
+    #[test]
+    fn context_window_from_route_matrix() {
+        // These should resolve via the embedded route matrix
+        assert_eq!(infer_context_window("anthropic:claude-opus-4-6"), 1_000_000);
+        assert_eq!(infer_context_window("anthropic:claude-sonnet-4-6"), 1_000_000);
+        assert_eq!(infer_context_window("openai:gpt-5.4"), 272_000);
+        assert_eq!(infer_context_window("anthropic:claude-haiku-4-5"), 200_000);
+    }
+
+    #[test]
+    fn context_window_fallback_heuristic() {
+        // Unknown models fall back to Squad (fail-closed)
+        assert_eq!(infer_context_window("mystery:unknown-model"), 131_072);
+    }
+
+    #[test]
+    fn context_class_from_tokens() {
+        assert_eq!(ContextClass::from_tokens(100_000), ContextClass::Squad);
+        assert_eq!(ContextClass::from_tokens(131_072), ContextClass::Squad);
+        assert_eq!(ContextClass::from_tokens(131_073), ContextClass::Maniple);
+        assert_eq!(ContextClass::from_tokens(200_000), ContextClass::Maniple);
+        assert_eq!(ContextClass::from_tokens(278_528), ContextClass::Maniple);
+        assert_eq!(ContextClass::from_tokens(278_529), ContextClass::Clan);
+        assert_eq!(ContextClass::from_tokens(400_000), ContextClass::Clan);
+        assert_eq!(ContextClass::from_tokens(450_560), ContextClass::Clan);
+        assert_eq!(ContextClass::from_tokens(450_561), ContextClass::Legion);
+        assert_eq!(ContextClass::from_tokens(1_000_000), ContextClass::Legion);
+    }
+
+    #[test]
+    fn context_class_ordering() {
+        assert!(ContextClass::Squad < ContextClass::Maniple);
+        assert!(ContextClass::Maniple < ContextClass::Clan);
+        assert!(ContextClass::Clan < ContextClass::Legion);
+    }
+
+    #[test]
+    fn context_class_delta() {
+        assert_eq!(ContextClass::Legion.delta(ContextClass::Squad), 3);
+        assert_eq!(ContextClass::Squad.delta(ContextClass::Legion), -3);
+        assert_eq!(ContextClass::Clan.delta(ContextClass::Clan), 0);
+    }
+
+    #[test]
+    fn context_class_derives_context_mode() {
+        assert_eq!(ContextClass::Squad.context_mode(), ContextMode::Standard);
+        assert_eq!(ContextClass::Maniple.context_mode(), ContextMode::Standard);
+        assert_eq!(ContextClass::Clan.context_mode(), ContextMode::Standard);
+        assert_eq!(ContextClass::Legion.context_mode(), ContextMode::Extended);
+    }
+
+    #[test]
+    fn context_class_parse_round_trip() {
+        for cls in ContextClass::all() {
+            let s = cls.short().to_lowercase();
+            assert_eq!(ContextClass::parse(&s), Some(*cls));
+        }
+    }
+
+    #[test]
+    fn settings_new_derives_context_class() {
+        let s = Settings::new("anthropic:claude-opus-4-6");
+        assert_eq!(s.context_class, ContextClass::Legion);
+
+        let s = Settings::new("openai:gpt-5.4");
+        assert_eq!(s.context_class, ContextClass::Maniple);
+    }
+
+    #[test]
+    fn profile_downgrade_overrides() {
+        let mut p = Profile {
+            last_used_model: None,
+            thinking_level: None,
+            max_turns: None,
+            provider_order: Vec::new(),
+            avoid_providers: Vec::new(),
+            context_floor_pin: None,
+            downgrade_overrides: Vec::new(),
+        };
+        assert!(!p.is_downgrade_accepted(ContextClass::Legion, ContextClass::Squad));
+        p.accept_downgrade(ContextClass::Legion, ContextClass::Squad);
+        assert!(p.is_downgrade_accepted(ContextClass::Legion, ContextClass::Squad));
+        // Idempotent
+        p.accept_downgrade(ContextClass::Legion, ContextClass::Squad);
+        assert_eq!(p.downgrade_overrides.len(), 1);
+    }
+
+    #[test]
+    fn profile_pin_floor_round_trip() {
+        let mut p = Profile {
+            last_used_model: None,
+            thinking_level: None,
+            max_turns: None,
+            provider_order: Vec::new(),
+            avoid_providers: Vec::new(),
+            context_floor_pin: None,
+            downgrade_overrides: Vec::new(),
+        };
+        assert_eq!(p.pinned_floor(), None);
+        p.pin_floor(ContextClass::Clan);
+        assert_eq!(p.pinned_floor(), Some(ContextClass::Clan));
     }
 
     #[test]
     fn thinking_budget() {
         assert_eq!(ThinkingLevel::Off.budget_tokens(), None);
+        assert_eq!(ThinkingLevel::Minimal.budget_tokens(), Some(2_000));
         assert_eq!(ThinkingLevel::High.budget_tokens(), Some(50_000));
+    }
+
+    #[test]
+    fn profile_serializes_cleanly() {
+        let p = Profile {
+            last_used_model: Some(ProfileModel {
+                provider: "anthropic".into(),
+                model_id: "claude-opus-4-6".into(),
+            }),
+            thinking_level: Some("high".into()),
+            max_turns: Some(50),
+            provider_order: vec!["anthropic".into(), "openai".into()],
+            avoid_providers: vec![],
+            context_floor_pin: Some("Clan".into()),
+            downgrade_overrides: vec!["Legion→Squad".into()],
+        };
+        let json = serde_json::to_string_pretty(&p).unwrap();
+        let parsed: Profile = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.provider_order, vec!["anthropic", "openai"]);
+        assert_eq!(parsed.context_floor_pin, Some("Clan".into()));
+        assert_eq!(parsed.downgrade_overrides, vec!["Legion→Squad"]);
+    }
+
+    #[test]
+    fn old_profile_deserializes_cleanly() {
+        // Old profile without new fields — should deserialize without error
+        let json = r#"{"lastUsedModel": {"provider": "anthropic", "modelId": "claude-sonnet-4-6"}, "thinkingLevel": "medium"}"#;
+        let p: Profile = serde_json::from_str(json).unwrap();
+        assert!(p.provider_order.is_empty());
+        assert!(p.avoid_providers.is_empty());
+        assert!(p.context_floor_pin.is_none());
+        assert!(p.downgrade_overrides.is_empty());
     }
 }

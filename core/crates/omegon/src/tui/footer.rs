@@ -9,7 +9,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Padding};
 use super::theme::Theme;
 use super::widgets::{self, GaugeConfig};
 
-use crate::settings::ContextMode;
+use crate::settings::{ContextClass, ContextMode};
 
 /// Footer data — updated by the TUI on every event and rendered each frame.
 #[derive(Default)]
@@ -18,6 +18,7 @@ pub struct FooterData {
     pub model_provider: String,
     pub context_percent: f32,
     pub context_window: usize,
+    pub context_class: ContextClass,
     pub context_mode: ContextMode,
     pub total_facts: usize,
     pub injected_facts: usize,
@@ -151,9 +152,17 @@ impl FooterData {
         let auth_icon = if self.is_oauth { "●" } else { "○" };
         let auth_color = if self.is_oauth { t.success() } else { t.muted() };
 
+        let ctx_class_color = match self.context_class {
+            ContextClass::Legion => t.accent(),
+            ContextClass::Clan => t.fg(),
+            _ => t.dim(),
+        };
+
         lines.push(Line::from(vec![
             Span::styled(format!("{source_icon} "), Style::default().fg(source_color)),
             Span::styled(model_short.to_string(), Style::default().fg(t.fg()).add_modifier(Modifier::BOLD)),
+            Span::styled(" · ", Style::default().fg(t.border_dim())),
+            Span::styled(self.context_class.short(), Style::default().fg(ctx_class_color)),
         ]));
 
         lines.push(Line::from(vec![
