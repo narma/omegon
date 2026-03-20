@@ -6,6 +6,12 @@ on:
     paths:
       - 'core/site/**'
       - 'core/install.sh'
+      - 'core/CHANGELOG.md'
+      - 'docs/**'
+      - 'openspec/baseline/**'
+  # Also rebuild on release (CHANGELOG updated)
+  release:
+    types: [published]
 
 jobs:
   build:
