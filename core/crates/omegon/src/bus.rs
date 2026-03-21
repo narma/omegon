@@ -407,6 +407,50 @@ mod tests {
     }
 
     #[test]
+    fn disabled_tools_filtered_from_definitions() {
+        let mut bus = EventBus::new();
+        bus.register(Box::new(CounterFeature { event_count: 0 }));
+        bus.finalize();
+
+        // Before disabling: tool is present
+        assert_eq!(bus.tool_definitions().len(), 1);
+        assert_eq!(bus.all_tool_definitions().len(), 1);
+
+        // Disable the tool
+        let disabled = std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashSet::from(["count".to_string()])
+        ));
+        bus.set_disabled_tools(disabled);
+
+        // After disabling: filtered from tool_definitions but still in all_tool_definitions
+        assert_eq!(bus.tool_definitions().len(), 0, "disabled tool should be filtered");
+        assert_eq!(bus.all_tool_definitions().len(), 1, "all_tool_definitions should still include it");
+    }
+
+    #[test]
+    fn disabled_tools_still_executable() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mut bus = EventBus::new();
+            bus.register(Box::new(CounterFeature { event_count: 0 }));
+            bus.finalize();
+
+            let disabled = std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashSet::from(["count".to_string()])
+            ));
+            bus.set_disabled_tools(disabled);
+
+            // Tool is filtered from definitions...
+            assert_eq!(bus.tool_definitions().len(), 0);
+
+            // ...but can still be executed
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let result = bus.execute_tool("count", "tc1", json!({}), cancel).await;
+            assert!(result.is_ok(), "disabled tools must still be executable");
+        });
+    }
+
+    #[test]
     fn drain_clears_requests() {
         let mut bus = EventBus::new();
         bus.register(Box::new(NotifierFeature));

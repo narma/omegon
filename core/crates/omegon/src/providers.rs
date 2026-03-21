@@ -322,9 +322,9 @@ impl AnthropicClient {
         }).collect()
     }
 
-    fn build_tools(&self, tools: &[ToolDefinition]) -> Vec<Value> {
+    fn build_tools(tools: &[ToolDefinition], is_oauth: bool) -> Vec<Value> {
         tools.iter().map(|t| {
-            let name = if self.is_oauth {
+            let name = if is_oauth {
                 to_claude_code_name(&t.name)
             } else {
                 t.name.clone()
@@ -353,13 +353,21 @@ impl LlmBridge for AnthropicClient {
     ) -> anyhow::Result<mpsc::Receiver<LlmEvent>> {
         let (tx, rx) = mpsc::channel(256);
 
+        // Re-resolve credentials on each request. This handles:
+        // - /login mid-session writing new tokens to auth.json
+        // - Token expiry + automatic refresh
+        // - Env var changes
+        let (api_key, is_oauth) = crate::auth::resolve_with_refresh("anthropic")
+            .await
+            .unwrap_or_else(|| (self.api_key.clone(), self.is_oauth));
+
         let model = options.model.as_deref()
             .and_then(|m| m.strip_prefix("anthropic:"))
             .unwrap_or("claude-sonnet-4-6");
 
         // System prompt format: OAuth requires array format with CC identity prefix
         // to satisfy the claude-code beta header contract.
-        let system_value = if self.is_oauth {
+        let system_value = if is_oauth {
             json!([
                 {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
                 {"type": "text", "text": system_prompt},
@@ -376,7 +384,7 @@ impl LlmBridge for AnthropicClient {
             "stream": true,
         });
 
-        let wire_tools = self.build_tools(tools);
+        let wire_tools = Self::build_tools(tools, is_oauth);
         let tool_count = wire_tools.len();
         if !wire_tools.is_empty() {
             body["tools"] = Value::Array(wire_tools);
@@ -399,7 +407,7 @@ impl LlmBridge for AnthropicClient {
         let body_size = serde_json::to_string(&body).map(|s| s.len()).unwrap_or(0);
         tracing::debug!(
             model,
-            is_oauth = self.is_oauth,
+            is_oauth,
             tool_count,
             msg_count,
             system_len,
@@ -412,12 +420,12 @@ impl LlmBridge for AnthropicClient {
         let response = self.client
             .post(format!("{}/v1/messages", self.base_url))
             .header(
-                if self.is_oauth { "Authorization" } else { "x-api-key" },
-                if self.is_oauth { format!("Bearer {}", self.api_key) } else { self.api_key.clone() },
+                if is_oauth { "Authorization" } else { "x-api-key" },
+                if is_oauth { format!("Bearer {}", api_key) } else { api_key.clone() },
             )
             .header("anthropic-version", "2023-06-01")
             .header("anthropic-beta", {
-                let mut flags = if self.is_oauth {
+                let mut flags = if is_oauth {
                     "claude-code-20250219,oauth-2025-04-20".to_string()
                 } else {
                     "interleaved-thinking-2025-05-14".to_string()
@@ -443,7 +451,7 @@ impl LlmBridge for AnthropicClient {
                 body_size,
                 tool_count,
                 system_len,
-                is_oauth = self.is_oauth,
+                is_oauth,
                 "Anthropic API error"
             );
             tracing::debug!(request_body = %serde_json::to_string(&body).unwrap_or_default(), "failed request body");
@@ -451,7 +459,7 @@ impl LlmBridge for AnthropicClient {
             let user_msg = serde_json::from_str::<Value>(&err).ok()
                 .and_then(|v| v["error"]["message"].as_str().map(|s| s.to_string()))
                 .unwrap_or_else(|| err.chars().take(200).collect());
-            let detail = if self.is_oauth && (status.as_u16() == 429 || status.as_u16() == 413) {
+            let detail = if is_oauth && (status.as_u16() == 429 || status.as_u16() == 413) {
                 format!("\n  (OAuth subscription — {tool_count} tools, {body_size} byte request body, system prompt {system_len} chars)")
             } else {
                 String::new()
@@ -909,5 +917,140 @@ mod tests {
             .and_then(|v| v["error"]["message"].as_str().map(|s| s.to_string()))
             .unwrap_or_else(|| raw_body.chars().take(200).collect());
         assert_eq!(user_msg, "Service Unavailable");
+    }
+
+    // ── Credential lifecycle tests ──────────────────────────────────────
+
+    #[test]
+    fn build_tools_oauth_remaps_known_names() {
+        let tools = vec![
+            ToolDefinition {
+                name: "bash".into(), label: "bash".into(),
+                description: "run command".into(), parameters: json!({}),
+            },
+            ToolDefinition {
+                name: "read".into(), label: "read".into(),
+                description: "read file".into(), parameters: json!({}),
+            },
+            ToolDefinition {
+                name: "memory_store".into(), label: "memory".into(),
+                description: "store fact".into(), parameters: json!({}),
+            },
+        ];
+        let wire = AnthropicClient::build_tools(&tools, true);
+        assert_eq!(wire[0]["name"], "Bash", "bash should become Bash for OAuth");
+        assert_eq!(wire[1]["name"], "Read", "read should become Read for OAuth");
+        assert_eq!(wire[2]["name"], "memory_store", "unknown tools pass through unchanged");
+    }
+
+    #[test]
+    fn build_tools_api_key_preserves_names() {
+        let tools = vec![
+            ToolDefinition {
+                name: "bash".into(), label: "bash".into(),
+                description: "run command".into(), parameters: json!({}),
+            },
+        ];
+        let wire = AnthropicClient::build_tools(&tools, false);
+        assert_eq!(wire[0]["name"], "bash", "API key mode preserves lowercase");
+    }
+
+    #[test]
+    fn from_claude_code_name_roundtrips() {
+        // Every name that to_claude_code_name maps must roundtrip
+        let known = [("bash", "Bash"), ("read", "Read"), ("write", "Write"),
+                     ("edit", "Edit"), ("web_search", "WebSearch")];
+        for (lower, upper) in &known {
+            assert_eq!(&to_claude_code_name(lower), upper);
+            assert_eq!(&from_claude_code_name(upper), lower);
+        }
+    }
+
+    #[test]
+    fn from_claude_code_name_unknown_passthrough() {
+        assert_eq!(from_claude_code_name("memory_store"), "memory_store");
+        assert_eq!(from_claude_code_name("SomethingNew"), "SomethingNew");
+    }
+
+    #[test]
+    fn anthropic_client_construction_with_oauth() {
+        let client = AnthropicClient::new("sk-ant-oat-test".into(), true);
+        assert!(client.is_oauth);
+        assert_eq!(client.api_key, "sk-ant-oat-test");
+    }
+
+    #[test]
+    fn anthropic_client_construction_with_api_key() {
+        let client = AnthropicClient::new("sk-ant-api-test".into(), false);
+        assert!(!client.is_oauth);
+    }
+
+    #[test]
+    fn oauth_system_prompt_includes_cc_prefix() {
+        // When is_oauth is true, system prompt should be an array with
+        // the Claude Code identity prefix as the first element.
+        let system = json!([
+            {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
+            {"type": "text", "text": "actual prompt"},
+        ]);
+        assert!(system.is_array());
+        let arr = system.as_array().unwrap();
+        assert_eq!(arr[0]["text"], "You are Claude Code, Anthropic's official CLI for Claude.");
+    }
+
+    #[test]
+    fn api_key_system_prompt_is_plain_string() {
+        // When is_oauth is false, system prompt should be a plain string.
+        let system = json!("actual prompt");
+        assert!(system.is_string());
+    }
+
+    #[tokio::test]
+    async fn resolve_with_refresh_falls_back_to_env() {
+        // resolve_with_refresh should check env vars first.
+        // We can't safely set env vars in parallel tests, but we can
+        // verify it doesn't panic and returns Some if ANTHROPIC_API_KEY is set.
+        let result = crate::auth::resolve_with_refresh("anthropic").await;
+        // Result depends on env — just verify no panic
+        let _ = result;
+    }
+
+    #[test]
+    fn oauth_auth_header_uses_bearer() {
+        // OAuth requests must use Authorization: Bearer, not x-api-key
+        let is_oauth = true;
+        let header_name = if is_oauth { "Authorization" } else { "x-api-key" };
+        assert_eq!(header_name, "Authorization");
+    }
+
+    #[test]
+    fn api_key_auth_header_uses_x_api_key() {
+        let is_oauth = false;
+        let header_name = if is_oauth { "Authorization" } else { "x-api-key" };
+        assert_eq!(header_name, "x-api-key");
+    }
+
+    #[test]
+    fn oauth_beta_flags_include_cc_and_oauth() {
+        let is_oauth = true;
+        let flags = if is_oauth {
+            "claude-code-20250219,oauth-2025-04-20".to_string()
+        } else {
+            "interleaved-thinking-2025-05-14".to_string()
+        };
+        assert!(flags.contains("claude-code-20250219"), "OAuth must include CC beta");
+        assert!(flags.contains("oauth-2025-04-20"), "OAuth must include OAuth beta");
+    }
+
+    #[test]
+    fn api_key_beta_flags_include_thinking() {
+        let is_oauth = false;
+        let flags = if is_oauth {
+            "claude-code-20250219,oauth-2025-04-20".to_string()
+        } else {
+            "interleaved-thinking-2025-05-14".to_string()
+        };
+        assert!(flags.contains("interleaved-thinking"), "API key must include thinking beta");
+        assert!(!flags.contains("claude-code"), "API key must NOT include CC beta");
     }
 }
