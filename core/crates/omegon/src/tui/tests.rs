@@ -341,3 +341,30 @@ fn all_commands_in_table_are_handled() {
         );
     }
 }
+
+#[test]
+fn handled_commands_are_in_commands_table() {
+    // Negative guard: every match arm in handle_slash_command should have
+    // a corresponding entry in COMMANDS (otherwise it's undocumented).
+    // We test this by checking that no undocumented command returns Handled/Display.
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let known_names: std::collections::HashSet<&str> = App::COMMANDS.iter()
+        .map(|(name, _, _)| *name)
+        .collect();
+
+    // Test a set of plausible undocumented command names
+    let undocumented = ["secret", "config", "debug", "reload", "undo", "redo",
+        "run", "build", "deploy", "test", "profile", "env", "reset"];
+
+    for name in undocumented {
+        if known_names.contains(name) { continue; } // skip if it's actually documented
+        let cmd = format!("/{name}");
+        let result = app.handle_slash_command(&cmd, &tx);
+        assert!(
+            matches!(result, SlashResult::NotACommand),
+            "/{name} is handled but NOT in COMMANDS table — add it to COMMANDS or remove the handler"
+        );
+    }
+}

@@ -347,6 +347,35 @@ mod tests {
         assert_eq!(feature.tool_calls, 1);
     }
 
+    #[tokio::test]
+    async fn action_compact_returns_confirmation() {
+        let feature = HarnessSettings::new(test_settings());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = feature.execute("harness_settings", "c1", json!({"action": "compact"}), cancel).await.unwrap();
+        let text = result_text(&result);
+        assert!(text.to_lowercase().contains("compaction"), "should confirm compaction: {text}");
+    }
+
+    #[tokio::test]
+    async fn action_sessions_does_not_panic() {
+        let feature = HarnessSettings::new(test_settings());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        // May or may not find sessions — just shouldn't panic
+        let result = feature.execute("harness_settings", "c1", json!({"action": "sessions"}), cancel).await.unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("Session") || text.contains("session") || text.contains("None"));
+    }
+
+    #[tokio::test]
+    async fn action_memory_stats_does_not_panic() {
+        let feature = HarnessSettings::new(test_settings());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = feature.execute("harness_settings", "c1", json!({"action": "memory_stats"}), cancel).await.unwrap();
+        let text = result_text(&result);
+        // Either finds the db or reports it missing — both are valid
+        assert!(!text.is_empty());
+    }
+
     fn result_text(result: &ToolResult) -> String {
         result.content.iter()
             .filter_map(|c| c.as_text())

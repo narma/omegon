@@ -9,7 +9,7 @@ default:
 
 # Run all Rust tests
 test-rust:
-    cd core && cargo test
+    cd core && timeout 300 cargo test || (echo "⚠ Tests exceeded 5 minute timeout" && exit 1)
 
 # Run tests for a specific crate
 test-crate crate:

@@ -362,6 +362,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn vault_recipe_rejects_encoded_traversal() {
+        // %2F and %2E encoded path components
+        let result = resolve_vault_secret(None, "vault:secret/data/..%2F..%2Fsys#key").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn vault_recipe_rejects_double_dot_variants() {
+        let result = resolve_vault_secret(None, "vault:secret/data/....//sys#key").await;
+        assert!(result.is_none());
+        let result = resolve_vault_secret(None, "vault:secret/data/./../sys#key").await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
     async fn execute_vault_recipe() {
         use crate::vault::{VaultClient, VaultConfig, AuthConfig};
         use crate::recipes::Recipe;

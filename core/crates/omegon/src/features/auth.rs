@@ -449,4 +449,56 @@ mod tests {
         let _requests2 = feature.on_event(&BusEvent::TurnEnd { turn: EXPIRY_CHECK_INTERVAL + 1 });
         assert_eq!(feature.last_expiry_check, EXPIRY_CHECK_INTERVAL); // unchanged
     }
+
+    #[test]
+    fn auth_probe_to_harness_status_pipeline() {
+        // C2: end-to-end test for auth → convert → HarnessStatus.providers
+        use crate::auth::{AuthStatus, ProviderInfo, ProviderAuthStatus, auth_status_to_provider_statuses};
+
+        let status = AuthStatus {
+            providers: vec![
+                ProviderInfo {
+                    name: "anthropic".into(),
+                    status: ProviderAuthStatus::Authenticated,
+                    is_oauth: true,
+                    details: Some("oauth".into()),
+                },
+                ProviderInfo {
+                    name: "openai".into(),
+                    status: ProviderAuthStatus::Missing,
+                    is_oauth: false,
+                    details: None,
+                },
+            ],
+            vault: vec![],
+            secrets: vec![],
+            mcp: vec![],
+        };
+
+        // Convert to ProviderStatus (what HarnessStatus uses)
+        let providers = auth_status_to_provider_statuses(&status);
+        assert_eq!(providers.len(), 2);
+
+        // Verify first provider
+        assert_eq!(providers[0].name, "anthropic");
+        assert!(providers[0].authenticated);
+        assert_eq!(providers[0].auth_method, Some("oauth".into()));
+
+        // Verify second provider
+        assert_eq!(providers[1].name, "openai");
+        assert!(!providers[1].authenticated);
+
+        // Simulate wiring into HarnessStatus (as setup.rs does)
+        let mut harness = crate::status::HarnessStatus::default();
+        harness.providers = providers;
+        assert_eq!(harness.providers.len(), 2);
+        assert!(harness.providers[0].authenticated);
+        assert!(!harness.providers[1].authenticated);
+
+        // Verify it serializes for WebSocket broadcast
+        let json = serde_json::to_value(&harness).unwrap();
+        let ws_providers = json["providers"].as_array().unwrap();
+        assert_eq!(ws_providers.len(), 2);
+        assert_eq!(ws_providers[0]["name"].as_str().unwrap(), "anthropic");
+    }
 }
