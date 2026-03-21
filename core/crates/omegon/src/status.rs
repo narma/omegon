@@ -47,7 +47,7 @@ pub struct HarnessStatus {
 
 // ── Sub-types ────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PersonaSummary {
     pub id: String,
     pub name: String,
@@ -57,7 +57,7 @@ pub struct PersonaSummary {
     pub disabled_tools: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToneSummary {
     pub id: String,
     pub name: String,
