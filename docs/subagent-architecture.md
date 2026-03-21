@@ -1,13 +1,9 @@
 ---
 id: subagent-architecture
 title: Subagent architecture — map cleave onto the subagent mental model with Omegon-native advantages
-status: exploring
+status: decided
 tags: [architecture, cleave, subagents, delegation, multi-agent, ux, competitive, strategic]
-open_questions:
-  - "Should the delegate tool create a git worktree for every invocation (maximum isolation, ~500ms overhead) or only when the agent has write permissions (read-only agents don't need worktree isolation)?"
-  - "How does the parent receive results from async delegates? Options: (a) BusRequest::InjectSystemMessage with the result text, (b) the result appears as a tool result in the conversation (like a long-running tool call), (c) toast notification + result stored for explicit retrieval via a tool call."
-  - "Should agents inherit the parent's memory facts (project memory available to the child) or start with a clean memory context? Persona-backed agents could get their persona mind store; lightweight agents might only get the operator's AGENTS.md."
-  - "What's the naming: delegate vs task vs spawn vs invoke? Claude Code uses \"Task tool\", OpenCode uses \"Task tool\", but \"delegate\" is clearer about the relationship (parent delegates to child). \"spawn\" implies process creation. \"invoke\" is generic."
+open_questions: []
 issue_type: epic
 priority: 1
 ---
@@ -222,9 +218,28 @@ This means agents CAN be backed by personas (for rich ones with mind stores and 
 
 The `delegate` tool doesn't need to know the difference — it reads the agent spec, applies the config, and runs the child.
 
+## Decisions
+
+### Decision: Worktree only for write agents — read-only delegates run in-place
+
+**Status:** decided
+**Rationale:** A worktree for a read-only agent (explorer, reviewer returning text) is a prison bar, not a guardrail. It adds 500ms overhead for zero safety benefit. Write agents MUST get a worktree — the isolation guarantee is the entire point. The delegate tool checks whether the agent's tool list includes write/edit/bash — if yes, worktree. If read-only (read, grep, web_search), run in the main tree. Always err for safety: if in doubt, create the worktree.
+
+### Decision: Sync delegates return as tool result (B), async delegates toast + retrieve (C)
+
+**Status:** decided
+**Rationale:** Two modes, two delivery mechanisms. Sync (background=false): parent is waiting, so the result IS the tool response — natural tool call semantics. Async (background=true): parent has moved on, so injecting a system message (A) is disruptive mid-thought. Toast notification on completion + explicit retrieval via delegate_result(task_id) lets the parent fetch when ready. Early exits (child realizes the task is wrong) work identically — child exits, toast fires, result is available. The parent isn't interrupted. delegate_result is a lightweight tool that reads the stored output — no LLM call, just retrieval.
+
+### Decision: Field kit model — parent curates what the child needs (model, thinking, prompt, mind, facts)
+
+**Status:** decided
+**Rationale:** The parent knows the task, so it knows the field kit. The delegate tool accepts: model (tier or explicit), thinking_level, scope (file paths), facts (specific fact IDs or a query to pull relevant facts), mind (persona ID for persona-backed agents). The child doesn't get the full 2500-fact project memory — it gets what the parent thinks it needs. This is both cheaper (smaller context) and more focused (relevant facts only). Named agents in .omegon/agents/*.md can declare default field kits (model, tools, mind) that the parent overrides per invocation. The agent .md is the base kit; the delegate call is the mission briefing.
+
+### Decision: Naming: Decompose (cleave), Delegate (single child), Hydra (swarm)
+
+**Status:** decided
+**Rationale:** Three modes, three names that convey the relationship: Decompose = split one task into parts (existing cleave). Delegate = hand one task to a specialist (new). Hydra = coordinating team that grows heads as needed (future). delegate is the tool name — clear about the parent→child relationship without implying process-level detail (spawn) or being generic (invoke/task). Hydra captures the multi-headed, regenerative nature of an agent team better than 'swarm' (which implies undirected).
+
 ## Open Questions
 
-- Should the delegate tool create a git worktree for every invocation (maximum isolation, ~500ms overhead) or only when the agent has write permissions (read-only agents don't need worktree isolation)?
-- How does the parent receive results from async delegates? Options: (a) BusRequest::InjectSystemMessage with the result text, (b) the result appears as a tool result in the conversation (like a long-running tool call), (c) toast notification + result stored for explicit retrieval via a tool call.
-- Should agents inherit the parent's memory facts (project memory available to the child) or start with a clean memory context? Persona-backed agents could get their persona mind store; lightweight agents might only get the operator's AGENTS.md.
-- What's the naming: delegate vs task vs spawn vs invoke? Claude Code uses "Task tool", OpenCode uses "Task tool", but "delegate" is clearer about the relationship (parent delegates to child). "spawn" implies process creation. "invoke" is generic.
+*No open questions.*
