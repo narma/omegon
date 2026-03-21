@@ -68,6 +68,11 @@ pub async fn run(
 ) -> anyhow::Result<()> {
     let tool_defs = bus.tool_definitions();
 
+    // Broadcast initial HarnessStatus as AgentEvent so TUI + web dashboard
+    // get the first snapshot. The BusEvent was already emitted in setup.rs;
+    // this bridges it to the AgentEvent channel.
+    // (Called from the TUI entrypoint which passes the initial status)
+
     let base_stream_options = StreamOptions {
         model: Some(config.model.clone()),
         reasoning: None,

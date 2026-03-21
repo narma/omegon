@@ -9,6 +9,7 @@
 //! - TUI footer: continuous, re-rendered on BusEvent::HarnessStatusChanged
 //! - Web dashboard: broadcast over WebSocket on the existing event bus
 
+use rusqlite;
 use serde::{Deserialize, Serialize};
 
 /// Complete observable state of the harness.
@@ -175,10 +176,12 @@ impl HarnessStatus {
         let mut parts = Vec::new();
 
         if let Some(ref p) = self.active_persona {
-            parts.push(format!("{} {}", p.badge, p.name));
+            let name = truncate_name(&p.name, 15);
+            parts.push(format!("{} {}", p.badge, name));
         }
         if let Some(ref t) = self.active_tone {
-            parts.push(format!("♪ {}", t.name));
+            let name = truncate_name(&t.name, 12);
+            parts.push(format!("♪ {}", name));
         }
         if let Some(ref s) = self.secret_backend {
             let lock = if s.locked { "🔒" } else { "🔓" };
@@ -220,13 +223,67 @@ impl HarnessStatus {
     pub fn assemble() -> Self {
         let mut status = Self::default();
 
-        // Probe container runtime
+        // Probe container runtime (lazy — only if podman/docker likely available)
         status.container_runtime = probe_container_runtime();
 
         // Probe secret store
         status.secret_backend = probe_secret_store();
 
+        // Probe Ollama (common local inference backend)
+        status.inference_backends = probe_inference_backends();
+
         status
+    }
+
+    /// Update from the EventBus after plugin discovery completes.
+    /// Called in setup.rs after discover_plugins() to populate MCP server
+    /// and plugin info that assemble() can't know about.
+    pub fn update_from_bus(&mut self, bus: &crate::bus::EventBus) {
+        // Populate installed plugins from the bus's registered features
+        // (Feature trait doesn't expose identity, so we use tool counts as signal)
+        let tool_defs = bus.tool_definitions();
+        let mcp_tools: Vec<_> = tool_defs.iter()
+            .filter(|t| t.label.starts_with("mcp:"))
+            .collect();
+
+        if !mcp_tools.is_empty() {
+            // Group by server name (label is "mcp:servername")
+            let mut servers: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            for t in &mcp_tools {
+                let server = t.label.strip_prefix("mcp:").unwrap_or(&t.label);
+                *servers.entry(server.to_string()).or_default() += 1;
+            }
+            self.mcp_servers = servers.into_iter().map(|(name, count)| {
+                McpServerStatus {
+                    name,
+                    transport_mode: McpTransportMode::LocalProcess, // best guess
+                    tool_count: count,
+                    connected: true,
+                    error: None,
+                }
+            }).collect();
+        }
+    }
+
+    /// Update routing state from the settings/profile.
+    pub fn update_routing(&mut self, context_class: &str, thinking_level: &str, capability_tier: &str) {
+        self.context_class = context_class.into();
+        self.thinking_level = thinking_level.into();
+        self.capability_tier = capability_tier.into();
+    }
+
+    /// Update memory stats.
+    pub fn update_memory(&mut self, stats: MemoryStatus) {
+        self.memory = stats;
+    }
+}
+
+/// Truncate a name to fit in the footer, adding "…" if needed.
+fn truncate_name(name: &str, max: usize) -> String {
+    if name.len() <= max {
+        name.to_string()
+    } else {
+        format!("{}…", &name[..max - 1])
     }
 }
 
@@ -258,20 +315,68 @@ fn probe_container_runtime() -> Option<ContainerRuntimeStatus> {
     None
 }
 
-/// Check if secrets.db exists and probe its backend.
+/// Probe local inference backends (Ollama, etc.).
+fn probe_inference_backends() -> Vec<InferenceBackendStatus> {
+    let mut backends = Vec::new();
+
+    // Probe Ollama via HTTP — the standard local inference server
+    if let Ok(resp) = std::process::Command::new("curl")
+        .args(["-sf", "--max-time", "2", "http://localhost:11434/api/tags"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        if resp.status.success() {
+            let body = String::from_utf8_lossy(&resp.stdout);
+            let models: Vec<InferenceModelInfo> = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v["models"].as_array().cloned())
+                .map(|arr| {
+                    arr.iter().filter_map(|m| {
+                        Some(InferenceModelInfo {
+                            name: m["name"].as_str()?.to_string(),
+                            params: m["details"]["parameter_size"].as_str().map(|s| s.to_string()),
+                            context_window: None,
+                        })
+                    }).collect()
+                })
+                .unwrap_or_default();
+
+            backends.push(InferenceBackendStatus {
+                name: "Ollama".into(),
+                kind: InferenceKind::External,
+                available: true,
+                models,
+            });
+        }
+    }
+
+    backends
+}
+
+/// Check if secrets.db exists and probe its backend type from the meta table.
 fn probe_secret_store() -> Option<SecretBackendStatus> {
     let path = omegon_secrets::SecretStore::default_path();
-    if omegon_secrets::SecretStore::exists(&path) {
-        // We can read the header without unlocking
-        // For now, report as locked (we don't have the key yet at probe time)
-        Some(SecretBackendStatus {
-            backend: "encrypted".into(),
-            stored_count: 0, // unknown until unlocked
-            locked: true,
-        })
-    } else {
-        None
+    if !omegon_secrets::SecretStore::exists(&path) {
+        return None;
     }
+
+    // Read the backend type from the SQLite meta table — doesn't require the key.
+    let backend = match rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(db) => db
+            .query_row("SELECT value FROM meta WHERE key = 'backend'", [], |row| row.get::<_, String>(0))
+            .unwrap_or_else(|_| "encrypted".into()),
+        Err(_) => "encrypted".into(),
+    };
+
+    Some(SecretBackendStatus {
+        backend,
+        stored_count: 0, // unknown until unlocked
+        locked: true,
+    })
 }
 
 impl Default for HarnessStatus {

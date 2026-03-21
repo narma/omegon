@@ -229,16 +229,15 @@ mod tests {
         assert!(plugins.is_empty());
     }
 
-    #[tokio::test]
-    async fn discover_active_plugin() {
+    /// Test helper: load a single plugin from a test directory using load_legacy_plugin.
+    /// Avoids unsafe env var manipulation that causes flaky tests in parallel runners.
+    #[test]
+    fn load_legacy_plugin_active() {
         let dir = tempfile::tempdir().unwrap();
-        let plugins_dir = dir.path().join(".omegon").join("plugins").join("test-plugin");
+        let plugins_dir = dir.path().join("test-plugin");
         std::fs::create_dir_all(&plugins_dir).unwrap();
-
-        // Create marker file in cwd
         std::fs::write(dir.path().join(".marker"), "").unwrap();
 
-        // Create plugin manifest (legacy HTTP-only style)
         std::fs::write(plugins_dir.join("plugin.toml"), r#"
             [plugin]
             name = "test"
@@ -253,47 +252,51 @@ mod tests {
             endpoint = "http://localhost:9999/noop"
         "#).unwrap();
 
-        unsafe { std::env::set_var("OMEGON_PLUGIN_DIR", dir.path().join(".omegon").join("plugins")); }
-        let plugins = discover_plugins(dir.path()).await;
-        unsafe { std::env::remove_var("OMEGON_PLUGIN_DIR"); }
+        let result = load_legacy_plugin(
+            &plugins_dir.join("plugin.toml"),
+            dir.path(), // cwd has .marker
+        ).unwrap();
 
-        assert_eq!(plugins.len(), 1, "should discover the active plugin");
-        assert_eq!(plugins[0].name(), "test");
-        assert_eq!(plugins[0].tools().len(), 1);
+        assert!(result.is_some(), "should load active plugin");
+        let feature = result.unwrap();
+        assert_eq!(feature.name(), "test");
+        assert_eq!(feature.tools().len(), 1);
     }
 
-    #[tokio::test]
-    async fn discover_inactive_plugin() {
+    #[test]
+    fn load_legacy_plugin_inactive() {
         let dir = tempfile::tempdir().unwrap();
-        let plugins_dir = dir.path().join(".omegon").join("plugins").join("test-plugin");
+        let plugins_dir = dir.path().join("test-plugin");
         std::fs::create_dir_all(&plugins_dir).unwrap();
+        // No .marker file — plugin should not activate
 
         std::fs::write(plugins_dir.join("plugin.toml"), r#"
             [plugin]
             name = "test"
-
             [activation]
             marker_files = [".nope"]
         "#).unwrap();
 
-        unsafe { std::env::set_var("OMEGON_PLUGIN_DIR", dir.path().join(".omegon").join("plugins")); }
-        let plugins = discover_plugins(dir.path()).await;
-        unsafe { std::env::remove_var("OMEGON_PLUGIN_DIR"); }
+        let result = load_legacy_plugin(
+            &plugins_dir.join("plugin.toml"),
+            dir.path(),
+        ).unwrap();
 
-        assert!(plugins.is_empty(), "inactive plugin should not load");
+        assert!(result.is_none(), "inactive plugin should not load");
     }
 
-    #[tokio::test]
-    async fn invalid_manifest_warns_not_crashes() {
+    #[test]
+    fn load_legacy_plugin_invalid_manifest() {
         let dir = tempfile::tempdir().unwrap();
-        let plugins_dir = dir.path().join(".omegon").join("plugins").join("bad");
+        let plugins_dir = dir.path().join("bad");
         std::fs::create_dir_all(&plugins_dir).unwrap();
         std::fs::write(plugins_dir.join("plugin.toml"), "not valid toml {{{}}}").unwrap();
 
-        unsafe { std::env::set_var("OMEGON_PLUGIN_DIR", dir.path().join(".omegon").join("plugins")); }
-        let plugins = discover_plugins(dir.path()).await;
-        unsafe { std::env::remove_var("OMEGON_PLUGIN_DIR"); }
+        let result = load_legacy_plugin(
+            &plugins_dir.join("plugin.toml"),
+            dir.path(),
+        );
 
-        assert!(plugins.is_empty(), "invalid manifest should not crash");
+        assert!(result.is_err(), "invalid manifest should return error");
     }
 }

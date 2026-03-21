@@ -31,6 +31,10 @@ pub struct AgentSetup {
     pub(crate) startup_snapshot: StartupSnapshot,
     /// Shared handles for live dashboard updates.
     pub dashboard_handles: crate::tui::dashboard::DashboardHandles,
+    /// Initial harness status assembled at startup.
+    /// The agent loop broadcasts this as AgentEvent::HarnessStatusChanged
+    /// when the events channel is created.
+    pub initial_harness_status: crate::status::HarnessStatus,
 }
 
 /// Pre-computed state gathered during setup for TUI initial display.
@@ -258,23 +262,41 @@ impl AgentSetup {
         bus.finalize();
 
         // ─── Assemble harness status (bootstrap probe) ──────────────────
-        let harness_status = crate::status::HarnessStatus::assemble();
+        let mut harness_status = crate::status::HarnessStatus::assemble();
+
+        // Populate MCP/plugin info from discovered features
+        harness_status.update_from_bus(&bus);
+
+        // Populate memory stats from the initial count captured during DB load
+        harness_status.update_memory(crate::status::MemoryStatus {
+            total_facts: initial_fact_count,
+            active_facts: initial_fact_count,
+            project_facts: initial_fact_count, // no persona layer yet
+            persona_facts: 0,
+            working_facts: 0,
+            episodes: 0, // not counted at startup — would require async query
+            edges: 0,
+            active_persona_mind: None,
+        });
+
         tracing::info!(
             providers = harness_status.providers.len(),
             mcp = harness_status.mcp_servers.len(),
+            inference = harness_status.inference_backends.len(),
             container = harness_status.container_runtime.is_some(),
+            facts = harness_status.memory.total_facts,
             "harness status assembled"
         );
 
         // Print bootstrap panel if running interactively
-        let is_tty = std::io::stderr().is_terminal();
-        if is_tty {
-            let panel = crate::tui::bootstrap::render_bootstrap(&harness_status, true);
+        let use_color = std::io::stderr().is_terminal() && std::env::var("NO_COLOR").is_err();
+        if use_color || std::io::stderr().is_terminal() {
+            let panel = crate::tui::bootstrap::render_bootstrap(&harness_status, use_color);
             eprint!("{panel}");
         }
 
-        // Emit initial HarnessStatusChanged so TUI footer + web dashboard get the first snapshot
-        let _initial_status_json = bus.emit_harness_status(&harness_status);
+        // Emit BusEvent for features
+        bus.emit_harness_status(&harness_status);
 
         // ─── System prompt + context ────────────────────────────────────
         // Build the base prompt from bus tool definitions (not the old tools vec)
@@ -311,6 +333,8 @@ impl AgentSetup {
             lifecycle: lifecycle_snapshot,
         };
 
+        let initial_harness_status = harness_status;
+
         Ok(Self {
             bus,
             context_manager,
@@ -318,6 +342,7 @@ impl AgentSetup {
             cwd,
             secrets,
             startup_snapshot,
+            initial_harness_status,
             dashboard_handles: crate::tui::dashboard::DashboardHandles {
                 lifecycle: Some(lifecycle_handle),
                 cleave: Some(cleave_handle),

@@ -414,6 +414,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<tui::TuiCommand>(16);
     let web_command_tx = command_tx.clone(); // For forwarding web dashboard commands
 
+    // Broadcast initial HarnessStatus — bridges BusEvent (emitted in setup)
+    // to AgentEvent (consumed by TUI + WebSocket)
+    if let Ok(status_json) = serde_json::to_value(&agent.initial_harness_status) {
+        let _ = events_tx.send(AgentEvent::HarnessStatusChanged { status_json });
+    }
+
     // ─── Shared state ─────────────────────────────────────────────────
     let shared_cancel: tui::SharedCancel = std::sync::Arc::new(std::sync::Mutex::new(None));
     // Load project profile → apply to settings (model, thinking, max_turns)
