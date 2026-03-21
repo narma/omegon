@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use serde_json::json;
-use std::cell::RefCell;
+use std::sync::{atomic::{AtomicBool, Ordering}, Mutex};
 
 use omegon_traits::{
     BusEvent, BusRequest, ContentBlock, Feature, NotifyLevel,
@@ -19,22 +19,22 @@ use crate::plugins::registry::PluginRegistry;
 
 /// Feature that exposes persona/tone management as agent tools.
 pub struct PersonaFeature {
-    registry: RefCell<PluginRegistry>,
+    registry: Mutex<PluginRegistry>,
     /// Flag indicating harness status should be refreshed on next turn boundary
-    refresh_status_pending: RefCell<bool>,
+    refresh_status_pending: AtomicBool,
 }
 
 impl PersonaFeature {
     pub fn new(registry: PluginRegistry) -> Self {
         Self { 
-            registry: RefCell::new(registry),
-            refresh_status_pending: RefCell::new(false),
+            registry: Mutex::new(registry),
+            refresh_status_pending: AtomicBool::new(false),
         }
     }
 
     /// Get a reference to the inner registry (for HarnessStatus, etc.)
-    pub fn registry(&self) -> std::cell::Ref<PluginRegistry> {
-        self.registry.borrow()
+    pub fn registry(&self) -> std::sync::MutexGuard<'_, PluginRegistry> {
+        self.registry.lock().unwrap()
     }
 }
 
@@ -111,8 +111,8 @@ impl Feature for PersonaFeature {
 
                 if name == "off" {
                     // Deactivate current persona
-                    let result = self.registry.borrow_mut().deactivate_persona();
-                    *self.refresh_status_pending.borrow_mut() = true;
+                    let result = self.registry.lock().unwrap().deactivate_persona();
+                    self.refresh_status_pending.store(true, Ordering::Relaxed);
                     
                     if result.removed_id.is_some() {
                         return Ok(text_result("Persona deactivated."));
@@ -134,8 +134,8 @@ impl Feature for PersonaFeature {
                                 let skills = loaded_persona.activated_skills.join(", ");
 
                                 // Actually activate the persona
-                                let activation_result = self.registry.borrow_mut().activate_persona(loaded_persona);
-                                *self.refresh_status_pending.borrow_mut() = true;
+                                let activation_result = self.registry.lock().unwrap().activate_persona(loaded_persona);
+                                self.refresh_status_pending.store(true, Ordering::Relaxed);
 
                                 let mut message = format!(
                                     "{badge} Persona activated: {pname}\n  Mind facts: {fact_count}\n  Skills: {skills}\n\n\
@@ -168,8 +168,8 @@ impl Feature for PersonaFeature {
 
                 if name == "off" {
                     // Deactivate current tone
-                    let removed = self.registry.borrow_mut().deactivate_tone();
-                    *self.refresh_status_pending.borrow_mut() = true;
+                    let removed = self.registry.lock().unwrap().deactivate_tone();
+                    self.refresh_status_pending.store(true, Ordering::Relaxed);
                     
                     if removed.is_some() {
                         return Ok(text_result("Tone deactivated."));
@@ -189,8 +189,8 @@ impl Feature for PersonaFeature {
                                 let exemplar_count = loaded_tone.exemplars.len();
 
                                 // Actually activate the tone
-                                let previous = self.registry.borrow_mut().activate_tone(loaded_tone);
-                                *self.refresh_status_pending.borrow_mut() = true;
+                                let previous = self.registry.lock().unwrap().activate_tone(loaded_tone);
+                                self.refresh_status_pending.store(true, Ordering::Relaxed);
 
                                 let mut message = format!(
                                     "♪ Tone activated: {tname}\n  Exemplars: {exemplar_count}\n\n\
@@ -218,7 +218,7 @@ impl Feature for PersonaFeature {
 
             "list_personas" => {
                 let (personas, tones) = persona_loader::scan_available();
-                let registry = self.registry.borrow();
+                let registry = self.registry.lock().unwrap();
                 let active_persona = registry.active_persona().map(|p| &p.id);
                 let active_tone = registry.active_tone().map(|t| &t.id);
 
@@ -258,7 +258,7 @@ impl Feature for PersonaFeature {
             // On session start, log the active persona/tone
             BusEvent::SessionStart { .. } => {
                 let mut requests = Vec::new();
-                let registry = self.registry.borrow();
+                let registry = self.registry.lock().unwrap();
                 if let Some(persona) = registry.active_persona() {
                     let badge = persona.badge.as_deref().unwrap_or("⚙");
                     requests.push(BusRequest::Notify {
@@ -276,8 +276,8 @@ impl Feature for PersonaFeature {
             }
             // Check for refresh flag on turn boundaries
             BusEvent::TurnEnd { .. } => {
-                if *self.refresh_status_pending.borrow() {
-                    *self.refresh_status_pending.borrow_mut() = false;
+                if self.refresh_status_pending.load(Ordering::Relaxed) {
+                    self.refresh_status_pending.store(false, Ordering::Relaxed);
                     vec![BusRequest::RefreshHarnessStatus]
                 } else {
                     vec![]
@@ -289,7 +289,7 @@ impl Feature for PersonaFeature {
 
     fn provide_context(&self, _signals: &omegon_traits::ContextSignals<'_>) -> Option<omegon_traits::ContextInjection> {
         // Inject persona directive + tone directive as context
-        let prompt = self.registry.build_system_prompt();
+        let prompt = self.registry.lock().unwrap().build_system_prompt();
         if prompt.is_empty() {
             return None;
         }

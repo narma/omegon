@@ -6,7 +6,8 @@ parent: mcp-transport
 dependencies: [mcp-transport]
 related: [styrene-identity-secrets]
 tags: [architecture, styrene, mcp, mesh, rns, pqc, transport]
-open_questions: []
+open_questions:
+  - Now that rmcp Streamable HTTP transport is enabled, does native styrene-ipc still add value over routing mesh MCP servers through the HTTP transport with Styrene tunnel as the network layer?
 issue_type: feature
 priority: 2
 ---
@@ -40,4 +41,4 @@ Dependencies: styrene-ipc crate needs to be added to the omegon workspace. Featu
 
 ## Open Questions
 
-*No open questions.*
+- Now that rmcp Streamable HTTP transport is enabled, does native styrene-ipc still add value over routing mesh MCP servers through the HTTP transport with Styrene tunnel as the network layer?

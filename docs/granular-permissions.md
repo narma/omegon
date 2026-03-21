@@ -3,7 +3,8 @@ id: granular-permissions
 title: "Granular tool permissions — per-tool, per-path allow/deny/prompt policies"
 status: exploring
 tags: [security, permissions, tools, ux, policy]
-open_questions: []
+open_questions:
+  - "What is the permission config format — TOML file in .omegon/permissions.toml, inline in opencode.json-style config, or both?"
 issue_type: feature
 priority: 1
 ---
@@ -46,4 +47,4 @@ The key improvement over OpenCode: our permissions compose with personas. The tu
 
 ## Open Questions
 
-*No open questions.*
+- What is the permission config format — TOML file in .omegon/permissions.toml, inline in opencode.json-style config, or both?

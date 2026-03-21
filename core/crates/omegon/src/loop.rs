@@ -325,7 +325,10 @@ pub async fn run(
                 }
                 omegon_traits::BusRequest::RequestCompaction => {
                     tracing::info!("Bus: compaction requested by feature");
-                    // Compaction will be checked at the top of the next turn
+                }
+                omegon_traits::BusRequest::RefreshHarnessStatus => {
+                    tracing::debug!("Bus: harness status refresh requested");
+                    // The TUI will pick this up on the next event cycle
                 }
             }
         }
@@ -356,6 +359,7 @@ pub async fn run(
             omegon_traits::BusRequest::RequestCompaction => {
                 tracing::info!("Bus requested compaction (post-loop — ignored)");
             }
+            omegon_traits::BusRequest::RefreshHarnessStatus => {}
         }
     }
 

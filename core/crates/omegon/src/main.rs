@@ -710,6 +710,13 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         omegon_traits::BusRequest::RequestCompaction => {
                             tracing::info!("Bus: compaction requested");
                         }
+                        omegon_traits::BusRequest::RefreshHarnessStatus => {
+                            // Re-assemble and broadcast
+                            let status = crate::status::HarnessStatus::assemble();
+                            if let Ok(json) = serde_json::to_value(&status) {
+                                let _ = events_tx.send(AgentEvent::HarnessStatusChanged { status_json: json });
+                            }
+                        }
                     }
                 }
             }

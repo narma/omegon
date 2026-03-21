@@ -3,7 +3,8 @@ id: work-decomposition-model
 title: "Work decomposition model — beyond the cleave/execute dichotomy"
 status: exploring
 tags: [architecture, cleave, core]
-open_questions: []
+open_questions:
+  - "[assumption] The three-mode model (Decompose/Delegate/Hydra) is sufficient — there's no need for a fourth mode between Delegate (single child) and Decompose (planned batch). Is this true, or do developers want an ad-hoc multi-child mode without upfront planning?"
 issue_type: epic
 priority: 1
 ---
@@ -85,4 +86,4 @@ Three independent failures:\n\n### 1. Global extraction disabled by default (the
 
 ## Open Questions
 
-*No open questions.*
+- [assumption] The three-mode model (Decompose/Delegate/Hydra) is sufficient — there's no need for a fourth mode between Delegate (single child) and Decompose (planned batch). Is this true, or do developers want an ad-hoc multi-child mode without upfront planning?

@@ -3,7 +3,8 @@ id: lsp-integration
 title: LSP integration — language server protocol for code-aware navigation and diagnostics
 status: exploring
 tags: [architecture, lsp, code-intelligence, tools, navigation]
-open_questions: []
+open_questions:
+  - "Should LSP servers be auto-detected from project files (tsconfig.json → typescript-language-server) or explicitly configured in .omegon/lsp.toml?"
 issue_type: feature
 priority: 1
 ---
@@ -37,7 +38,7 @@ This is medium effort, high value. Every edit the agent makes could be validated
 
 ## Open Questions
 
-*No open questions.*
+- Should LSP servers be auto-detected from project files (tsconfig.json → typescript-language-server) or explicitly configured in .omegon/lsp.toml?
 
 ## OpenCode has, Omegon has equivalent or better
 

@@ -4,7 +4,8 @@ title: Omegon Session — provider-agnostic session identity and resumption
 status: exploring
 related: [omega, model-degradation]
 tags: [architecture, orchestration, session, core]
-open_questions: []
+open_questions:
+  - Should session identity be tied to the git branch (natural boundary for work streams) or independent (operator can switch branches mid-session)?
 issue_type: feature
 priority: 2
 ---
@@ -108,4 +109,4 @@ Git worktrees (`git worktree add`) create local filesystem directories that shar
 
 ## Open Questions
 
-*No open questions.*
+- Should session identity be tied to the git branch (natural boundary for work streams) or independent (operator can switch branches mid-session)?

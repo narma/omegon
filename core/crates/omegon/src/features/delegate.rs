@@ -120,10 +120,35 @@ impl DelegateRunner {
         _scope: Option<Vec<String>>,
         _model: Option<String>,
         _thinking_level: Option<String>,
-        _facts: Option<Vec<String>>,
-        _mind: Option<String>,
+        facts: Option<Vec<String>>,
+        mind: Option<String>,
     ) -> anyhow::Result<()> {
-        // For now, just simulate task execution
+        // Assemble field kit: load persona mind if specified
+        let mut field_kit_context = String::new();
+        if let Some(ref persona_id) = mind {
+            // Try to find the persona in installed plugins and load its directive + facts
+            let (personas, _) = crate::plugins::persona_loader::scan_available();
+            if let Some(available) = personas.iter().find(|p| p.id.contains(persona_id) || p.name.to_lowercase().contains(&persona_id.to_lowercase())) {
+                if let Ok(persona) = crate::plugins::persona_loader::load_persona(&available.path) {
+                    field_kit_context.push_str(&format!("\n## Persona: {}\n{}\n", persona.name, persona.directive));
+                    if !persona.mind_facts.is_empty() {
+                        field_kit_context.push_str(&format!("\n## Mind Facts ({} facts)\n", persona.mind_facts.len()));
+                        for fact in &persona.mind_facts {
+                            field_kit_context.push_str(&format!("- [{}] {}\n", fact.section, fact.content));
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(ref fact_list) = facts {
+            if !fact_list.is_empty() {
+                field_kit_context.push_str("\n## Injected Facts\n");
+                for f in fact_list {
+                    field_kit_context.push_str(&format!("- {f}\n"));
+                }
+            }
+        }
+
         let task_entry = DelegateTask {
             task_id: task_id.clone(),
             agent_name,
@@ -137,16 +162,21 @@ impl DelegateRunner {
         self.result_store.store_task(task_entry);
 
         // Spawn a background task that simulates work
+        // In a real implementation, this spawns a headless omegon child process
         let store = self.result_store.clone();
+        let field_kit = field_kit_context;
         tokio::spawn(async move {
-            // Simulate some work
             tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             
-            // Mark as completed with mock result
+            let result = if field_kit.is_empty() {
+                format!("Task completed: {task}")
+            } else {
+                format!("Task completed: {task}\n\nField kit applied:{field_kit}")
+            };
             store.update_task_status(
                 &task_id,
                 DelegateTaskStatus::Completed { success: true },
-                Some(format!("Task completed: {}", task)),
+                Some(result),
             );
         });
 
