@@ -3627,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "omegon"
-version = "0.14.1-rc.11"
+version = "0.14.1-rc.12"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -3638,6 +3638,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "flate2",
  "futures-util",
  "getrandom 0.4.2",
  "hyperrat",
@@ -3662,6 +3663,7 @@ dependencies = [
  "sha2",
  "syntect",
  "tachyonfx",
+ "tar",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -3680,7 +3682,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-git"
-version = "0.14.1-rc.11"
+version = "0.14.1-rc.12"
 dependencies = [
  "anyhow",
  "git2",
@@ -3692,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-memory"
-version = "0.14.1-rc.11"
+version = "0.14.1-rc.12"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3710,7 +3712,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-secrets"
-version = "0.14.1-rc.11"
+version = "0.14.1-rc.12"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -3740,7 +3742,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-traits"
-version = "0.14.1-rc.11"
+version = "0.14.1-rc.12"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5482,6 +5484,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
+name = "tar"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22692a6476a21fa75fdfc11d452fda482af402c008cdbaf3476414e122040973"
+dependencies = [
+ "filetime",
+ "libc",
+ "xattr",
+]
+
+[[package]]
 name = "tempfile"
 version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7073,6 +7086,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
+]
+
+[[package]]
+name = "xattr"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e45ad4206f6d2479085147f02bc2ef834ac85886624a23575ae137c8aa8156"
+dependencies = [
+ "libc",
+ "rustix 1.1.4",
 ]
 
 [[package]]
