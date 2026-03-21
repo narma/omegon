@@ -180,7 +180,12 @@ fn detect_lifecycle_context(cwd: &Path, tools: &[ToolDefinition]) -> String {
             "design-tree: {doc_count} design doc(s) in docs/. Use design_tree to query nodes, \
              track decisions, and manage open questions. Use design_tree_update to \
              record decisions, add research, and transition node status \
-             (seed → exploring → resolved → decided)."
+             (seed → exploring → resolved → decided). \
+             When exploring a design node, actively surface assumptions as \
+             [assumption]-tagged open questions (e.g. '[assumption] The operator has git installed'). \
+             Assumptions are unknowns we're treating as true but haven't validated. \
+             A node's readiness = decisions / (decisions + questions + assumptions). \
+             Resolve all unknowns before deciding."
         ));
     }
 

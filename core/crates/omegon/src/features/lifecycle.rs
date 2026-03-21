@@ -134,6 +134,14 @@ impl LifecycleFeature {
                         "action": f.action,
                     })).collect::<Vec<_>>());
                     result["impl_constraints"] = json!(s.impl_constraints);
+
+                    // Knowledge quadrant readiness
+                    result["readiness"] = json!({
+                        "score": s.readiness_score(),
+                        "decisions": s.decisions.iter().filter(|d| d.status == "decided").count(),
+                        "questions": s.question_count(),
+                        "assumptions": s.assumption_count(),
+                    });
                 }
 
                 Ok(text_result(&serde_json::to_string_pretty(&result)?))

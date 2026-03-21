@@ -55,7 +55,9 @@ fn snapshot_dashboard_with_focused_node() {
         title: "Unified auth surface".into(),
         status: NodeStatus::Implementing,
         open_questions: 2,
+        assumptions: 1,
         decisions: 3,
+        readiness: 0.5,
     });
     let backend = TestBackend::new(36, 25);
     let mut terminal = Terminal::new(backend).unwrap();

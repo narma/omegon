@@ -109,6 +109,44 @@ pub struct DesignNode {
     pub file_path: PathBuf,
 }
 
+impl DesignNode {
+    /// Count of open questions tagged as [assumption].
+    pub fn assumption_count(&self) -> usize {
+        self.open_questions.iter().filter(|q| q.starts_with("[assumption]")).count()
+    }
+
+    /// Count of regular (non-assumption) open questions.
+    pub fn question_count(&self) -> usize {
+        self.open_questions.len() - self.assumption_count()
+    }
+}
+
+impl DocumentSections {
+    /// Readiness score: decisions / (decisions + open_questions).
+    /// Returns 1.0 when all unknowns are resolved, 0.0 when nothing is decided.
+    /// Open questions include both regular questions and [assumption]-tagged ones.
+    pub fn readiness_score(&self) -> f32 {
+        let decided = self.decisions.iter()
+            .filter(|d| d.status == "decided")
+            .count();
+        let total = decided + self.open_questions.len();
+        if total == 0 {
+            return 0.0; // no data = not ready (seed nodes)
+        }
+        decided as f32 / total as f32
+    }
+
+    /// Count of open questions tagged as [assumption].
+    pub fn assumption_count(&self) -> usize {
+        self.open_questions.iter().filter(|q| q.starts_with("[assumption]")).count()
+    }
+
+    /// Count of regular (non-assumption) open questions.
+    pub fn question_count(&self) -> usize {
+        self.open_questions.len() - self.assumption_count()
+    }
+}
+
 /// A decision recorded in a design document.
 #[derive(Debug, Clone)]
 pub struct DesignDecision {
@@ -233,5 +271,81 @@ mod tests {
         assert_eq!(IssueType::parse("epic"), Some(IssueType::Epic));
         assert_eq!(IssueType::parse("bug"), Some(IssueType::Bug));
         assert!(IssueType::parse("unknown").is_none());
+    }
+
+    #[test]
+    fn readiness_score_all_decided() {
+        let sections = DocumentSections {
+            decisions: vec![
+                DesignDecision { title: "A".into(), status: "decided".into(), rationale: "".into() },
+                DesignDecision { title: "B".into(), status: "decided".into(), rationale: "".into() },
+            ],
+            open_questions: vec![],
+            ..Default::default()
+        };
+        assert!((sections.readiness_score() - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn readiness_score_with_questions() {
+        let sections = DocumentSections {
+            decisions: vec![
+                DesignDecision { title: "A".into(), status: "decided".into(), rationale: "".into() },
+            ],
+            open_questions: vec![
+                "How does X work?".into(),
+                "[assumption] The operator has git installed".into(),
+            ],
+            ..Default::default()
+        };
+        // 1 decided / (1 + 2) = 0.333
+        assert!((sections.readiness_score() - 0.333).abs() < 0.01);
+        assert_eq!(sections.assumption_count(), 1);
+        assert_eq!(sections.question_count(), 1);
+    }
+
+    #[test]
+    fn readiness_score_empty_is_zero() {
+        let sections = DocumentSections::default();
+        assert_eq!(sections.readiness_score(), 0.0);
+    }
+
+    #[test]
+    fn readiness_score_rejected_decisions_not_counted() {
+        let sections = DocumentSections {
+            decisions: vec![
+                DesignDecision { title: "A".into(), status: "decided".into(), rationale: "".into() },
+                DesignDecision { title: "B".into(), status: "rejected".into(), rationale: "".into() },
+            ],
+            open_questions: vec!["?".into()],
+            ..Default::default()
+        };
+        // 1 decided / (1 + 1) = 0.5 (rejected doesn't count as a known-known)
+        assert!((sections.readiness_score() - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn assumption_count_on_node() {
+        let node = DesignNode {
+            id: "test".into(),
+            title: "Test".into(),
+            status: NodeStatus::Exploring,
+            parent: None,
+            tags: vec![],
+            dependencies: vec![],
+            related: vec![],
+            open_questions: vec![
+                "Regular question".into(),
+                "[assumption] Git is installed".into(),
+                "[assumption] Vault is reachable".into(),
+            ],
+            branches: vec![],
+            openspec_change: None,
+            issue_type: None,
+            priority: None,
+            file_path: std::path::PathBuf::from("test.md"),
+        };
+        assert_eq!(node.assumption_count(), 2);
+        assert_eq!(node.question_count(), 1);
     }
 }

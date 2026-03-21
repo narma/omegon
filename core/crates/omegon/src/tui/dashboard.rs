@@ -46,12 +46,17 @@ impl DashboardHandles {
                 state.focused_node = lp.focused_node_id().and_then(|id| {
                     lp.get_node(id).map(|n| {
                         let sections = design::read_node_sections(n);
+                        let assumptions = n.assumption_count();
+                        let decisions_count = sections.as_ref().map(|s| s.decisions.iter().filter(|d| d.status == "decided").count()).unwrap_or(0);
+                        let readiness = sections.as_ref().map(|s| s.readiness_score()).unwrap_or(0.0);
                         FocusedNodeSummary {
                             id: n.id.clone(),
                             title: n.title.clone(),
                             status: n.status,
-                            open_questions: n.open_questions.len(),
-                            decisions: sections.map(|s| s.decisions.len()).unwrap_or(0),
+                            open_questions: n.open_questions.len() - assumptions,
+                            assumptions,
+                            decisions: decisions_count,
+                            readiness,
                         }
                     })
                 });
@@ -168,7 +173,9 @@ pub struct FocusedNodeSummary {
     pub title: String,
     pub status: NodeStatus,
     pub open_questions: usize,
+    pub assumptions: usize,
     pub decisions: usize,
+    pub readiness: f32,
 }
 
 #[derive(Clone)]
@@ -267,15 +274,24 @@ impl DashboardState {
             ]));
             let title = widgets::truncate_str(&node.title, inner_w.saturating_sub(4), "…");
             lines.push(Line::from(Span::styled(format!("    {title}"), t.style_muted())));
-            if node.decisions > 0 || node.open_questions > 0 {
+            if node.decisions > 0 || node.open_questions > 0 || node.assumptions > 0 {
                 let mut parts: Vec<Span<'static>> = vec![Span::styled("    ", Style::default())];
                 if node.decisions > 0 {
-                    parts.extend(widgets::badge("●", &node.decisions.to_string(), t.success()));
+                    parts.extend(widgets::badge("✓", &node.decisions.to_string(), t.success()));
                     parts.push(Span::styled(" ", Style::default()));
                 }
                 if node.open_questions > 0 {
                     parts.extend(widgets::badge("?", &node.open_questions.to_string(), t.warning()));
+                    parts.push(Span::styled(" ", Style::default()));
                 }
+                if node.assumptions > 0 {
+                    parts.extend(widgets::badge("⚠", &node.assumptions.to_string(), t.caution()));
+                    parts.push(Span::styled(" ", Style::default()));
+                }
+                // Readiness gauge
+                let pct = (node.readiness * 100.0) as u8;
+                let readiness_color = if pct >= 80 { t.success() } else if pct >= 50 { t.warning() } else { t.error() };
+                parts.push(Span::styled(format!("{pct}%"), Style::default().fg(readiness_color)));
                 lines.push(Line::from(parts));
             }
             lines.push(Line::from(""));
@@ -574,7 +590,9 @@ mod tests {
             title: "Test Node".into(),
             status: NodeStatus::Exploring,
             open_questions: 3,
+            assumptions: 1,
             decisions: 2,
+            readiness: 0.33,
         });
         let backend = TestBackend::new(36, 20);
         let mut terminal = Terminal::new(backend).unwrap();

@@ -1,22 +1,18 @@
----
-id: knowledge-quadrant-lifecycle
-title: Knowledge quadrant lifecycle — guide design progression through the Rumsfeld Matrix
-status: implementing
-tags: [architecture, design-tree, epistemology, lifecycle, process, strategic, knowledge-management]
-open_questions: []
-branches: ["feature/knowledge-quadrant-lifecycle"]
-openspec_change: knowledge-quadrant-lifecycle
-issue_type: feature
-priority: 1
----
+# Knowledge quadrant lifecycle — guide design progression through the Rumsfeld Matrix — Design
 
-# Knowledge quadrant lifecycle — guide design progression through the Rumsfeld Matrix
+## Architecture Decisions
 
-## Overview
+### Decision: Readiness score is a soft gate — advisory, not blocking
 
-The design tree's status machine (seed → exploring → decided → implementing → implemented) implicitly tracks knowledge state, but doesn't make it explicit. The Rumsfeld Matrix (Known Knowns / Known Unknowns / Unknown Knowns / Unknown Unknowns) provides a framework that maps directly onto this lifecycle and could guide progression organically.\n\nThe hypothesis: a design node is ready to advance when everything relevant has moved OUT of the 'Unknown' column and INTO the 'Known' column. The design tree already tracks the pieces (open questions = known unknowns, decisions = known knowns, research = the process of discovery) — we just need to surface the quadrant state explicitly.
+**Status:** decided
+**Rationale:** The dashboard shows the readiness score. The /assess design command reports it. But the operator can override — sometimes you need to move forward with acknowledged unknowns. A hard gate would force premature question-closing to satisfy the metric. A soft gate preserves operator agency (Lex Imperialis axiom 6) while making the knowledge state visible. The score is a conversation starter, not a bureaucratic checkpoint.
 
-## Research
+### Decision: Assumptions are open questions tagged [assumption] — not a separate section
+
+**Status:** decided
+**Rationale:** Assumptions ARE unknowns — they're things we think are true but haven't validated. Keeping them in Open Questions with an [assumption] tag means: (1) they naturally block the readiness score the same way questions do, (2) the existing gate logic (zero open questions → can decide) already handles them without new code, (3) answering an assumption is the same workflow as answering a question — research it, then either confirm (→ decision) or deny (→ new question about the alternative). A separate section would create two pools of unknowns that need separate lifecycle management. One pool, two tags: [question] and [assumption].
+
+## Research Context
 
 ### The mapping — design tree artifacts to knowledge quadrants
 
@@ -130,130 +126,16 @@ When an assumption is validated (becomes a decision), store it as a memory fact.
 
 The memory system already has sections (Architecture, Decisions, Constraints). Add: **Assumptions** as a section. Facts in this section have a `validated: bool` field. Unvalidated assumptions decay faster than validated ones (they're provisional knowledge).
 
-## Decisions
-
-### Decision: Readiness score is a soft gate — advisory, not blocking
-
-**Status:** decided
-**Rationale:** The dashboard shows the readiness score. The /assess design command reports it. But the operator can override — sometimes you need to move forward with acknowledged unknowns. A hard gate would force premature question-closing to satisfy the metric. A soft gate preserves operator agency (Lex Imperialis axiom 6) while making the knowledge state visible. The score is a conversation starter, not a bureaucratic checkpoint.
-
-### Decision: Assumptions are open questions tagged [assumption] — not a separate section
-
-**Status:** decided
-**Rationale:** Assumptions ARE unknowns — they're things we think are true but haven't validated. Keeping them in Open Questions with an [assumption] tag means: (1) they naturally block the readiness score the same way questions do, (2) the existing gate logic (zero open questions → can decide) already handles them without new code, (3) answering an assumption is the same workflow as answering a question — research it, then either confirm (→ decision) or deny (→ new question about the alternative). A separate section would create two pools of unknowns that need separate lifecycle management. One pool, two tags: [question] and [assumption].
-
-## Open Questions
-
-*No open questions.*
-
-## Implementation Notes
-
-### File Scope
+## File Changes
 
 - `core/crates/omegon/src/lifecycle/design.rs` (modified) — Add readiness_score() to DesignNode: count decisions vs open questions (including [assumption] tagged). Parse [assumption] prefix from question text. Add assumption_count() accessor.
 - `core/crates/omegon/src/features/lifecycle.rs` (modified) — Include readiness score in design_tree node query response. /assess design enhancement: prompt the reviewer to surface assumptions as [assumption]-tagged questions.
 - `core/crates/omegon/src/tui/dashboard.rs` (modified) — Show readiness gauge for focused node: decisions/total with ? and ⚠ breakdown. Render below focused node section.
 - `core/crates/omegon/src/prompt.rs` (modified) — Add assumption-surfacing guidance to the design exploration system prompt injection: 'When exploring a design node, actively surface assumptions as [assumption]-tagged open questions.'
 
-### Constraints
+## Constraints
 
 - Readiness score is advisory — displayed in dashboard and /assess output, never blocks status transitions
 - Assumptions are open questions prefixed with [assumption] — no new section type, same lifecycle as regular questions
 - readiness = decisions / (decisions + open_questions) — includes both ? and ⚠ tagged questions in denominator
 - /assess design should explicitly prompt: 'What assumptions is this design making that haven’t been stated?'
-
-## Assumptions
-
-- The operator has git installed and configured (not verified at startup)
-- MCP servers respond within 30 seconds (timeout is hardcoded, not configurable per-server)
-- The Vault token has read access to the specified KV path (no capability check before first read)
-- The LLM bridge process is single-threaded (no concurrent streaming requests)
-```
-
-Each assumption is a statement that:
-1. We're treating as true
-2. We haven't explicitly validated
-3. Could break things if wrong
-
-### The lifecycle interaction
-
-When a node is explored and questions are answered, the `/assess design` step should ask: **"What assumptions is this design making?"** The assessment surfaces them. They either:
-- Get validated → become decisions ("We verified X; it's true because Y")
-- Get invalidated → become open questions ("We assumed X, but actually...")
-- Stay as acknowledged risks → recorded as assumptions with mitigations
-
-### Quantifying readiness via quadrant coverage
-
-A node's "readiness score" is a function of its quadrant distribution:
-
-```
-readiness = known_knowns / (known_knowns + known_unknowns + surfaced_assumptions)
-```
-
-Where:
-- `known_knowns` = decisions.count + resolved constraints
-- `known_unknowns` = open_questions.count
-- `surfaced_assumptions` = assumptions.count (things we know we're assuming but haven't validated)
-
-A node is ready to decide when `readiness ≈ 1.0` — all known unknowns are answered and assumptions are either validated or acknowledged.
-
-Unknown unknowns don't factor in (by definition, you can't count them). But the assessment process is designed to surface them — the adversarial reviewer's job is to increase `surfaced_assumptions` by finding things you haven't considered.
-
-### The dashboard visualization
-
-The dashboard sidebar could show the quadrant state for the focused node:
-
-```
-┌─ Knowledge State ──────────────┐
-│  ✓ Decisions:      7           │
-│  ? Open Questions: 2           │
-│  ⚠ Assumptions:    3           │
-│                                │
-│  Readiness: 58% ■■■■■░░░░     │
-│  [2 questions + 3 assumptions  │
-│   blocking decided status]     │
-└────────────────────────────────┘
-```
-
-This gives the operator an immediate sense of how far along the design is, without needing to read every question and decision.
-
-## Known Knowns (✓ — settled knowledge)
-
-**Design tree artifacts:** Decisions (with rationale), Implementation notes (file scope, constraints), Acceptance criteria (falsifiable conditions)
-
-These are things we've explicitly reasoned about and recorded. A decision with rationale is the archetype of a known known — we know the answer and we know why.
-
-**Current tracking:** `decisions[]` array in the node document. Status: decided/rejected.
-
-## Known Unknowns (? — questions we've articulated)
-
-**Design tree artifacts:** Open questions, research headings without conclusions, dependency blockers
-
-These are the things we know we need to figure out. Every open question is a known unknown. The design tree already tracks these — `openQuestions[]` array. The `/assess design` command checks whether open questions are resolved before allowing `decided` status.
-
-**Current tracking:** `openQuestions[]` array. Removed when answered (answer becomes a decision or research finding).
-
-## Unknown Knowns (⚠ — assumptions we haven't surfaced)
-
-**Design tree artifacts:** *None explicitly.* This is the dangerous quadrant.
-
-Unknown knowns are implicit assumptions — things the team "knows" but hasn't articulated. They hide in:
-- Code conventions that aren't documented
-- Architectural constraints that feel obvious but aren't recorded
-- Performance expectations that haven't been stated
-- Security properties that are assumed but not specified
-- Compatibility requirements that nobody wrote down
-
-**This is the gap.** The design tree has no mechanism for surfacing assumptions. Research sections sometimes capture them, but there's no structured way to say "here are the things we're assuming but haven't validated."
-
-## Unknown Unknowns (◌ — risks we haven't imagined)
-
-**Design tree artifacts:** *None — by definition, you can't track what you don't know you don't know.*
-
-But you can create conditions that SURFACE them:
-- Adversarial review (/assess) — an external perspective finds things you missed
-- Prototyping / speculative execution — building reveals unexpected constraints
-- User testing — operators encounter scenarios you didn't anticipate
-- Cross-pollination — research into adjacent systems reveals missed requirements
-
-The design tree's research sections are how unknown unknowns become known unknowns (new open questions) or known knowns (new decisions).

@@ -55,12 +55,17 @@ impl LifecycleSnapshot {
         let focused_node = lp.focused_node_id().and_then(|id| {
             lp.get_node(id).map(|n| {
                 let sections = lifecycle::design::read_node_sections(n);
+                let assumptions = n.assumption_count();
+                let decisions_count = sections.as_ref().map(|s| s.decisions.iter().filter(|d| d.status == "decided").count()).unwrap_or(0);
+                let readiness = sections.as_ref().map(|s| s.readiness_score()).unwrap_or(0.0);
                 crate::tui::dashboard::FocusedNodeSummary {
                     id: n.id.clone(),
                     title: n.title.clone(),
                     status: n.status,
-                    open_questions: n.open_questions.len(),
-                    decisions: sections.map(|s| s.decisions.len()).unwrap_or(0),
+                    open_questions: n.open_questions.len() - assumptions,
+                    assumptions,
+                    decisions: decisions_count,
+                    readiness,
                 }
             })
         });
