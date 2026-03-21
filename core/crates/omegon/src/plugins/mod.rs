@@ -17,6 +17,7 @@ pub mod armory_feature;
 pub mod manifest;
 pub mod http_feature;
 pub mod mcp;
+pub mod persona_loader;
 pub mod registry;
 
 use manifest::PluginManifest;

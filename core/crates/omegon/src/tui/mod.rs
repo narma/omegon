@@ -103,6 +103,8 @@ pub struct App {
     working_verb: &'static str,
     /// When true, replay the splash animation.
     replay_splash: bool,
+    /// Plugin registry — manages active persona, tone, and memory layers.
+    plugin_registry: Option<crate::plugins::registry::PluginRegistry>,
     /// Visual effects manager (tachyonfx).
     effects: effects::Effects,
     /// Command definitions from bus features.
@@ -170,6 +172,9 @@ impl App {
             last_tool_name: None,
             working_verb: "Working",
             replay_splash: false,
+            plugin_registry: Some(crate::plugins::registry::PluginRegistry::new(
+                crate::prompt::load_lex_imperialis(),
+            )),
             effects: effects::Effects::new(),
             bus_commands: Vec::new(),
             dashboard_handles: dashboard::DashboardHandles::default(),
@@ -577,6 +582,8 @@ impl App {
         ("migrate",  "import from other tools",               &["auto", "claude-code", "pi", "codex", "cursor", "aider"]),
         ("dash",     "toggle dashboard panel / open web UI",  &["open"]),
         ("vault",    "Vault status and management",           &["status", "unseal", "login", "configure", "init-policy"]),
+        ("persona",  "switch persona (or 'off' to deactivate)",  &["off"]),
+        ("tone",     "switch tone (or 'off' to deactivate)",    &["off"]),
         ("status",   "show harness status (providers, MCP, secrets, routing)", &[]),
         ("splash",   "replay splash animation",              &[]),
         ("exit",     "quit (or double Ctrl+C)",              &[]),
@@ -657,6 +664,100 @@ impl App {
                     false, // no ANSI — SlashResult::Display renders via ratatui
                 );
                 SlashResult::Display(panel)
+            }
+
+            "persona" => {
+                if args == "off" {
+                    if let Some(ref mut registry) = self.plugin_registry {
+                        let result = registry.deactivate_persona();
+                        match result.removed_id {
+                            Some(id) => SlashResult::Display(format!("Persona deactivated: {id}")),
+                            None => SlashResult::Display("No persona active.".into()),
+                        }
+                    } else {
+                        SlashResult::Display("Plugin registry not initialized.".into())
+                    }
+                } else if args.is_empty() {
+                    // List available personas
+                    let (personas, _) = crate::plugins::persona_loader::scan_available();
+                    if personas.is_empty() {
+                        SlashResult::Display("No personas installed.\n  Install with: omegon plugin install <git-url>".into())
+                    } else {
+                        let active_id = self.plugin_registry.as_ref()
+                            .and_then(|r| r.active_persona().map(|p| p.id.clone()));
+                        let lines: Vec<String> = personas.iter().map(|p| {
+                            let marker = if active_id.as_deref() == Some(&p.id) { " ●" } else { "" };
+                            format!("  {:<20} {}{}", p.name, p.description, marker)
+                        }).collect();
+                        SlashResult::Display(format!("Available personas:\n{}\n\n  /persona <name> to activate, /persona off to deactivate", lines.join("\n")))
+                    }
+                } else {
+                    // Activate by name (case-insensitive match)
+                    let (personas, _) = crate::plugins::persona_loader::scan_available();
+                    let target = args.to_lowercase();
+                    match personas.iter().find(|p| p.name.to_lowercase() == target || p.id.to_lowercase().contains(&target)) {
+                        Some(available) => {
+                            match crate::plugins::persona_loader::load_persona(&available.path) {
+                                Ok(persona) => {
+                                    let name = persona.name.clone();
+                                    let badge = persona.badge.clone().unwrap_or_else(|| "⚙".into());
+                                    let fact_count = persona.mind_facts.len();
+                                    if let Some(ref mut registry) = self.plugin_registry {
+                                        registry.activate_persona(persona);
+                                    }
+                                    SlashResult::Display(format!("{badge} Persona activated: {name} ({fact_count} mind facts)"))
+                                }
+                                Err(e) => SlashResult::Display(format!("Failed to load persona: {e}")),
+                            }
+                        }
+                        None => SlashResult::Display(format!("Persona '{args}' not found. Run /persona to list available.")),
+                    }
+                }
+            }
+
+            "tone" => {
+                if args == "off" {
+                    if let Some(ref mut registry) = self.plugin_registry {
+                        let result = registry.deactivate_tone();
+                        match result {
+                            Some(id) => SlashResult::Display(format!("Tone deactivated: {id}")),
+                            None => SlashResult::Display("No tone active.".into()),
+                        }
+                    } else {
+                        SlashResult::Display("Plugin registry not initialized.".into())
+                    }
+                } else if args.is_empty() {
+                    let (_, tones) = crate::plugins::persona_loader::scan_available();
+                    if tones.is_empty() {
+                        SlashResult::Display("No tones installed.\n  Install with: omegon plugin install <git-url>".into())
+                    } else {
+                        let active_id = self.plugin_registry.as_ref()
+                            .and_then(|r| r.active_tone().map(|t| t.id.clone()));
+                        let lines: Vec<String> = tones.iter().map(|t| {
+                            let marker = if active_id.as_deref() == Some(&t.id) { " ●" } else { "" };
+                            format!("  {:<20} {}{}", t.name, t.description, marker)
+                        }).collect();
+                        SlashResult::Display(format!("Available tones:\n{}\n\n  /tone <name> to activate, /tone off to deactivate", lines.join("\n")))
+                    }
+                } else {
+                    let (_, tones) = crate::plugins::persona_loader::scan_available();
+                    let target = args.to_lowercase();
+                    match tones.iter().find(|t| t.name.to_lowercase() == target || t.id.to_lowercase().contains(&target)) {
+                        Some(available) => {
+                            match crate::plugins::persona_loader::load_tone(&available.path) {
+                                Ok(tone) => {
+                                    let name = tone.name.clone();
+                                    if let Some(ref mut registry) = self.plugin_registry {
+                                        registry.activate_tone(tone);
+                                    }
+                                    SlashResult::Display(format!("♪ Tone activated: {name}"))
+                                }
+                                Err(e) => SlashResult::Display(format!("Failed to load tone: {e}")),
+                            }
+                        }
+                        None => SlashResult::Display(format!("Tone '{args}' not found. Run /tone to list available.")),
+                    }
+                }
             }
 
             "detail" => {

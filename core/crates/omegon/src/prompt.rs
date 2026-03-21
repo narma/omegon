@@ -214,7 +214,7 @@ fn detect_lifecycle_context(cwd: &Path, tools: &[ToolDefinition]) -> String {
 /// These are constitutional axioms that define what Omegon *is*.
 /// They are always injected, always first in the directive stack,
 /// and cannot be disabled by personas, tones, or operator config.
-fn load_lex_imperialis() -> String {
+pub fn load_lex_imperialis() -> String {
     // Embedded at compile time from the armory source
     static LEX: &str = include_str!("../../../../data/lex-imperialis.md");
     format!("\n# Core Directives\n\n{LEX}\n")
