@@ -25,6 +25,7 @@ pub mod adapter;
 pub mod lifecycle;
 pub mod manage_tools;
 pub mod model_budget;
+pub mod persona;
 pub mod session_log;
 pub mod terminal_title;
 pub mod version_check;

@@ -244,6 +244,12 @@ impl AgentSetup {
         bus.register(Box::new(manage_tools));
 
         // ─── Native features ────────────────────────────────────────────
+        // ─── Persona system ────────────────────────────────────────────
+        let persona_registry = crate::plugins::registry::PluginRegistry::new(
+            crate::prompt::load_lex_imperialis(),
+        );
+        bus.register(Box::new(features::persona::PersonaFeature::new(persona_registry)));
+
         bus.register(Box::new(features::auto_compact::AutoCompact::new()));
         bus.register(Box::new(features::terminal_title::TerminalTitle::new(
             &cwd.to_string_lossy(),

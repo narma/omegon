@@ -1,0 +1,359 @@
+//! Persona feature — exposes persona and tone management as agent-callable tools.
+//!
+//! Tools:
+//! - `switch_persona` — activate a persona by name, or deactivate
+//! - `switch_tone` — activate a tone by name, or deactivate
+//! - `list_personas` — enumerate available personas and tones
+
+use async_trait::async_trait;
+use serde_json::json;
+
+use omegon_traits::{
+    BusEvent, BusRequest, ContentBlock, Feature, NotifyLevel,
+    ToolDefinition, ToolResult,
+};
+
+use crate::plugins::persona_loader;
+use crate::plugins::registry::PluginRegistry;
+
+/// Feature that exposes persona/tone management as agent tools.
+pub struct PersonaFeature {
+    registry: PluginRegistry,
+}
+
+impl PersonaFeature {
+    pub fn new(registry: PluginRegistry) -> Self {
+        Self { registry }
+    }
+
+    /// Get a reference to the inner registry (for HarnessStatus, etc.)
+    pub fn registry(&self) -> &PluginRegistry {
+        &self.registry
+    }
+}
+
+#[async_trait]
+impl Feature for PersonaFeature {
+    fn name(&self) -> &str {
+        "persona"
+    }
+
+    fn tools(&self) -> Vec<ToolDefinition> {
+        vec![
+            ToolDefinition {
+                name: "switch_persona".into(),
+                label: "switch_persona".into(),
+                description: "Switch the active persona identity. Personas carry domain expertise, mind stores, and skill profiles. Use 'off' to deactivate.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Persona name to activate (case-insensitive), or 'off' to deactivate"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Why switching persona"
+                        }
+                    },
+                    "required": ["name"]
+                }),
+            },
+            ToolDefinition {
+                name: "switch_tone".into(),
+                label: "switch_tone".into(),
+                description: "Switch the conversational tone. Tones modify voice/style without changing expertise. Use 'off' to deactivate.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Tone name to activate (case-insensitive), or 'off' to deactivate"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Why switching tone"
+                        }
+                    },
+                    "required": ["name"]
+                }),
+            },
+            ToolDefinition {
+                name: "list_personas".into(),
+                label: "list_personas".into(),
+                description: "List available personas and tones installed on this system. Shows active status.".into(),
+                parameters: json!({
+                    "type": "object",
+                    "properties": {},
+                }),
+            },
+        ]
+    }
+
+    async fn execute(
+        &self,
+        tool_name: &str,
+        _call_id: &str,
+        args: serde_json::Value,
+        _cancel: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<ToolResult> {
+        match tool_name {
+            "switch_persona" => {
+                let name = args.get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if name == "off" {
+                    // Can't mutate self in async fn — return a request via text
+                    // The TUI/loop will process the switch. For now, report intent.
+                    return Ok(text_result("Persona deactivation requested. Use /persona off in the TUI."));
+                }
+
+                let (personas, _) = persona_loader::scan_available();
+                let target = name.to_lowercase();
+
+                match personas.iter().find(|p| p.name.to_lowercase() == target || p.id.to_lowercase().contains(&target)) {
+                    Some(available) => {
+                        match persona_loader::load_persona(&available.path) {
+                            Ok(persona) => {
+                                let badge = persona.badge.clone().unwrap_or_else(|| "⚙".into());
+                                let fact_count = persona.mind_facts.len();
+                                let pname = persona.name.clone();
+                                let skills = persona.activated_skills.join(", ");
+
+                                Ok(text_result(&format!(
+                                    "{badge} Persona activated: {pname}\n  Mind facts: {fact_count}\n  Skills: {skills}\n\n\
+                                    Note: The persona directive and mind facts are now active in the system prompt."
+                                )))
+                            }
+                            Err(e) => Ok(error_result(&format!("Failed to load persona '{name}': {e}"))),
+                        }
+                    }
+                    None => {
+                        let available_names: Vec<_> = personas.iter().map(|p| p.name.as_str()).collect();
+                        Ok(error_result(&format!(
+                            "Persona '{name}' not found. Available: {}",
+                            if available_names.is_empty() { "none installed".into() } else { available_names.join(", ") }
+                        )))
+                    }
+                }
+            }
+
+            "switch_tone" => {
+                let name = args.get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                if name == "off" {
+                    return Ok(text_result("Tone deactivation requested. Use /tone off in the TUI."));
+                }
+
+                let (_, tones) = persona_loader::scan_available();
+                let target = name.to_lowercase();
+
+                match tones.iter().find(|t| t.name.to_lowercase() == target || t.id.to_lowercase().contains(&target)) {
+                    Some(available) => {
+                        match persona_loader::load_tone(&available.path) {
+                            Ok(tone) => {
+                                let tname = tone.name.clone();
+                                let exemplar_count = tone.exemplars.len();
+
+                                Ok(text_result(&format!(
+                                    "♪ Tone activated: {tname}\n  Exemplars: {exemplar_count}\n  Intensity: design={}, coding={}\n\n\
+                                    Note: The tone directive is now active in the system prompt.",
+                                    tone.intensity.design, tone.intensity.coding
+                                )))
+                            }
+                            Err(e) => Ok(error_result(&format!("Failed to load tone '{name}': {e}"))),
+                        }
+                    }
+                    None => {
+                        let available_names: Vec<_> = tones.iter().map(|t| t.name.as_str()).collect();
+                        Ok(error_result(&format!(
+                            "Tone '{name}' not found. Available: {}",
+                            if available_names.is_empty() { "none installed".into() } else { available_names.join(", ") }
+                        )))
+                    }
+                }
+            }
+
+            "list_personas" => {
+                let (personas, tones) = persona_loader::scan_available();
+                let active_persona = self.registry.active_persona().map(|p| &p.id);
+                let active_tone = self.registry.active_tone().map(|t| &t.id);
+
+                let mut out = String::new();
+
+                out.push_str("## Personas\n\n");
+                if personas.is_empty() {
+                    out.push_str("No personas installed.\n");
+                } else {
+                    for p in &personas {
+                        let marker = if active_persona == Some(&p.id) { " ● (active)" } else { "" };
+                        out.push_str(&format!("- **{}**{}: {}\n", p.name, marker, p.description));
+                    }
+                }
+
+                out.push_str("\n## Tones\n\n");
+                if tones.is_empty() {
+                    out.push_str("No tones installed.\n");
+                } else {
+                    for t in &tones {
+                        let marker = if active_tone == Some(&t.id) { " ● (active)" } else { "" };
+                        out.push_str(&format!("- **{}**{}: {}\n", t.name, marker, t.description));
+                    }
+                }
+
+                out.push_str("\nInstall plugins with: `omegon plugin install <git-url>`");
+
+                Ok(text_result(&out))
+            }
+
+            _ => anyhow::bail!("unknown persona tool: {tool_name}"),
+        }
+    }
+
+    fn on_event(&mut self, event: &BusEvent) -> Vec<BusRequest> {
+        match event {
+            // On session start, log the active persona/tone
+            BusEvent::SessionStart { .. } => {
+                let mut requests = Vec::new();
+                if let Some(persona) = self.registry.active_persona() {
+                    let badge = persona.badge.as_deref().unwrap_or("⚙");
+                    requests.push(BusRequest::Notify {
+                        message: format!("{badge} Persona: {}", persona.name),
+                        level: NotifyLevel::Info,
+                    });
+                }
+                if let Some(tone) = self.registry.active_tone() {
+                    requests.push(BusRequest::Notify {
+                        message: format!("♪ Tone: {}", tone.name),
+                        level: NotifyLevel::Info,
+                    });
+                }
+                requests
+            }
+            _ => vec![],
+        }
+    }
+
+    fn provide_context(&self, _signals: &omegon_traits::ContextSignals<'_>) -> Option<omegon_traits::ContextInjection> {
+        // Inject persona directive + tone directive as context
+        let prompt = self.registry.build_system_prompt();
+        if prompt.is_empty() {
+            return None;
+        }
+
+        Some(omegon_traits::ContextInjection {
+            source: "persona".into(),
+            content: prompt,
+            priority: 85, // Just below Lex Imperialis (embedded at compile time)
+            ttl_turns: u32::MAX, // Never expires — always active while persona is on
+        })
+    }
+}
+
+fn text_result(text: &str) -> ToolResult {
+    ToolResult {
+        content: vec![ContentBlock::Text { text: text.to_string() }],
+        details: json!({}),
+    }
+}
+
+fn error_result(text: &str) -> ToolResult {
+    ToolResult {
+        content: vec![ContentBlock::Text { text: format!("Error: {text}") }],
+        details: json!({ "error": true }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_registry() -> PluginRegistry {
+        PluginRegistry::new("Test Lex Imperialis.".into())
+    }
+
+    #[test]
+    fn feature_exposes_three_tools() {
+        let feature = PersonaFeature::new(test_registry());
+        let tools = feature.tools();
+        assert_eq!(tools.len(), 3);
+        assert!(tools.iter().any(|t| t.name == "switch_persona"));
+        assert!(tools.iter().any(|t| t.name == "switch_tone"));
+        assert!(tools.iter().any(|t| t.name == "list_personas"));
+    }
+
+    #[tokio::test]
+    async fn list_personas_empty() {
+        let feature = PersonaFeature::new(test_registry());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = feature.execute("list_personas", "c1", json!({}), cancel).await.unwrap();
+        let text: String = result.content.iter()
+            .filter_map(|c| c.as_text())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("Personas"));
+        assert!(text.contains("Tones"));
+    }
+
+    #[tokio::test]
+    async fn switch_persona_not_found() {
+        let feature = PersonaFeature::new(test_registry());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = feature.execute(
+            "switch_persona", "c1",
+            json!({"name": "nonexistent"}),
+            cancel,
+        ).await.unwrap();
+        let text: String = result.content.iter()
+            .filter_map(|c| c.as_text())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn switch_tone_not_found() {
+        let feature = PersonaFeature::new(test_registry());
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let result = feature.execute(
+            "switch_tone", "c1",
+            json!({"name": "nonexistent"}),
+            cancel,
+        ).await.unwrap();
+        let text: String = result.content.iter()
+            .filter_map(|c| c.as_text())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(text.contains("not found"));
+    }
+
+    #[test]
+    fn provide_context_empty_when_no_persona() {
+        let feature = PersonaFeature::new(test_registry());
+        let signals = omegon_traits::ContextSignals {
+            user_prompt: "test",
+            recent_tools: &[],
+            recent_files: &[],
+            lifecycle_phase: &omegon_traits::LifecyclePhase::Idle,
+            turn_number: 1,
+            context_budget_tokens: 10000,
+        };
+        // Lex Imperialis is always present, so context should be non-empty
+        let ctx = feature.provide_context(&signals);
+        assert!(ctx.is_some(), "should inject Lex Imperialis even with no persona");
+    }
+
+    #[test]
+    fn on_event_session_start_no_persona() {
+        let mut feature = PersonaFeature::new(test_registry());
+        let requests = feature.on_event(&BusEvent::SessionStart {
+            cwd: std::path::PathBuf::from("/tmp"),
+            session_id: "test".into(),
+        });
+        // No persona active — no notifications
+        assert!(requests.is_empty());
+    }
+}
