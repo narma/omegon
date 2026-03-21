@@ -1,7 +1,7 @@
 ---
 id: knowledge-quadrant-lifecycle
 title: Knowledge quadrant lifecycle — guide design progression through the Rumsfeld Matrix
-status: implementing
+status: implemented
 tags: [architecture, design-tree, epistemology, lifecycle, process, strategic, knowledge-management]
 open_questions: []
 branches: ["feature/knowledge-quadrant-lifecycle"]
