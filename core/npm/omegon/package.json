@@ -2,7 +2,7 @@
   "name": "omegon",
   "version": "0.13.1",
   "description": "Rust-native AI coding agent \u2014 lifecycle engine, memory, tool execution",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "repository": {
     "type": "git",
     "url": "https://github.com/styrene-lab/omegon-core"

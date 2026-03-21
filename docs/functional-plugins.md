@@ -229,3 +229,20 @@ my-pcb-tools/
 ## Open Questions
 
 *No open questions.*
+
+## Implementation Notes
+
+### File Scope
+
+- `core/crates/omegon/src/plugins/armory_feature.rs` (new) — ArmoryFeature — Feature impl for script-backed (Python/Node/Bash) and OCI container tools. JSON stdin/stdout contract, timeout+cancellation, parse_tool_output(). 12 tests.
+- `core/crates/omegon/src/plugins/armory.rs` (modified) — Added Clone derive to ToolEntry (needed by ArmoryFeature::from_manifest filter+collect)
+- `core/crates/omegon/src/plugins/mcp.rs` (modified) — Made detect_container_runtime() pub(crate) for reuse by OCI tool runner
+- `core/crates/omegon/src/plugins/mod.rs` (modified) — Wired ArmoryFeature into load_armory_plugin() — armory manifests with script/OCI tools now create functional features
+
+### Constraints
+
+- Script tools spawn subprocess in plugin_root directory with JSON on stdin
+- OCI tools deny network by default (--network=none unless network=true)
+- OCI mount uses :Z suffix for SELinux compatibility
+- Container runtime is lazy-detected (OnceLock) — only probed if OCI tools exist
+- HTTP-only tools in armory manifests are excluded — handled by HttpPluginFeature

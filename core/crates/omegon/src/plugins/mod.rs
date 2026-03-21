@@ -13,6 +13,7 @@
 //! The contract is: TOML manifest + HTTP endpoints. Language-agnostic.
 
 pub mod armory;
+pub mod armory_feature;
 pub mod manifest;
 pub mod http_feature;
 pub mod mcp;
@@ -139,10 +140,20 @@ async fn load_armory_plugin(
         }
     }
 
-    // TODO: Load script-backed tools, OCI tools, context entries
-    // These will be additional Feature implementations wired here.
+    // Load script-backed and OCI tools via ArmoryFeature
+    let plugin_root = manifest_path.parent()
+        .ok_or_else(|| anyhow::anyhow!("manifest has no parent directory"))?;
+    if let Some(armory_feature) = armory_feature::ArmoryFeature::from_manifest(&manifest, plugin_root) {
+        let tool_count = armory_feature.tools().len();
+        tracing::info!(
+            plugin = manifest.plugin.name,
+            tools = tool_count,
+            "loaded armory executable tools"
+        );
+        features.push(Box::new(armory_feature));
+    }
 
-    if features.is_empty() && manifest.mcp_servers.is_empty() {
+    if features.is_empty() {
         return Ok(None);
     }
 

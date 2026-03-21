@@ -75,7 +75,7 @@ impl std::fmt::Display for ToolRunner {
 }
 
 /// A tool declaration — can be script-backed, HTTP-backed, or OCI container-backed.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ToolEntry {
     pub name: String,
     pub description: String,

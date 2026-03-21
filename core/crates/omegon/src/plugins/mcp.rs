@@ -368,7 +368,7 @@ impl Feature for McpFeature {
 
 /// Detect the available OCI container runtime.
 /// Prefers podman (rootless, daemonless), falls back to docker.
-fn detect_container_runtime() -> String {
+pub(crate) fn detect_container_runtime() -> String {
     // Check OMEGON_CONTAINER_RUNTIME env var first (operator override).
     // Only accept known-safe values to prevent command injection.
     if let Ok(runtime) = std::env::var("OMEGON_CONTAINER_RUNTIME") {
