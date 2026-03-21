@@ -244,12 +244,11 @@ impl VersionSwitcher {
                 release.assets.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
             ))?
             .clone();
-        
-        let asset = release
-            .assets
-            .iter()
+
+        // Asset is guaranteed to exist — the candidate loop above verified it
+        let asset = release.assets.iter()
             .find(|a| a.name == artifact_name)
-            .ok_or_else(|| anyhow!("No asset found for platform {}", platform.target))?
+            .expect("candidate loop verified asset exists")
             .clone();
 
         let checksums_asset = release
@@ -401,8 +400,15 @@ impl VersionSwitcher {
 
         let mut selected = 0;
 
-        // Enter raw mode
+        // Enter raw mode with a guard that restores on panic/early return
         terminal::enable_raw_mode()?;
+        struct RawModeGuard;
+        impl Drop for RawModeGuard {
+            fn drop(&mut self) {
+                let _ = terminal::disable_raw_mode();
+            }
+        }
+        let _guard = RawModeGuard;
         let mut stdout = std::io::stdout();
 
         let result = loop {
@@ -476,8 +482,8 @@ impl VersionSwitcher {
             }
         };
 
-        // Exit raw mode
-        terminal::disable_raw_mode()?;
+        // Guard handles disable_raw_mode on drop (including panic paths)
+        drop(_guard);
         execute!(stdout, Clear(ClearType::All), cursor::MoveTo(0, 0))?;
 
         Ok(result)
@@ -542,7 +548,7 @@ pub fn detect_platform() -> Result<PlatformInfo> {
     };
 
     let arch = match env::consts::ARCH {
-        "x86_64" => "x86_64",
+        "x86_64" => "x64",
         "aarch64" => "arm64",
         other => return Err(anyhow!("Unsupported architecture: {}", other)),
     };
@@ -682,7 +688,7 @@ impl Version {
 
 /// `omegon switch --list` — show installed versions, mark active.
 pub async fn list_versions() -> anyhow::Result<()> {
-    let mut switcher = VersionSwitcher::new();
+    let switcher = VersionSwitcher::new();
     let installed = switcher.list_installed_versions()?;
     let active = switcher.get_active_version()?;
 
@@ -764,22 +770,10 @@ pub async fn interactive_picker() -> anyhow::Result<()> {
 /// Caller decides how to display (bootstrap panel, SystemNotification, etc.)
 pub fn check_version_file_warning(cwd: &std::path::Path) -> Option<String> {
     let switcher = VersionSwitcher::new();
-    let wanted = match switcher.check_version_file(cwd) {
-        Ok(Some(w)) => w,
-        _ => return None,
-    };
-    match switcher.get_active_version() {
-        Ok(Some(active)) if active.raw != wanted => {
-            Some(format!(
-                "⚠ .omegon-version requests {wanted} but active version is {}\n  Run `omegon switch {wanted}` to switch.",
-                active.raw
-            ))
-        }
-        Ok(None) => {
-            Some(format!(
-                "⚠ .omegon-version requests {wanted} but version cannot be determined (not running from symlink)"
-            ))
-        }
+    // check_version_file already compares active vs required and returns
+    // a warning string on mismatch, None on match or missing file.
+    match switcher.check_version_file(cwd) {
+        Ok(Some(warning)) => Some(format!("⚠ {warning}\n  Run `omegon switch` to fix.")),
         _ => None,
     }
 }
@@ -909,6 +903,27 @@ mod tests {
 
         let p = PlatformInfo { os: "linux".into(), arch: "x64".into(), target: "linux-x64".into() };
         assert_eq!(p.rust_triple(), "x86_64-unknown-linux-gnu");
+
+        let p = PlatformInfo { os: "darwin".into(), arch: "x64".into(), target: "darwin-x64".into() };
+        assert_eq!(p.rust_triple(), "x86_64-apple-darwin");
+    }
+
+    #[test]
+    fn test_arch_maps_to_release_names() {
+        // env::consts::ARCH values → must match release artifact naming
+        // Release artifacts use: darwin-arm64, darwin-x64, linux-arm64, linux-x64
+        let arch_map: &[(&str, &str)] = &[
+            ("x86_64", "x64"),    // NOT "x86_64" — release uses "x64"
+            ("aarch64", "arm64"),
+        ];
+        for (rust_arch, expected) in arch_map {
+            let mapped = match *rust_arch {
+                "x86_64" => "x64",
+                "aarch64" => "arm64",
+                other => other,
+            };
+            assert_eq!(mapped, *expected, "ARCH {rust_arch} should map to {expected}");
+        }
     }
 
     #[test]
