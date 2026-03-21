@@ -15,6 +15,16 @@ codegen-units = 1
 opt-level = 3
 panic = "abort"
 
+# Fast release builds for development iteration. Use with:
+#   cargo build --profile dev-release -p omegon
+# Produces an optimized binary without the 8-16GB RAM link-time cost
+# of full LTO. ~90% of release performance, ~10% of link time.
+[profile.dev-release]
+inherits = "release"
+lto = "thin"
+codegen-units = 4
+strip = false
+
 [workspace.package]
 version = "0.14.1-rc.15"
 edition = "2024"

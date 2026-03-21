@@ -32,15 +32,20 @@ build:
     cd core && cargo build --release
 
 # Pull latest and build (handles Cargo.lock conflicts from version bumps)
+# Uses dev-release profile: optimized but fast link (~90% perf, ~10% link time)
 update:
     git checkout -- core/Cargo.lock 2>/dev/null || true
     git pull --rebase
-    cd core && cargo build --release
-    @echo "Updated to $(cd core && cargo run -q -- --version 2>/dev/null || echo 'build failed')"
+    cd core && cargo build --profile dev-release -p omegon
+    @echo "Updated to $(cd core && ./target/dev-release/omegon --version 2>/dev/null || echo 'build failed')"
 
-# Run the binary (debug mode)
+# Full release build (fat LTO, single codegen unit — slow link, smallest binary)
+build-release:
+    cd core && cargo build --release -p omegon
+
+# Run the binary (dev-release profile — fast build, optimized)
 run *args:
-    cd core && cargo run -- {{args}}
+    cd core && cargo run --profile dev-release -p omegon -- {{args}}
 
 # ─── TypeScript (omegon-pi) ─────────────────────────────────
 
