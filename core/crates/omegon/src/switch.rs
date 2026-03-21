@@ -29,6 +29,19 @@ pub struct PlatformInfo {
     pub target: String,
 }
 
+impl PlatformInfo {
+    /// Rust target triple (e.g. "aarch64-apple-darwin") for matching CI artifact names.
+    pub fn rust_triple(&self) -> &'static str {
+        match (self.os.as_str(), self.arch.as_str()) {
+            ("darwin", "arm64") => "aarch64-apple-darwin",
+            ("darwin", "x64") => "x86_64-apple-darwin",
+            ("linux", "arm64") => "aarch64-unknown-linux-gnu",
+            ("linux", "x64") => "x86_64-unknown-linux-gnu",
+            _ => "unknown-unknown-unknown",
+        }
+    }
+}
+
 /// Represents a GitHub release
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct GitHubRelease {
@@ -109,7 +122,7 @@ impl VersionSwitcher {
     /// Create a new version switcher instance
     pub fn new() -> Self {
         let versions_dir = home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
+            .expect("HOME directory not set — cannot manage versions without a home directory")
             .join(".omegon/versions");
         
         let current_exe = env::current_exe().unwrap_or_else(|_| PathBuf::from("omegon"));
@@ -205,14 +218,32 @@ impl VersionSwitcher {
     /// Download and install a specific version
     pub async fn install_version(&mut self, version: &str) -> Result<PathBuf> {
         let releases = self.fetch_releases().await?;
+        // Match tag_name with or without 'v' prefix
+        let version_bare = version.strip_prefix('v').unwrap_or(version);
+        let version_tagged = format!("v{version_bare}");
         let release = releases
             .iter()
-            .find(|r| r.tag_name == version)
-            .ok_or_else(|| anyhow!("Version {} not found", version))?
-            .clone(); // Clone to avoid borrow issues
+            .find(|r| r.tag_name == version_bare || r.tag_name == version_tagged)
+            .ok_or_else(|| anyhow!("Version {} not found in releases", version))?
+            .clone();
 
         let platform = detect_platform()?;
-        let artifact_name = format!("omegon-{}.tar.gz", platform.target);
+        // Try multiple artifact naming conventions — the format has changed
+        // across releases (omegon-agent-*, omegon-*, omegon-VERSION-TRIPLE.*)
+        let candidates = vec![
+            format!("omegon-{}.tar.gz", platform.target),                    // current: omegon-darwin-arm64.tar.gz
+            format!("omegon-agent-{}.tar.gz", platform.target),              // v0.12.x: omegon-agent-darwin-arm64.tar.gz
+            format!("omegon-{}-{}.tar.gz", version_bare, platform.rust_triple()), // CI raw: omegon-0.14.0-aarch64-apple-darwin.tar.gz
+        ];
+        let artifact_name = candidates.iter()
+            .find(|name| release.assets.iter().any(|a| &a.name == *name))
+            .ok_or_else(|| anyhow!(
+                "No asset found for platform {} in release {}. Available: {}",
+                platform.target,
+                release.tag_name,
+                release.assets.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ")
+            ))?
+            .clone();
         
         let asset = release
             .assets
@@ -292,24 +323,35 @@ impl VersionSwitcher {
             }
         }
 
-        // Remove existing symlink/binary
-        if self.current_exe.exists() {
-            fs::remove_file(&self.current_exe)?;
-        }
-
-        // Create parent directory if needed
+        // Atomic symlink swap: create temp symlink then rename over target.
+        // This avoids a window where the binary doesn't exist if something
+        // fails between remove and create.
         if let Some(parent) = self.current_exe.parent() {
             fs::create_dir_all(parent)?;
-        }
 
-        // Create new symlink
-        #[cfg(unix)]
-        {
-            std::os::unix::fs::symlink(&version_binary, &self.current_exe)?;
-        }
-        #[cfg(windows)]
-        {
-            std::os::windows::fs::symlink_file(&version_binary, &self.current_exe)?;
+            let temp_link = parent.join(format!(".omegon-switch-{}", std::process::id()));
+
+            // Create temp symlink
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&version_binary, &temp_link)?;
+            #[cfg(windows)]
+            std::os::windows::fs::symlink_file(&version_binary, &temp_link)?;
+
+            // Atomic rename over the target
+            if let Err(e) = fs::rename(&temp_link, &self.current_exe) {
+                // rename failed (cross-device?) — fall back to remove+symlink
+                let _ = fs::remove_file(&temp_link);
+                if self.current_exe.exists() || self.current_exe.is_symlink() {
+                    fs::remove_file(&self.current_exe)?;
+                }
+                #[cfg(unix)]
+                std::os::unix::fs::symlink(&version_binary, &self.current_exe)?;
+                #[cfg(windows)]
+                std::os::windows::fs::symlink_file(&version_binary, &self.current_exe)?;
+                tracing::debug!(error = %e, "atomic rename failed, used fallback symlink");
+            }
+        } else {
+            return Err(anyhow!("cannot determine parent directory of current executable"));
         }
 
         Ok(())
@@ -374,32 +416,25 @@ impl VersionSwitcher {
                 ResetColor,
             )?;
 
-            // Print stable versions
-            if !stable.is_empty() {
-                execute!(
-                    stdout,
-                    SetForegroundColor(Color::Green),
-                    Print("Stable Releases:\n"),
-                    ResetColor,
-                )?;
+            // Render version groups
+            for (label, color, filter_rc) in [
+                ("Stable Releases:", Color::Green, false),
+                ("Release Candidates:", Color::Yellow, true),
+            ] {
+                let has_entries = all_options.iter().any(|(v, _)| v.rc.is_some() == filter_rc);
+                if !has_entries { continue; }
+
+                execute!(stdout, SetForegroundColor(color), Print(format!("{label}\n")), ResetColor)?;
 
                 for (i, (version, _)) in all_options.iter().enumerate() {
-                    if version.rc.is_some() {
-                        break; // We've reached RC versions
-                    }
+                    if version.rc.is_some() != filter_rc { continue; }
 
                     let marker = if i == selected { "→ " } else { "  " };
                     let mut status_parts = Vec::new();
-                    
                     if let Some(info) = installed_map.get(&version.raw) {
-                        if info.is_active {
-                            status_parts.push("● active");
-                        }
-                        if info.is_installed {
-                            status_parts.push("installed");
-                        }
+                        if info.is_active { status_parts.push("● active"); }
+                        if info.is_installed { status_parts.push("installed"); }
                     }
-
                     let status = if status_parts.is_empty() {
                         String::new()
                     } else {
@@ -407,62 +442,13 @@ impl VersionSwitcher {
                     };
 
                     if i == selected {
-                        execute!(
-                            stdout,
-                            SetForegroundColor(Color::Yellow),
-                            Print(format!("{}{}{}\n", marker, version.raw, status)),
-                            ResetColor,
-                        )?;
+                        execute!(stdout, SetForegroundColor(Color::Yellow),
+                            Print(format!("{marker}{}{status}\n", version.raw)), ResetColor)?;
                     } else {
-                        execute!(stdout, Print(format!("{}{}{}\n", marker, version.raw, status)))?;
+                        execute!(stdout, Print(format!("{marker}{}{status}\n", version.raw)))?;
                     }
                 }
                 execute!(stdout, Print("\n"))?;
-            }
-
-            // Print RC versions
-            if !rc.is_empty() {
-                execute!(
-                    stdout,
-                    SetForegroundColor(Color::Yellow),
-                    Print("Release Candidates:\n"),
-                    ResetColor,
-                )?;
-
-                for (i, (version, _)) in all_options.iter().enumerate() {
-                    if version.rc.is_none() {
-                        continue; // Skip stable versions
-                    }
-
-                    let marker = if i == selected { "→ " } else { "  " };
-                    let mut status_parts = Vec::new();
-                    
-                    if let Some(info) = installed_map.get(&version.raw) {
-                        if info.is_active {
-                            status_parts.push("● active");
-                        }
-                        if info.is_installed {
-                            status_parts.push("installed");
-                        }
-                    }
-
-                    let status = if status_parts.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({})", status_parts.join(", "))
-                    };
-
-                    if i == selected {
-                        execute!(
-                            stdout,
-                            SetForegroundColor(Color::Yellow),
-                            Print(format!("{}{}{}\n", marker, version.raw, status)),
-                            ResetColor,
-                        )?;
-                    } else {
-                        execute!(stdout, Print(format!("{}{}{}\n", marker, version.raw, status)))?;
-                    }
-                }
             }
 
             // Handle input
@@ -742,13 +728,16 @@ pub async fn switch_to_latest(include_rc: bool) -> anyhow::Result<()> {
     println!("Fetching releases...");
     let releases = switcher.fetch_releases().await?;
 
-    let target = if include_rc {
-        releases.first()
-    } else {
-        releases.iter().find(|r| !r.prerelease)
-    };
+    // Parse and sort by version (not API order) to find the true latest
+    let mut candidates: Vec<(&GitHubRelease, Version)> = releases
+        .iter()
+        .filter(|r| include_rc || !r.prerelease)
+        .filter_map(|r| Version::parse(&r.tag_name).ok().map(|v| (r, v)))
+        .collect();
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
 
-    let release = target
+    let (release, _) = candidates
+        .first()
         .ok_or_else(|| anyhow::anyhow!("No {} releases found", if include_rc { "RC" } else { "stable" }))?;
     let version = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
     println!("Latest {}: {version}", if include_rc { "RC" } else { "stable" });
@@ -770,23 +759,28 @@ pub async fn interactive_picker() -> anyhow::Result<()> {
     }
 }
 
-/// Check `.omegon-version` and warn if mismatch. Called at startup.
-pub fn check_version_file_warning(cwd: &std::path::Path) {
+/// Check `.omegon-version` and return a warning message if version mismatches.
+/// Returns None if no file exists or versions match.
+/// Caller decides how to display (bootstrap panel, SystemNotification, etc.)
+pub fn check_version_file_warning(cwd: &std::path::Path) -> Option<String> {
     let switcher = VersionSwitcher::new();
-    match switcher.check_version_file(cwd) {
-        Ok(Some(wanted)) => {
-            match switcher.get_active_version() {
-                Ok(Some(active)) if active.raw != wanted => {
-                    eprintln!(
-                        "⚠ .omegon-version requests {wanted} but active version is {}",
-                        active.raw
-                    );
-                    eprintln!("  Run `omegon switch {wanted}` to switch.");
-                }
-                _ => {} // matches or can't determine — silent
-            }
+    let wanted = match switcher.check_version_file(cwd) {
+        Ok(Some(w)) => w,
+        _ => return None,
+    };
+    match switcher.get_active_version() {
+        Ok(Some(active)) if active.raw != wanted => {
+            Some(format!(
+                "⚠ .omegon-version requests {wanted} but active version is {}\n  Run `omegon switch {wanted}` to switch.",
+                active.raw
+            ))
         }
-        _ => {} // no file or error — silent
+        Ok(None) => {
+            Some(format!(
+                "⚠ .omegon-version requests {wanted} but version cannot be determined (not running from symlink)"
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -884,5 +878,64 @@ mod tests {
         let temp_dir2 = TempDir::new().unwrap();
         let found = find_version_file(temp_dir2.path()).unwrap();
         assert_eq!(found, None);
+    }
+
+    #[test]
+    fn test_check_version_file_warning_mismatch() {
+        // check_version_file_warning returns a warning when .omegon-version
+        // doesn't match the active version. Since we're not running from a
+        // symlink in tests, get_active_version returns None → warning.
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(".omegon-version"), "99.99.99").unwrap();
+
+        let warning = check_version_file_warning(dir.path());
+        assert!(warning.is_some(), "should warn when version can't be determined");
+        assert!(warning.unwrap().contains("99.99.99"));
+    }
+
+    #[test]
+    fn test_check_version_file_warning_no_file() {
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let warning = check_version_file_warning(dir.path());
+        assert!(warning.is_none(), "no .omegon-version = no warning");
+    }
+
+    #[test]
+    fn test_rust_triple_mapping() {
+        let p = PlatformInfo { os: "darwin".into(), arch: "arm64".into(), target: "darwin-arm64".into() };
+        assert_eq!(p.rust_triple(), "aarch64-apple-darwin");
+
+        let p = PlatformInfo { os: "linux".into(), arch: "x64".into(), target: "linux-x64".into() };
+        assert_eq!(p.rust_triple(), "x86_64-unknown-linux-gnu");
+    }
+
+    #[test]
+    fn test_version_tag_prefix_stripping() {
+        // install_version should match tags with or without 'v' prefix
+        let v = Version::parse("v0.14.1-rc.12").unwrap();
+        assert_eq!(v.raw, "0.14.1-rc.12"); // v stripped
+        assert_eq!(v.rc, Some(12));
+
+        let v = Version::parse("0.14.1").unwrap();
+        assert_eq!(v.raw, "0.14.1"); // no v to strip
+        assert!(v.is_stable());
+    }
+
+    #[test]
+    fn test_switch_to_latest_sorts_by_version_not_api_order() {
+        // Verify that Version ordering puts the right thing first
+        let mut versions = vec![
+            Version::parse("0.13.0").unwrap(),
+            Version::parse("0.14.1-rc.12").unwrap(),
+            Version::parse("0.14.0").unwrap(),
+            Version::parse("0.14.1-rc.3").unwrap(),
+        ];
+        versions.sort_by(|a, b| b.cmp(a));
+        assert_eq!(versions[0].raw, "0.14.1-rc.12"); // highest RC
+        assert_eq!(versions[1].raw, "0.14.1-rc.3");
+        assert_eq!(versions[2].raw, "0.14.0");        // highest stable
+        assert_eq!(versions[3].raw, "0.13.0");
     }
 }

@@ -273,31 +273,32 @@ impl AgentSetup {
         // These tools are available via manage_tools enable but don't need
         // to consume input tokens on every request.
         {
+            use crate::tool_registry as reg;
             let mut disabled = disabled_handle.lock().unwrap();
             // Speculation tools — only needed when explicitly exploring
-            disabled.insert("speculate_start".into());
-            disabled.insert("speculate_check".into());
-            disabled.insert("speculate_commit".into());
-            disabled.insert("speculate_rollback".into());
+            disabled.insert(reg::core::SPECULATE_START.into());
+            disabled.insert(reg::core::SPECULATE_CHECK.into());
+            disabled.insert(reg::core::SPECULATE_COMMIT.into());
+            disabled.insert(reg::core::SPECULATE_ROLLBACK.into());
             // Render/image tools — most sessions don't need them
-            disabled.insert("render_diagram".into());
-            disabled.insert("generate_image_local".into());
+            disabled.insert(reg::render::RENDER_DIAGRAM.into());
+            disabled.insert(reg::render::GENERATE_IMAGE_LOCAL.into());
             // Persona/tone switching — rarely used mid-session
-            disabled.insert("switch_persona".into());
-            disabled.insert("switch_tone".into());
-            disabled.insert("list_personas".into());
+            disabled.insert(reg::persona::SWITCH_PERSONA.into());
+            disabled.insert(reg::persona::SWITCH_TONE.into());
+            disabled.insert(reg::persona::LIST_PERSONAS.into());
             // Delegate system — advanced multi-agent, not default
-            disabled.insert("delegate".into());
-            disabled.insert("delegate_result".into());
-            disabled.insert("delegate_status".into());
+            disabled.insert(reg::delegate::DELEGATE.into());
+            disabled.insert(reg::delegate::DELEGATE_RESULT.into());
+            disabled.insert(reg::delegate::DELEGATE_STATUS.into());
             // Auth probing — used at startup, not mid-conversation
-            disabled.insert("auth_status".into());
+            disabled.insert(reg::auth::AUTH_STATUS.into());
             // Harness settings — internal, rarely agent-called
-            disabled.insert("harness_settings".into());
+            disabled.insert(reg::harness_settings::HARNESS_SETTINGS.into());
             // Memory tools that are rarely called directly
-            disabled.insert("memory_ingest_lifecycle".into());
-            disabled.insert("memory_connect".into());
-            disabled.insert("memory_search_archive".into());
+            disabled.insert(reg::memory::MEMORY_INGEST_LIFECYCLE.into());
+            disabled.insert(reg::memory::MEMORY_CONNECT.into());
+            disabled.insert(reg::memory::MEMORY_SEARCH_ARCHIVE.into());
             tracing::info!(
                 disabled = disabled.len(),
                 "default tool profile applied — use manage_tools to re-enable"

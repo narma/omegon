@@ -144,24 +144,20 @@ pub async fn auto_detect_bridge(model_spec: &str) -> Option<Box<dyn LlmBridge>> 
 
 /// Strip `description` fields from parameter properties to reduce token cost.
 /// Keeps type, enum, default, items, minimum, maximum — drops only descriptions.
-fn strip_parameter_descriptions(properties: &Value) -> Value {
-    match properties {
+fn strip_parameter_descriptions(value: &Value) -> Value {
+    match value {
         Value::Object(map) => {
             let mut compact = serde_json::Map::new();
             for (key, val) in map {
-                if let Value::Object(prop) = val {
-                    let mut stripped = serde_json::Map::new();
-                    for (k, v) in prop {
-                        if k != "description" {
-                            stripped.insert(k.clone(), v.clone());
-                        }
-                    }
-                    compact.insert(key.clone(), Value::Object(stripped));
-                } else {
-                    compact.insert(key.clone(), val.clone());
+                if key == "description" {
+                    continue; // Strip all description fields at any depth
                 }
+                compact.insert(key.clone(), strip_parameter_descriptions(val));
             }
             Value::Object(compact)
+        }
+        Value::Array(arr) => {
+            Value::Array(arr.iter().map(strip_parameter_descriptions).collect())
         }
         other => other.clone(),
     }
@@ -389,9 +385,16 @@ impl LlmBridge for AnthropicClient {
         // - /login mid-session writing new tokens to auth.json
         // - Token expiry + automatic refresh
         // - Env var changes
-        let (api_key, is_oauth) = crate::auth::resolve_with_refresh("anthropic")
-            .await
-            .unwrap_or_else(|| (self.api_key.clone(), self.is_oauth));
+        let (api_key, is_oauth) = match crate::auth::resolve_with_refresh("anthropic").await {
+            Some(resolved) => resolved,
+            None => {
+                tracing::warn!(
+                    "credential re-resolution failed — using startup credentials \
+                     (may be stale if /login was used mid-session)"
+                );
+                (self.api_key.clone(), self.is_oauth)
+            }
+        };
 
         let model = options.model.as_deref()
             .and_then(|m| m.strip_prefix("anthropic:"))
@@ -470,6 +473,9 @@ impl LlmBridge for AnthropicClient {
                 flags
             })
             .header("content-type", "application/json")
+            // Claude Code identity headers for OAuth subscription recognition
+            .header("user-agent", if is_oauth { "claude-cli/2.1.75" } else { "omegon" })
+            .header("x-app", "cli")
             .json(&body)
             .send()
             .await?;
@@ -956,14 +962,24 @@ mod tests {
     // ── Credential lifecycle tests ──────────────────────────────────────
 
     #[test]
-    fn strip_parameter_descriptions_removes_only_descriptions() {
+    fn strip_parameter_descriptions_removes_at_all_depths() {
         let props = json!({
             "path": {"type": "string", "description": "Path to file"},
             "offset": {"type": "number", "description": "Line number", "minimum": 1},
-            "mode": {"type": "string", "enum": ["quick", "deep"]}
+            "mode": {"type": "string", "enum": ["quick", "deep"]},
+            "nested": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "inner": {"type": "string", "description": "should be stripped too"}
+                    },
+                    "description": "array item schema"
+                }
+            }
         });
         let stripped = strip_parameter_descriptions(&props);
-        // description removed
+        // Top-level descriptions removed
         assert!(stripped["path"].get("description").is_none());
         assert!(stripped["offset"].get("description").is_none());
         // type, minimum, enum preserved
@@ -971,6 +987,11 @@ mod tests {
         assert_eq!(stripped["offset"]["type"], "number");
         assert_eq!(stripped["offset"]["minimum"], 1);
         assert_eq!(stripped["mode"]["enum"][0], "quick");
+        // Nested descriptions also removed
+        assert!(stripped["nested"]["items"].get("description").is_none());
+        assert!(stripped["nested"]["items"]["properties"]["inner"].get("description").is_none());
+        // But nested type preserved
+        assert_eq!(stripped["nested"]["items"]["properties"]["inner"]["type"], "string");
     }
 
     #[test]

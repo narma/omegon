@@ -506,8 +506,10 @@ async fn run_cleave_command(
 async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     tracing::info!(model = %cli.model, "omegon interactive starting");
 
-    // Check .omegon-version before anything else
-    switch::check_version_file_warning(&cli.cwd);
+    // Check .omegon-version — show in bootstrap panel (before TUI takes over stderr)
+    if let Some(warning) = switch::check_version_file_warning(&cli.cwd) {
+        eprintln!("{warning}");
+    }
 
     // ─── Shared state (created early so features can reference it) ────
     let shared_settings = settings::shared(&cli.model);
