@@ -21,6 +21,7 @@ mod cleave;
 pub mod features;
 mod context;
 mod migrate;
+mod switch;
 
 mod conversation;
 mod lifecycle;
