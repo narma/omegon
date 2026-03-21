@@ -1,7 +1,7 @@
 ---
 id: subagent-architecture
 title: Subagent architecture — map cleave onto the subagent mental model with Omegon-native advantages
-status: implementing
+status: implemented
 tags: [architecture, cleave, subagents, delegation, multi-agent, ux, competitive, strategic]
 open_questions: []
 branches: ["feature/subagent-architecture"]
@@ -255,6 +255,7 @@ The `delegate` tool doesn't need to know the difference — it reads the agent s
 - `core/crates/omegon/src/features/mod.rs` (modified) — Register delegate module
 - `core/crates/omegon/src/setup.rs` (modified) — Register DelegateFeature with access to cleave infra + memory backend
 - `core/crates/omegon/src/tui/mod.rs` (modified) — Toast handler for delegate completion events. /delegate status slash command.
+- `openspec/changes/subagent-architecture/tasks.md` (modified) — Post-assess reconciliation delta — touched during follow-up fixes
 
 ### Constraints
 
