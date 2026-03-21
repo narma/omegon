@@ -31,6 +31,13 @@ lint:
 build:
     cd core && cargo build --release
 
+# Pull latest and build (handles Cargo.lock conflicts from version bumps)
+update:
+    git checkout -- core/Cargo.lock 2>/dev/null || true
+    git pull --rebase
+    cd core && cargo build --release
+    @echo "Updated to $(cd core && cargo run -q -- --version 2>/dev/null || echo 'build failed')"
+
 # Run the binary (debug mode)
 run *args:
     cd core && cargo run -- {{args}}
