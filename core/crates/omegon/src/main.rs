@@ -221,6 +221,25 @@ enum Commands {
         #[arg(long, default_value = "50")]
         max_turns: u32,
     },
+
+    /// Switch between Omegon versions (download, install, activate).
+    /// Usage: omegon switch [VERSION]
+    Switch {
+        /// Version to switch to (e.g. "0.14.1-rc.12"). Omit for interactive picker.
+        version: Option<String>,
+
+        /// List installed versions
+        #[arg(long)]
+        list: bool,
+
+        /// Switch to the latest stable release
+        #[arg(long)]
+        latest: bool,
+
+        /// Switch to the latest release candidate
+        #[arg(long)]
+        latest_rc: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -358,6 +377,19 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
         }
+        Some(Commands::Switch { version, list, latest, latest_rc }) => {
+            if list {
+                switch::list_versions().await
+            } else if latest {
+                switch::switch_to_latest(false).await
+            } else if latest_rc {
+                switch::switch_to_latest(true).await
+            } else if let Some(ver) = version {
+                switch::switch_to_version(&ver).await
+            } else {
+                switch::interactive_picker().await
+            }
+        }
         None => {
             // No subcommand: interactive if no --prompt, headless if --prompt given
             if cli.prompt.is_some() || cli.prompt_file.is_some() {
@@ -473,6 +505,9 @@ async fn run_cleave_command(
 
 async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     tracing::info!(model = %cli.model, "omegon interactive starting");
+
+    // Check .omegon-version before anything else
+    switch::check_version_file_warning(&cli.cwd);
 
     // ─── Shared state (created early so features can reference it) ────
     let shared_settings = settings::shared(&cli.model);

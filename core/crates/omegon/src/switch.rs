@@ -692,6 +692,104 @@ impl Version {
     }
 }
 
+// ─── Top-level CLI entrypoints ──────────────────────────────────────────────
+
+/// `omegon switch --list` — show installed versions, mark active.
+pub async fn list_versions() -> anyhow::Result<()> {
+    let mut switcher = VersionSwitcher::new();
+    let installed = switcher.list_installed_versions()?;
+    let active = switcher.get_active_version()?;
+
+    if installed.is_empty() {
+        println!("No versions installed in ~/.omegon/versions/");
+        println!("Run `omegon switch <version>` to install one.");
+        return Ok(());
+    }
+
+    println!("Installed versions:");
+    for v in &installed {
+        let marker = if active.as_ref().is_some_and(|a| a.raw == v.version.raw) {
+            " ● active"
+        } else {
+            ""
+        };
+        let kind = if v.version.is_stable() { "" } else { " (rc)" };
+        println!("  {}{kind}{marker}", v.version.raw);
+    }
+    Ok(())
+}
+
+/// `omegon switch <version>` — download (if needed) and activate.
+pub async fn switch_to_version(version: &str) -> anyhow::Result<()> {
+    let mut switcher = VersionSwitcher::new();
+    let installed = switcher.list_installed_versions()?;
+
+    let already_installed = installed.iter().any(|v| v.version.raw == version);
+    if !already_installed {
+        println!("Downloading omegon {version}...");
+        switcher.install_version(version).await?;
+    }
+
+    switcher.activate_version(version)?;
+    println!("✓ Switched to omegon {version}");
+    println!("  Restart omegon to use the new version.");
+    Ok(())
+}
+
+/// `omegon switch --latest` / `--latest-rc` — find and switch to latest.
+pub async fn switch_to_latest(include_rc: bool) -> anyhow::Result<()> {
+    let mut switcher = VersionSwitcher::new();
+    println!("Fetching releases...");
+    let releases = switcher.fetch_releases().await?;
+
+    let target = if include_rc {
+        releases.first()
+    } else {
+        releases.iter().find(|r| !r.prerelease)
+    };
+
+    let release = target
+        .ok_or_else(|| anyhow::anyhow!("No {} releases found", if include_rc { "RC" } else { "stable" }))?;
+    let version = release.tag_name.strip_prefix('v').unwrap_or(&release.tag_name);
+    println!("Latest {}: {version}", if include_rc { "RC" } else { "stable" });
+    switch_to_version(version).await
+}
+
+/// `omegon switch` (no args) — interactive picker.
+pub async fn interactive_picker() -> anyhow::Result<()> {
+    let mut switcher = VersionSwitcher::new();
+    println!("Fetching releases...");
+    let _ = switcher.fetch_releases().await?;
+
+    match switcher.interactive_picker().await? {
+        Some(version) => switch_to_version(&version).await,
+        None => {
+            println!("No version selected.");
+            Ok(())
+        }
+    }
+}
+
+/// Check `.omegon-version` and warn if mismatch. Called at startup.
+pub fn check_version_file_warning(cwd: &std::path::Path) {
+    let switcher = VersionSwitcher::new();
+    match switcher.check_version_file(cwd) {
+        Ok(Some(wanted)) => {
+            match switcher.get_active_version() {
+                Ok(Some(active)) if active.raw != wanted => {
+                    eprintln!(
+                        "⚠ .omegon-version requests {wanted} but active version is {}",
+                        active.raw
+                    );
+                    eprintln!("  Run `omegon switch {wanted}` to switch.");
+                }
+                _ => {} // matches or can't determine — silent
+            }
+        }
+        _ => {} // no file or error — silent
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
