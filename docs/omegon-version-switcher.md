@@ -1,12 +1,12 @@
 ---
 id: omegon-version-switcher
 title: Version switcher — tfswitch-style binary management for Omegon
-status: implementing
+status: implemented
 parent: release-candidate-system
 open_questions: []
 branches: ["feature/omegon-version-switcher"]
 openspec_change: omegon-version-switcher
-jj_change_id: pwmpwlkrqkoqowtzpquqntxxvsrxwvsp
+jj_change_id: ymrwmkxqnkwmptrqkkpnlovwvrnroktl
 ---
 
 # Version switcher — tfswitch-style binary management for Omegon

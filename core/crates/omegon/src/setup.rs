@@ -209,7 +209,10 @@ impl AgentSetup {
         }
 
         // ─── Lifecycle (design-tree + openspec) ──────────────────────────
-        let lifecycle_feature = features::lifecycle::LifecycleFeature::new(&cwd);
+        // Use project root (git repo root), not cwd — docs/ and openspec/
+        // live at the repo root, which may differ from cwd when running
+        // from a subdirectory like core/.
+        let lifecycle_feature = features::lifecycle::LifecycleFeature::new(&project_root);
         let lifecycle_snapshot = LifecycleSnapshot::from_lifecycle_feature(&lifecycle_feature);
         let lifecycle_handle = lifecycle_feature.shared_provider();
         bus.register(Box::new(lifecycle_feature));
