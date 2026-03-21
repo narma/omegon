@@ -30,6 +30,7 @@ mod providers;
 mod session;
 pub mod settings;
 mod setup;
+mod plugin_cli;
 mod plugins;
 pub mod status;
 mod tools;
@@ -122,6 +123,12 @@ enum Commands {
         source: String,
     },
 
+    /// Manage plugins — install, list, remove, update.
+    Plugin {
+        #[command(subcommand)]
+        action: PluginAction,
+    },
+
     /// Run a cleave orchestration — dispatch multiple agent children in parallel.
     Cleave {
         /// Path to the plan JSON file
@@ -153,6 +160,27 @@ enum Commands {
         /// Max turns per child agent
         #[arg(long, default_value = "50")]
         max_turns: u32,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginAction {
+    /// Install a plugin from a git URL or local path.
+    Install {
+        /// Git URL or local directory path containing plugin.toml.
+        uri: String,
+    },
+    /// List installed plugins.
+    List,
+    /// Remove an installed plugin.
+    Remove {
+        /// Plugin directory name.
+        name: String,
+    },
+    /// Update installed plugins (git pull).
+    Update {
+        /// Plugin name to update. Omit to update all.
+        name: Option<String>,
     },
 }
 
@@ -228,6 +256,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     match cli.command {
+        Some(Commands::Plugin { ref action }) => {
+            match action {
+                PluginAction::Install { uri } => plugin_cli::install(uri)?,
+                PluginAction::List => plugin_cli::list()?,
+                PluginAction::Remove { name } => plugin_cli::remove(name)?,
+                PluginAction::Update { name } => plugin_cli::update(name.as_deref())?,
+            }
+            Ok(())
+        }
         Some(Commands::Interactive) => run_interactive_command(&cli).await,
         Some(Commands::Migrate { ref source }) => {
             let cwd = std::fs::canonicalize(&cli.cwd)?;

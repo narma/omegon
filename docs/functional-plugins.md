@@ -226,6 +226,11 @@ my-pcb-tools/
 **Status:** decided
 **Rationale:** Containers provide natural sandboxing. Script-backed tools trust the operator (they run on the host). OCI tools are isolated by default — no host access unless mount_cwd=true, no network unless network=true. This gives a clean security gradient: passive plugins (zero risk) → script tools (operator trust) → OCI tools (sandboxed) → WASM tools (fully sandboxed, future).
 
+### Decision: Context scripts run once at load time, not per-turn
+
+**Status:** decided
+**Rationale:** The Feature::provide_context() method is synchronous — can't spawn subprocesses. Running a script per-turn would be expensive and add latency. Instead, context is generated once at plugin load (async from_manifest) and cached. ttl_turns controls how long it persists in the context budget. If fresh context is needed, the plugin provides a tool that the agent can call explicitly.
+
 ## Open Questions
 
 *No open questions.*
@@ -238,6 +243,9 @@ my-pcb-tools/
 - `core/crates/omegon/src/plugins/armory.rs` (modified) — Added Clone derive to ToolEntry (needed by ArmoryFeature::from_manifest filter+collect)
 - `core/crates/omegon/src/plugins/mcp.rs` (modified) — Made detect_container_runtime() pub(crate) for reuse by OCI tool runner
 - `core/crates/omegon/src/plugins/mod.rs` (modified) — Wired ArmoryFeature into load_armory_plugin() — armory manifests with script/OCI tools now create functional features
+- `core/crates/omegon/src/plugins/armory_feature.rs` (modified) — Added generate_context() for [context] section — script/HTTP runner, 15s/10s timeout, cached at load time. provide_context() serves cached output with priority 60, ttl_turns from manifest. Context-only plugins (no tools) now create features.
+- `core/crates/omegon/src/plugin_cli.rs` (new) — Plugin lifecycle CLI — install (git clone or local symlink), list (table with type/version/description), remove (symlink or dir), update (git pull --ff-only). 12 tests.
+- `core/crates/omegon/src/main.rs` (modified) — Added Plugin subcommand with Install/List/Remove/Update actions, wired to plugin_cli module
 
 ### Constraints
 
