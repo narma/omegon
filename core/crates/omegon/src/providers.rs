@@ -142,6 +142,31 @@ pub async fn auto_detect_bridge(model_spec: &str) -> Option<Box<dyn LlmBridge>> 
 
 // ─── SSE Helpers ────────────────────────────────────────────────────────────
 
+/// Strip `description` fields from parameter properties to reduce token cost.
+/// Keeps type, enum, default, items, minimum, maximum — drops only descriptions.
+fn strip_parameter_descriptions(properties: &Value) -> Value {
+    match properties {
+        Value::Object(map) => {
+            let mut compact = serde_json::Map::new();
+            for (key, val) in map {
+                if let Value::Object(prop) = val {
+                    let mut stripped = serde_json::Map::new();
+                    for (k, v) in prop {
+                        if k != "description" {
+                            stripped.insert(k.clone(), v.clone());
+                        }
+                    }
+                    compact.insert(key.clone(), Value::Object(stripped));
+                } else {
+                    compact.insert(key.clone(), val.clone());
+                }
+            }
+            Value::Object(compact)
+        }
+        other => other.clone(),
+    }
+}
+
 /// Map tool names to Claude Code PascalCase canonical names for OAuth.
 fn to_claude_code_name(name: &str) -> String {
     match name {
@@ -329,12 +354,19 @@ impl AnthropicClient {
             } else {
                 t.name.clone()
             };
+            // Strip parameter-level descriptions to save tokens.
+            // The model infers parameter semantics from names + the tool
+            // description. Full descriptions cost ~50 tokens/tool × 31 tools.
+            let properties = t.parameters.get("properties")
+                .cloned()
+                .unwrap_or(json!({}));
+            let compact_props = strip_parameter_descriptions(&properties);
             json!({
                 "name": name,
                 "description": t.description,
                 "input_schema": {
                     "type": "object",
-                    "properties": t.parameters.get("properties").cloned().unwrap_or(json!({})),
+                    "properties": compact_props,
                     "required": t.parameters.get("required").cloned().unwrap_or(json!([])),
                 },
             })
@@ -920,6 +952,24 @@ mod tests {
     }
 
     // ── Credential lifecycle tests ──────────────────────────────────────
+
+    #[test]
+    fn strip_parameter_descriptions_removes_only_descriptions() {
+        let props = json!({
+            "path": {"type": "string", "description": "Path to file"},
+            "offset": {"type": "number", "description": "Line number", "minimum": 1},
+            "mode": {"type": "string", "enum": ["quick", "deep"]}
+        });
+        let stripped = strip_parameter_descriptions(&props);
+        // description removed
+        assert!(stripped["path"].get("description").is_none());
+        assert!(stripped["offset"].get("description").is_none());
+        // type, minimum, enum preserved
+        assert_eq!(stripped["path"]["type"], "string");
+        assert_eq!(stripped["offset"]["type"], "number");
+        assert_eq!(stripped["offset"]["minimum"], 1);
+        assert_eq!(stripped["mode"]["enum"][0], "quick");
+    }
 
     #[test]
     fn build_tools_oauth_remaps_known_names() {

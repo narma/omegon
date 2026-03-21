@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 pub fn build_base_prompt(cwd: &Path, tools: &[ToolDefinition]) -> String {
     let date = utc_date();
     let tool_list = format_tool_list(tools);
-    let tool_guidelines = build_tool_guidelines(tools);
     let lex_imperialis = load_lex_imperialis();
     let lifecycle_context = detect_lifecycle_context(cwd, tools);
     let global_directives = load_global_directives();
@@ -24,25 +23,14 @@ pub fn build_base_prompt(cwd: &Path, tools: &[ToolDefinition]) -> String {
     format!(
         r#"You are an expert coding assistant. You help by reading files, executing commands, editing code, and writing new files.
 
-Available tools:
-{tool_list}
-
-# Tool Usage
-
-{tool_guidelines}
+Available tools: {tool_list}
 
 # Behavior
 
-- Be direct. Don't narrate what you're about to do — just do it. Show file paths clearly.
-- When you disagree with the user's approach or see a better alternative, say so with your reasoning. Do not simply comply when you believe the request will produce a worse outcome.
-- If the user's instructions are ambiguous, ask for clarification rather than guessing. If you're uncertain about a technical detail, say so rather than confabulating.
-- Ground your claims in evidence. When you say "this function does X", cite the file and line. When you say "this won't work because Y", reference what you observed. Don't make assertions about code you haven't read.
-- When investigating a problem, distinguish what you've verified (read the file, ran the test) from what you're inferring. State your confidence level when making architectural recommendations.
-- Read files before editing. Edit requires exact text matches — if you guess at whitespace or formatting, the edit will fail.
-- Edit runs automatic validation (type check, lint). Read the validation result. If it shows errors, fix them before moving on.
-- Every non-trivial code change must include tests. Untested code is incomplete.
-- Commit your work with descriptive messages when the task is complete. Do NOT push.
-- When you complete the task, summarize what you did and what changed.
+- Be direct — act, don't narrate intent. Disagree when you see a better path.
+- Read files before editing. Edit requires exact text matches.
+- Ground claims in evidence — cite files and lines. Don't assert about unread code.
+- Every non-trivial change needs tests. Commit when done, do NOT push.
 {lex_imperialis}{lifecycle_context}{global_directives}{project_directives}{project_conventions}
 Current date: {date}
 Current working directory: {cwd}"#,
@@ -396,11 +384,13 @@ fn find_repo_root(start: &Path) -> Option<PathBuf> {
 }
 
 fn format_tool_list(tools: &[ToolDefinition]) -> String {
+    // Just list names — full descriptions are in the tool definitions
+    // sent separately in the API request. No need to duplicate.
     tools
         .iter()
-        .map(|t| format!("- {}: {}", t.name, t.description))
+        .map(|t| t.name.as_str())
         .collect::<Vec<_>>()
-        .join("\n")
+        .join(", ")
 }
 
 /// UTC date as YYYY-MM-DD from the system clock.
@@ -456,8 +446,8 @@ mod tests {
             parameters: serde_json::json!({}),
         }];
         let prompt = build_base_prompt(Path::new("/tmp"), &tools);
+        // Tool list is comma-separated names (descriptions are in API tool defs)
         assert!(prompt.contains("test_tool"));
-        assert!(prompt.contains("A test tool"));
         assert!(prompt.contains("/tmp"));
     }
 
@@ -465,8 +455,8 @@ mod tests {
     fn base_prompt_includes_commit_instructions() {
         let tools = vec![];
         let prompt = build_base_prompt(Path::new("/tmp"), &tools);
-        assert!(prompt.contains("Commit your work"), "should instruct to commit");
-        assert!(prompt.contains("Do NOT push"), "should instruct not to push");
+        assert!(prompt.contains("Commit when done"), "should instruct to commit");
+        assert!(prompt.contains("NOT push"), "should instruct not to push");
     }
 
     #[test]
@@ -537,8 +527,7 @@ mod tests {
     fn evidence_grounding_in_prompt() {
         let tools = vec![];
         let prompt = build_base_prompt(Path::new("/tmp"), &tools);
-        assert!(prompt.contains("Ground your claims in evidence"), "should include evidence directive");
-        assert!(prompt.contains("distinguish what you've verified"), "should include verification distinction");
+        assert!(prompt.contains("Ground claims in evidence"), "should include evidence directive");
     }
 
     #[test]
