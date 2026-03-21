@@ -1079,6 +1079,13 @@ impl App {
                     self.conversation.push_system(&message);
                 }
             }
+            AgentEvent::HarnessStatusChanged { status_json } => {
+                // Deserialize and update the footer's harness status snapshot
+                if let Ok(status) = serde_json::from_value::<crate::status::HarnessStatus>(status_json) {
+                    self.footer_data.update_harness(status);
+                    self.effects.ping_footer(self.theme.as_ref());
+                }
+            }
             _ => {}
         }
     }
