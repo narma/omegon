@@ -365,6 +365,7 @@ impl AgentSetup {
                 session: std::sync::Arc::new(std::sync::Mutex::new(
                     crate::tui::dashboard::SharedSessionStats::default(),
                 )),
+                harness: None, // Will be set by the TUI when harness events are received
             },
         })
     }

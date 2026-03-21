@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use crate::features::cleave::CleaveProgress;
 use crate::lifecycle::context::LifecycleContextProvider;
 use crate::lifecycle::design;
+use crate::status::HarnessStatus;
 
 /// Shared session stats — written by the TUI, read by the web API.
 #[derive(Default)]
@@ -33,6 +34,7 @@ pub struct DashboardHandles {
     pub lifecycle: Option<Arc<Mutex<LifecycleContextProvider>>>,
     pub cleave: Option<Arc<Mutex<CleaveProgress>>>,
     pub session: Arc<Mutex<SharedSessionStats>>,
+    pub harness: Option<Arc<Mutex<HarnessStatus>>>,
 }
 
 impl DashboardHandles {
@@ -108,6 +110,12 @@ impl DashboardHandles {
             && let Ok(cp) = cp_lock.lock() {
                 state.cleave = Some(cp.clone());
         }
+
+        // Harness
+        if let Some(ref harness_lock) = self.harness
+            && let Ok(harness) = harness_lock.lock() {
+                state.harness = Some(harness.clone());
+        }
     }
 }
 
@@ -117,6 +125,7 @@ pub struct DashboardState {
     pub focused_node: Option<FocusedNodeSummary>,
     pub active_changes: Vec<ChangeSummary>,
     pub cleave: Option<CleaveProgress>,
+    pub harness: Option<HarnessStatus>,
     pub turns: u32,
     pub tool_calls: u32,
     pub compactions: u32,
@@ -188,7 +197,7 @@ impl DashboardState {
             .style(Style::default().bg(t.bg()));
 
         let inner_w = area.width.saturating_sub(3) as usize; // left border + padding
-        let mut lines: Vec<Line<'static>> = Vec::new();
+        let mut lines: Vec<Line> = Vec::new();
 
         // ─── Status Counts (pipeline) ───────────────────────────
         if self.status_counts.total > 0 {
@@ -346,7 +355,7 @@ impl DashboardState {
             lines.push(Line::from(""));
         }
 
-        // ─── Cleave Progress ─────────────────────────────────────
+        // ─── Cleave Progress (only if active) ───────────────────
         if let Some(ref cleave) = self.cleave
             && (cleave.active || cleave.total_children > 0) {
                 lines.push(widgets::section_divider("cleave", inner_w, t));
@@ -380,6 +389,105 @@ impl DashboardState {
                     ]));
                 }
                 lines.push(Line::from(""));
+        }
+
+        // ─── Harness Status ─────────────────────────────────────
+        if let Some(ref harness) = self.harness {
+            lines.push(widgets::section_divider("harness", inner_w, t));
+            
+            // Active persona
+            if let Some(ref persona) = harness.active_persona {
+                lines.push(Line::from(vec![
+                    Span::styled("  ".to_string(), Style::default()),
+                    Span::styled(format!("{} ", persona.badge), Style::default().fg(t.accent())),
+                    Span::styled(persona.name.clone(), Style::default().fg(t.fg())),
+                    Span::styled(format!(" ({})", persona.activated_skills.len()), Style::default().fg(t.dim())),
+                ]));
+            }
+            
+            // Active tone
+            if let Some(ref tone) = harness.active_tone {
+                lines.push(Line::from(vec![
+                    Span::styled("  ♪ ".to_string(), Style::default().fg(t.dim())),
+                    Span::styled(tone.name.clone(), Style::default().fg(t.muted())),
+                    Span::styled(format!(" ({})", tone.intensity_mode), Style::default().fg(t.dim())),
+                ]));
+            }
+            
+            // Provider auth status
+            if !harness.providers.is_empty() {
+                let mut auth_parts = vec![Span::styled("  ".to_string(), Style::default())];
+                for (i, provider) in harness.providers.iter().enumerate() {
+                    if i > 0 { auth_parts.push(Span::styled(" ".to_string(), Style::default())); }
+                    let icon = if provider.authenticated { "●" } else { "○" };
+                    let color = if provider.authenticated { t.success() } else { t.error() };
+                    auth_parts.push(Span::styled(format!("{} ", icon), Style::default().fg(color)));
+                    auth_parts.push(Span::styled(provider.name.clone(), Style::default().fg(t.muted())));
+                }
+                lines.push(Line::from(auth_parts));
+            }
+            
+            // MCP servers
+            let connected_servers = harness.mcp_servers.iter().filter(|s| s.connected).count();
+            let total_servers = harness.mcp_servers.len();
+            let tool_count = harness.mcp_tool_count();
+            let error_count = harness.mcp_errors().len();
+            if total_servers > 0 {
+                let mut mcp_parts = vec![
+                    Span::styled("  MCP ".to_string(), Style::default().fg(t.dim())),
+                    Span::styled(format!("{}/{}", connected_servers, total_servers), 
+                               Style::default().fg(if connected_servers == total_servers { t.success() } else { t.warning() })),
+                ];
+                if tool_count > 0 {
+                    mcp_parts.push(Span::styled(format!(" ({} tools)", tool_count), Style::default().fg(t.dim())));
+                }
+                if error_count > 0 {
+                    mcp_parts.push(Span::styled(format!(" {} errors", error_count), Style::default().fg(t.error())));
+                }
+                lines.push(Line::from(mcp_parts));
+            }
+            
+            // Secrets store
+            if let Some(ref secrets) = harness.secret_backend {
+                let lock_icon = if secrets.locked { "🔒" } else { "🔓" };
+                let lock_color = if secrets.locked { t.warning() } else { t.success() };
+                lines.push(Line::from(vec![
+                    Span::styled("  ".to_string(), Style::default()),
+                    Span::styled(format!("{} ", lock_icon), Style::default().fg(lock_color)),
+                    Span::styled(secrets.backend.clone(), Style::default().fg(t.muted())),
+                    Span::styled(format!(" ({} secrets)", secrets.stored_count), Style::default().fg(t.dim())),
+                ]));
+            }
+            
+            // Inference backends
+            let available_backends = harness.inference_backends.iter().filter(|b| b.available).count();
+            if available_backends > 0 {
+                for backend in &harness.inference_backends {
+                    if backend.available {
+                        let status_icon = "⚡";
+                        lines.push(Line::from(vec![
+                            Span::styled("  ".to_string(), Style::default()),
+                            Span::styled(format!("{} ", status_icon), Style::default().fg(t.success())),
+                            Span::styled(backend.name.clone(), Style::default().fg(t.muted())),
+                            Span::styled(format!(" ({} models)", backend.models.len()), Style::default().fg(t.dim())),
+                        ]));
+                    }
+                }
+            }
+            
+            // Container runtime
+            if let Some(ref runtime) = harness.container_runtime {
+                if runtime.available {
+                    let version = runtime.version.as_deref().unwrap_or("unknown");
+                    lines.push(Line::from(vec![
+                        Span::styled("  🐳 ".to_string(), Style::default().fg(t.accent())),
+                        Span::styled(runtime.runtime.clone(), Style::default().fg(t.muted())),
+                        Span::styled(format!(" v{}", version), Style::default().fg(t.dim())),
+                    ]));
+                }
+            }
+            
+            lines.push(Line::from(""));
         }
 
         // ─── Session Stats ──────────────────────────────────────
@@ -612,5 +720,165 @@ mod tests {
     fn format_k_values() {
         assert_eq!(format_k(200_000), "200k");
         assert_eq!(format_k(1_000_000), "1M");
+    }
+
+    #[test]
+    fn dashboard_with_harness_status() {
+        let mut state = DashboardState::default();
+        state.harness = Some(crate::status::HarnessStatus {
+            active_persona: Some(crate::status::PersonaSummary {
+                id: "syseng".into(),
+                name: "System Engineer".into(),
+                badge: "⚙".into(),
+                mind_facts_count: 42,
+                activated_skills: vec!["rust".into(), "debugging".into()],
+                disabled_tools: vec![],
+            }),
+            active_tone: Some(crate::status::ToneSummary {
+                id: "concise".into(),
+                name: "Concise".into(),
+                intensity_mode: "full".into(),
+            }),
+            providers: vec![
+                crate::status::ProviderStatus {
+                    name: "Anthropic".into(),
+                    authenticated: true,
+                    auth_method: Some("oauth".into()),
+                    model: Some("claude-sonnet-4-6".into()),
+                },
+                crate::status::ProviderStatus {
+                    name: "OpenAI".into(),
+                    authenticated: false,
+                    auth_method: None,
+                    model: None,
+                },
+            ],
+            mcp_servers: vec![
+                crate::status::McpServerStatus {
+                    name: "filesystem".into(),
+                    transport_mode: crate::status::McpTransportMode::LocalProcess,
+                    tool_count: 8,
+                    connected: true,
+                    error: None,
+                },
+            ],
+            secret_backend: Some(crate::status::SecretBackendStatus {
+                backend: "keyring".into(),
+                stored_count: 5,
+                locked: false,
+            }),
+            inference_backends: vec![
+                crate::status::InferenceBackendStatus {
+                    name: "Ollama".into(),
+                    kind: crate::status::InferenceKind::External,
+                    available: true,
+                    models: vec![
+                        crate::status::InferenceModelInfo {
+                            name: "llama3.2:3b".into(),
+                            params: Some("3B".into()),
+                            context_window: Some(131072),
+                        },
+                    ],
+                },
+            ],
+            container_runtime: Some(crate::status::ContainerRuntimeStatus {
+                runtime: "podman".into(),
+                version: Some("5.3.1".into()),
+                available: true,
+            }),
+            ..Default::default()
+        });
+        
+        let backend = TestBackend::new(50, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| {
+            state.render_themed(frame.area(), frame, &super::super::theme::Alpharius);
+        }).unwrap();
+        
+        let text = buf_text(&terminal);
+        assert!(text.contains("System Engineer"), "should show persona name: {text}");
+        assert!(text.contains("Concise"), "should show tone: {text}");
+        assert!(text.contains("Anthropic"), "should show provider: {text}");
+        assert!(text.contains("MCP"), "should show MCP servers: {text}");
+        assert!(text.contains("keyring"), "should show secrets backend: {text}");
+        assert!(text.contains("Ollama"), "should show inference backend: {text}");
+        assert!(text.contains("podman"), "should show container runtime: {text}");
+    }
+
+    #[test]
+    fn dashboard_handles_refresh_with_harness() {
+        let harness_status = Arc::new(Mutex::new(crate::status::HarnessStatus {
+            active_persona: Some(crate::status::PersonaSummary {
+                id: "test".into(),
+                name: "Test Persona".into(),
+                badge: "🧪".into(),
+                mind_facts_count: 10,
+                activated_skills: vec!["rust".into()],
+                disabled_tools: vec![],
+            }),
+            ..Default::default()
+        }));
+        
+        let handles = DashboardHandles {
+            harness: Some(harness_status),
+            ..Default::default()
+        };
+        let mut state = DashboardState::default();
+        handles.refresh_into(&mut state);
+        
+        assert!(state.harness.is_some());
+        assert_eq!(
+            state.harness.unwrap().active_persona.unwrap().name,
+            "Test Persona"
+        );
+    }
+
+    #[test] 
+    fn cleave_section_hidden_when_inactive() {
+        let mut state = DashboardState::default();
+        // No cleave data - should not render cleave section
+        
+        let backend = TestBackend::new(50, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| {
+            state.render_themed(frame.area(), frame, &super::super::theme::Alpharius);
+        }).unwrap();
+        
+        let text = buf_text(&terminal);
+        assert!(!text.contains("cleave"), "should not show cleave section when inactive: {text}");
+    }
+
+    #[test]
+    fn cleave_section_shown_when_active() {
+        let mut state = DashboardState::default();
+        state.cleave = Some(CleaveProgress {
+            active: true,
+            run_id: "test-run".into(),
+            total_children: 2,
+            completed: 1,
+            failed: 0,
+            children: vec![
+                ChildProgress {
+                    label: "task-1".into(),
+                    status: "completed".into(),
+                    duration_secs: Some(5.0),
+                },
+                ChildProgress {
+                    label: "task-2".into(),
+                    status: "running".into(),
+                    duration_secs: None,
+                },
+            ],
+        });
+        
+        let backend = TestBackend::new(50, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| {
+            state.render_themed(frame.area(), frame, &super::super::theme::Alpharius);
+        }).unwrap();
+        
+        let text = buf_text(&terminal);
+        assert!(text.contains("cleave"), "should show cleave section when active: {text}");
+        assert!(text.contains("1/2"), "should show progress: {text}");
     }
 }
