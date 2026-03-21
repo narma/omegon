@@ -236,6 +236,30 @@ else
   warn "Checksum file not available for this release — skipping verification"
 fi
 
+# ── Signature verification (optional — requires cosign) ──────
+
+if command -v cosign >/dev/null 2>&1; then
+  SIG_URL="${BASE_URL}/${ARCHIVE}.sig"
+  PEM_URL="${BASE_URL}/${ARCHIVE}.pem"
+  if curl -fsSL -o "${TMP}/${ARCHIVE}.sig" "$SIG_URL" 2>/dev/null && \
+     curl -fsSL -o "${TMP}/${ARCHIVE}.pem" "$PEM_URL" 2>/dev/null; then
+    if cosign verify-blob "${TMP}/${ARCHIVE}" \
+         --signature "${TMP}/${ARCHIVE}.sig" \
+         --certificate "${TMP}/${ARCHIVE}.pem" \
+         --certificate-identity-regexp "github.com/styrene-lab/omegon" \
+         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+         >/dev/null 2>&1; then
+      ok "Signature verified (Sigstore cosign)"
+    else
+      warn "Signature verification failed — the binary may not have been built by the official CI"
+    fi
+  else
+    info "Signature files not available for this release"
+  fi
+else
+  info "Install $(boldtext "cosign") for cryptographic signature verification"
+fi
+
 # ── Extract ───────────────────────────────────────────────────
 
 step "Extracting..."

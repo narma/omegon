@@ -134,6 +134,21 @@ tree-active:
 tree-count:
     @echo "$(ls docs/*.md 2>/dev/null | wc -l | tr -d ' ') nodes"
 
+# ─── Supply chain ────────────────────────────────────────────
+
+# Generate CycloneDX SBOM from Cargo.lock
+sbom:
+    cd core && cargo cyclonedx --format json --output-cdx
+    @echo "SBOM written to core/bom.json"
+
+# Verify a downloaded binary's cosign signature
+verify-sig binary:
+    cosign verify-blob "{{binary}}" \
+      --signature "{{binary}}.sig" \
+      --certificate "{{binary}}.pem" \
+      --certificate-identity-regexp "github.com/styrene-lab/omegon" \
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+
 # ─── Git / jj ───────────────────────────────────────────────
 
 # Show recent jj log
