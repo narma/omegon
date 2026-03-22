@@ -138,19 +138,23 @@ impl Segment {
         let mut temp_buf = Buffer::empty(temp_area);
         self.render(temp_area, &mut temp_buf, t);
 
-        // Find the last row that has any non-default content
+        // Find the last row with actual text content (not just styled background).
+        // Cards set bg on their entire area, so we can't rely on bg != Reset.
+        // Instead check for non-space symbols or border characters.
         let mut last_used: u16 = 0;
         for y in (0..h).rev() {
             let mut has_content = false;
             for x in 0..width {
                 let cell = &temp_buf[(x, y)];
-                if cell.symbol() != " " || cell.fg != Color::Reset || cell.bg != Color::Reset {
+                let sym = cell.symbol();
+                // A row has content if it has any non-space character
+                if sym != " " && !sym.is_empty() {
                     has_content = true;
                     break;
                 }
             }
             if has_content {
-                last_used = y + 1; // +1 because y is 0-indexed
+                last_used = y + 1;
                 break;
             }
         }
