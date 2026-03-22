@@ -46,8 +46,9 @@ fn main() -> io::Result<()> {
             }
 
             // Color intensity cycles as a sine wave: 0 → 1 → 0
+            // Slow sine cycle: ~20 seconds per full 0→1→0 sweep
             let intensity = if state.paused { 0.5 } else {
-                ((t * 0.3).sin() * 0.5 + 0.5) as f64
+                (t * 0.15).sin() * 0.5 + 0.5
             };
 
             let chunks = Layout::vertical([
@@ -74,9 +75,9 @@ fn main() -> io::Result<()> {
                 Constraint::Length(35), // params
             ]).split(chunks[1]);
 
-            // 2x2 grid
-            let grid_w = cols[0].width / 2;
-            let grid_h = cols[0].height / 2;
+            // 2x2 grid — sized to real instrument dimensions (~22×5 each)
+            let grid_w = 24u16.min(cols[0].width / 2);
+            let grid_h = 7u16.min(cols[0].height / 2); // 5 inner + 2 border
 
             let instruments = [
                 ("sonar (context)", 0usize),
@@ -262,6 +263,16 @@ fn pixel_color(value: f64, intensity: f64) -> Color {
     intensity_color(v * intensity)
 }
 
+/// Like pixel_color but with a brightness floor — sparse point algorithms
+/// (Lissajous, Clifford) need their points visible even at low intensity.
+fn pixel_color_floor(value: f64, intensity: f64, floor: f64) -> Color {
+    let v = value.clamp(0.0, 1.0);
+    if v < 0.01 { return bg_color(); }
+    // Any lit pixel gets at least `floor` intensity
+    let effective = (v * intensity).max(v * floor);
+    intensity_color(effective)
+}
+
 // ─── Perlin (sonar — context health) ────────────────────────────────────
 
 fn render_perlin(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, s: &DemoState) {
@@ -364,8 +375,8 @@ fn render_lissajous(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, s: 
             if px >= area.width as usize { break; }
             let top_v = (grid[py * w + px] as f64 / max_hits).min(1.0);
             let bot_v = if py+1 < h { (grid[(py+1) * w + px] as f64 / max_hits).min(1.0) } else { 0.0 };
-            let tc = pixel_color(top_v, intensity);
-            let bc = pixel_color(bot_v, intensity);
+            let tc = pixel_color_floor(top_v, intensity, 0.25);
+            let bc = pixel_color_floor(bot_v, intensity, 0.25);
             set_halfblock(buf, area, px, row, tc, bc);
         }
     }
@@ -406,8 +417,8 @@ fn render_attractor(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, s: 
             if px >= area.width as usize { break; }
             let top_v = (grid[py * w + px] as f64 / max_hits).powf(s.attr_gamma);
             let bot_v = if py+1 < h { (grid[(py+1) * w + px] as f64 / max_hits).powf(s.attr_gamma) } else { 0.0 };
-            let tc = pixel_color(top_v, intensity);
-            let bc = pixel_color(bot_v, intensity);
+            let tc = pixel_color_floor(top_v, intensity, 0.2);
+            let bc = pixel_color_floor(bot_v, intensity, 0.2);
             set_halfblock(buf, area, px, row, tc, bc);
         }
     }
