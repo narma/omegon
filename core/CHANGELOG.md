@@ -2,170 +2,159 @@
 
 All notable changes to Omegon are documented here.
 
-## [0.13.0] — 2026-03-19
+## [0.14.1-rc.15] — 2026-03-22
 
 ### Added
 
-- **release**: versioning system — cargo-release, git-cliff, --version flag
-- **site**: add BSL 1.1 license link and date range to footer
-- **site**: replace text logo with hydra icon SVG
-- **site**: Alpharius colors (blue omega, green hydras), scanlines, Tomorrow font
-- **site**: larger icon, saturated green, pithier tagline
-- TUI interaction test suite + global logging flags + CI/container tests
-- Alpharius theme system + tracing fix for interactive mode
-- footer summary cards — context gauge, models, memory, system
-- command palette, interrupt (Escape/Ctrl+C), double Ctrl+C to quit
-- settings system + functional slash commands with subcommands
-- interactive selector popup for /model and /think
-- OpenAI Codex (ChatGPT Plus/Pro) OAuth login + auth-aware model selector
-- project profile — settings persist in .omegon/profile.json
-- handle missing SSE events + tool result display in conversation
-- /migrate — import settings from 8 CLI agent tools
-- rename binary to 'omegon', bare invocation launches interactive
-- harden IntentDocument, context decay, ambient capture, and ContextManager
-- change + speculate tools — atomic edits and git checkpointing
-- enriched prompt, args_summary in decay, proactive memory injection
-- auto-batch edit calls — secret atomic rollback for multi-file turns
-- surgical context injection — signal-driven guidelines replace prompt dumping
-- evidence-grounding directives + lifecycle-aware prompt
-- TUI visual system — shared widget primitives + conversation restructure
-- pre-populate TUI from startup snapshot — first frame has real data
-- TUI overhaul — remove sidebar, fix scrolling, dynamic footer, terminal-style editor
-- context window mode — toggle between 200k and 1M for Anthropic
-- visual polish — contextual welcome, hint bar, turn separators
-- vertical dividers between footer cards
-- /detail — toggle compact vs detailed tool cards
-- spinner verbs — flavorful action messages during tool execution
-- visual weight for tool cards — colored left bar, contrasting backgrounds
-- filled backgrounds — footer, editor, hint bar no longer float in void
-- glitch-convergence splash screen — CRT phosphor animation
-- TUI polish — bordered cards, mouse scroll, cursor fix, tachyonfx effects
-- Feature trait + EventBus — foundation for extension migration
-- wire EventBus through setup → loop → context pipeline
-- Phase 0 complete — bus is the sole tool dispatch + command routing
-- first extension migrations — chronos, terminal-title, version-check
-- persistent editor history across sessions
-- proper bordered tool cards in conversation view
-- segment-based conversation widget — architectural rewrite
-- syntax highlighting + scroll clipping fix
-- markdown table rendering + Alpharius color contrast overhaul
-- parameterized theme system — loads from alpharius.json
-- expandable tool cards + text selection hint + correct line counts
-- lifecycle Feature — design-tree + openspec as native bus Feature with dashboard panel
-- cleave Feature — assessment + orchestrator dispatch + dashboard progress
-- live dashboard — shared Arc handles for real-time lifecycle + cleave state
-- inline image rendering via ratatui-image
-- session-log + model-budget Features — Tier 2 extension migration
-- embedded web dashboard — axum server + WebSocket agent protocol + /dash open
-- type-ahead editing — editor always active during agent work
-- enriched TUI dashboard + web graph view
-- omegon.styrene.dev install site + hardened install.sh
-- plugin system — TOML manifest discovery + HTTP-backed tools
-- add omegon-secrets crate — output redaction, tool guards, recipes, audit
-- add whoami tool — multi-provider auth status (git/gh/glab/aws/k8s/oci/vault)
-- add memory_episodes, memory_compact, memory_search_archive tools
-- add manage_tools, switch_to_offline_driver, memory_ingest_lifecycle
-### Changed
-
-- **secrets**: upgrade to keyring + secrecy + aho-corasick
-- rename LegacyToolFeature → ToolAdapter
+- **web**: styled conversation view with role-specific cards
 ### Fixed
 
-- **site**: dark-bg icon SVG, remove baked text, drop CSS filter hack
-- **site**: inline SVG icon, remove redundant title text
-- **site**: actually inline the recolored SVG into index.html
-- **stream**: add idle timeouts to prevent indefinite hangs on stalled LLM streams
-- model selector only shows authenticated providers
-- address all critical + warning findings from adversarial review
-- SQLite contention during cleave — busy_timeout + child read-only mode
-- /model and /think no longer send command as user prompt to LLM
-- update all model IDs to current versions — purge stale references
-- tool cards — strip cwd, compact display, visual grouping
-- Ctrl+C/Escape interrupt no longer locks up the TUI
-- adversarial review — all 15 issues resolved
-- broken indentation from sed replacement in loop.rs
-- assessment findings — deduplicate budget, emit ToolStart, clean response path
-- terminal-title guards against non-TTY stderr
-- scroll inversion, layout reorder, effects timing, paste handling
-- tool cards default to Detailed view, not Compact
-- panic on Ctrl+R with empty history — index out of bounds
-- scroll direction, height calculation, card visual contrast
-- proper scroll clipping + syntax highlighting for .mjs
-- assessment cleanup — perf, correctness, tests, API hygiene
-- web dashboard assessment — all 16 findings resolved
-- second assessment — all 15 findings resolved
-- polish graph — physics, labels, visual hierarchy
-- polish overview cards — typography, alignment, visual consistency
-- Ctrl+C and Cmd+Backspace clear web prompt input
-- Ctrl+C clears editor when text present (TUI)
-- remove emoji from install site — use Unicode symbols from Alpharius palette
-- visual polish — table rendering, dashboard hierarchy, palette contrast
-- bash tool cards — contextual names, no line numbers on output
-- wire thinking to LLM + improve thinking/table rendering
-- memory_query output formatting + branding updates## [0.12.0] — 2026-03-18
-
-### Added
-
-- **cleave**: add Rust cleave orchestrator
-- **cleave**: support resuming from existing state.json and task files
-- **cleave**: NDJSON progress events on stdout for dashboard observability
-- **cleave**: guardrail discovery, enriched task files, post-merge guardrails
-- **loop**: nudge agent to commit when stopping with uncommitted mutations
-- **memory**: define MemoryBackend trait + types + decay math
-- **memory**: InMemoryBackend + MemoryProvider with TDD test suite
-- **memory**: SqliteBackend — production MemoryBackend with FTS5, WAL, full schema
-- **memory**: wire SqliteBackend + MemoryProvider into omegon-agent binary
-- **memory**: JSONL import on startup + export on shutdown, fix mind to 'default'
-- **prompt**: add testing directive to Rust agent system prompt
-- scaffold Rust agent loop and lifecycle engine
-- implement LLM bridge + 4 primitive tools
-- wire headless agent loop — Phase 0 MVA complete
-- agent loop resilience — turn limits, retry, stuck detection
-- session HUD, auto-validation, parallel dispatch, model passthrough
-- end-to-end validated against real LLM
-- system prompt enrichment (AGENTS.md) + session save/resume
-- compaction system — token estimation, LLM-driven summarization, IntentDocument injection
-- lifecycle crates Phase 1a — read-only design-tree + openspec parsers
-- wire lifecycle ContextProvider into agent loop
-- session persistence — save/load/list/resume with CLI integration
-- Phase 2 MVP — ratatui interactive TUI with editor, conversation view, agent loop integration
-- TUI polish — footer, input history, model display, turn/tool counters
-- web_search tool — first feature crate migration (Brave/Tavily/Serper)
-- local_inference tool — Ollama management (ask/list/manage)
-- view tool — file rendering (images, PDFs, documents, code)
-- render tools — D2 diagrams + FLUX.1 image generation
-- TUI dashboard panel + slash commands + welcome message
-- native Anthropic + OpenAI providers — Node.js no longer required
-- OAuth login + token refresh — subscription users need zero npm
-- CI workflows + install script + version alignment
-### Changed
-
-- extract AgentSetup, clippy sweep, structural cleanup
-### Fixed
-
-- **cleave**: pass prompt via file, add --prompt-file flag
-- **cleave**: use -f flag for git worktree add to handle stale registrations
-- **cleave**: make plan rationale optional, allow single-child plans
-- **cleave**: detect empty merges and fix remove_worktree branch deletion bug
-- **cleave**: auto-commit uncommitted worktree changes after child exits
-- **cleave**: exclude .cleave-prompt.md from auto-commit to avoid false positives
-- **cleave**: scope-filtered auto-commit, non-empty merge errors
-- **memory**: address all review findings (C1-C2, W1-W5, omissions)
-- **memory**: address all review findings (C1-C2, W1-W5, N1-N2, omissions)
-- **memory**: remove auto-export on shutdown — JSONL is explicit transport only
-- Omegon owns the wire format — bridge translates, not passes through
-- six issues found during fresh-eyes inspection
-- harden all deferred issues — no more 'noted for later'
-- three warnings from adversarial assessment
-- address all adversarial review findings (C1-C3, W1-W4, N1-N3)
-- address all review findings (C1-C2, W1-W3, N1, omissions)
-- per-prompt cancellation token in interactive mode
-- zero clippy warnings — ChildDispatchConfig struct, collapsed ifs, unused vars
-- Anthropic OAuth compat + configurable file logging + e2e verified
+- **build**: stop rerunning build.rs on every git index change
+- **lifecycle**: scan docs/ from project root, not cwd
+- **tui**: unknown slash commands show error instead of going to agent
+- **tui**: global background fill, darker palette, brighter borders
+- **web**: CORS origin mismatch blocking WebSocket upgrade
+- **web**: WebSocket diagnostic logging and connection status clarity
+- replace all raw byte-index string truncation with unicode-truncate
 ### Miscellaneous
 
-- add dispatch logging to orchestrator
-- remove unused ChildProgressStatus::Running variant
-### Build
+- cleanup pass — dead code, consistency, test coverage
+### Performance
 
-- add release profile (LTO, strip, codegen-units=1, panic=abort)
+- **build**: add dev-release profile for fast iteration builds## [0.14.1-rc.15] — 2026-03-22
+
+### Fixed
+
+- **switch**: x86_64 arch mapping, raw mode guard, dedup cleanup## [0.14.1-rc.14] — 2026-03-21
+
+### Fixed
+
+- address all 16 issues from adversarial assessment## [0.14.1-rc.13] — 2026-03-21
+
+### Added
+
+- **install**: implement versioned installation layout
+- **switch**: implement omegon version switcher
+- **switch**: version switcher — tfswitch-style binary management
+### Cleave
+
+- merge cleave/0-switch-module
+- merge cleave/2-install-layout## [0.14.1-rc.12] — 2026-03-21
+
+### Fixed
+
+- **providers**: remove context-1m beta flag, probe /v1/models at startup## [0.14.1-rc.10] — 2026-03-21
+
+### Performance
+
+- **prompt**: cut per-request token overhead by ~38%## [0.14.1-rc.9] — 2026-03-21
+
+### Fixed
+
+- **auth**: re-resolve credentials per request, not once at startup## [0.14.1-rc.8] — 2026-03-21
+
+### Added
+
+- **tools**: default tool profiles — disable 18 rarely-used tools## [0.14.1-rc.7] — 2026-03-21
+
+### Fixed
+
+- **errors**: stop truncating diagnostic detail in error messages## [0.14.1-rc.6] — 2026-03-21
+
+### Fixed
+
+- **loop**: show LLM errors in conversation, not transient toasts## [0.14.1-rc.5] — 2026-03-21
+
+### Fixed
+
+- **providers**: better error diagnostics for OAuth API failures## [0.14.1-rc.4] — 2026-03-21
+
+### Fixed
+
+- **tui**: TUI-safe OAuth login, /login command, conversation background## [0.14.1-rc.2] — 2026-03-21
+
+### Fixed
+
+- **tui**: route tracing to file in default interactive mode
+- **tui**: route tracing to file in default interactive mode## [0.14.1-rc.1] — 2026-03-21
+
+### Added
+
+- **auth**: implement unified auth surface with probe infrastructure and AuthFeature
+- **cleave**: jj workspaces replace git worktrees
+- **git**: add jj-lib integration module
+- **git**: wire jj into RepoModel — working copy delegation
+- **memory**: schema contract + full TS alignment
+- **memory**: Port memory tools to MemoryFeature
+- **secrets**: implement vault recipe type for LLM API key resolution
+- **tools**: wire all unregistered Rust tools
+- monorepo — absorb omegon-core, eliminate submodule (**BREAKING**)
+- wire context class taxonomy into Rust settings and Profile
+- polish install experience and fix stale version on site
+- implement omegon.styrene.dev/docs sub-site
+- persona system implementation — Lex Imperialis, ArmoryManifest, plugin spec
+- Rust plugin registry + functional plugins (script/HTTP/WASM-backed tools)
+- OCI container runner for functional plugins
+- MCP transport — first-class Model Context Protocol support via rmcp
+- MCP discovery pipeline + OCI container MCP servers + Docker MCP Gateway
+- MCP over Styrene mesh — PQC-encrypted remote tool execution via RNS/Yggdrasil
+- encrypted secret store — AES-256-GCM + Argon2id passphrase KDF
+- memory schema v6 — persona_id, layer, tags columns for persona mind system
+- HarnessStatus contract — unified UI surface for TUI, dashboard, and bootstrap
+- HarnessStatus wiring — BusEvent, bootstrap panel, assemble() probe
+- wire HarnessStatus into footer, WebSocket, and startup
+- TUI event handler for HarnessStatusChanged — live footer updates
+- /status slash command — re-display bootstrap panel mid-session
+- ArmoryFeature — script and OCI tool execution engine
+- dynamic context injection for armory plugins
+- omegon plugin install/list/remove/update CLI
+- /persona and /tone commands + persona loader wiring
+- PersonaFeature — expose persona/tone as agent-callable tools
+- harness_settings tool — unified agent access to harness configuration
+- implement unified auth surface CLI and TUI commands
+- unified auth surface — all backends, all entry points
+- add harness status section to dashboard
+- TUI surface pass — dashboard harness section, context selector, toasts, compaction indicator
+- TUI integration tests — 22 scenario tests for commands, selectors, events
+- T1 insta snapshot tests — 10 visual regression tests for TUI widgets
+- fractal status surface + clean up 4 warnings + close 4 decided nodes
+- implement DelegateFeature and TUI integration
+- delegate subagent system — on-demand specialist invocation
+- knowledge quadrant lifecycle — readiness score, assumption tracking, prompt guidance
+- supply chain security — code signing, SBOM, provenance attestation
+### Documentation
+
+- fix noted issues from adversarial review round 2
+### Fixed
+
+- **memory**: align Rust schema with TS factstore.ts v5
+- **tools**: deduplicate tool registrations and add build fingerprint
+- address adversarial review of jj integration
+- nginx trailing slash 404s + landing page docs links + interactive install
+- adversarial review — all critical/warning/security findings resolved
+- adversarial review round 2 — all HarnessStatus findings resolved
+- adversarial review findings — eliminate unsafe env vars, add missing tests
+- remaining adversarial review findings — all 8 issues addressed
+- 6 architectural synergy gaps — fractal wired, status propagation, delegate personas
+### Miscellaneous
+
+- **cleave**: auto-commit work from child 'mcp-http-transport'
+- **cleave**: auto-commit work from child 'context-selector-and-toasts'
+- **cleave**: auto-commit work from child 'footer-compaction-indicator'
+- **cleave**: checkpoint before cleave
+- **cleave**: auto-commit work from child 'fractal-and-status-wiring'
+- lifecycle cleanup + jj-lib made optional
+- add Justfile — consolidated build, test, and inspect commands
+### Cleave
+
+- merge cleave/0-auth-probe-and-feature
+- merge cleave/1-vault-recipe-and-secrets
+- merge cleave/2-mcp-http-transport
+- merge cleave/3-cli-and-tui-commands
+- merge cleave/0-dashboard-harness-section
+- merge cleave/1-context-selector-and-toasts
+- merge cleave/2-footer-compaction-indicator
+- merge cleave/0-wire-existing-tools
+- merge cleave/1-memory-tools
+- merge cleave/1-delegate-feature-and-tui
+- merge cleave/0-fractal-and-status-wiring
