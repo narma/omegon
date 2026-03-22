@@ -88,6 +88,8 @@ pub struct App {
     should_quit: bool,
     turn: u32,
     tool_calls: u32,
+    /// Previous tool_calls count — used to compute delta for instrument telemetry
+    prev_tool_calls: u32,
     history: Vec<String>,
     history_idx: Option<usize>,
     dashboard: DashboardState,
@@ -170,6 +172,7 @@ impl App {
             should_quit: false,
             turn: 0,
             tool_calls: 0,
+            prev_tool_calls: 0,
             history: Vec::new(),
             history_idx: None,
             dashboard: DashboardState::default(),
@@ -573,31 +576,35 @@ impl App {
                 crate::settings::ThinkingLevel::Medium => "medium",
                 crate::settings::ThinkingLevel::High => "high",
             };
-            let minds: Vec<String> = vec!["project".into()]; // TODO: track active minds
+            // Compute tool call delta (not cumulative count)
+            let tool_delta = self.tool_calls.saturating_sub(self.prev_tool_calls);
+            self.prev_tool_calls = self.tool_calls;
+
             self.instrument_panel.update_telemetry(
                 self.footer_data.context_percent,
-                self.tool_calls,
+                tool_delta,
                 thinking,
-                self.footer_data.total_facts,
-                &minds,
-                0.016,
+                self.footer_data.injected_facts, // injected this turn, not total
+                self.agent_active,
+                0.016, // TODO: real dt from frame timing
             );
         }
 
         // ── Split-panel footer: text left, instruments right ─────────
-        if !self.focus_mode {
+        // Store inst_area for cleanup pass to skip
+        let inst_area = if !self.focus_mode {
             let footer_area = chunks[2];
             let footer_cols = Layout::horizontal([
-                Constraint::Percentage(40),  // engine + memory text
-                Constraint::Percentage(60),  // CIC instrument panel
+                Constraint::Percentage(40),
+                Constraint::Percentage(60),
             ]).split(footer_area);
 
-            // Left: old footer cards (engine + memory)
             self.footer_data.render(footer_cols[0], frame, t.as_ref());
-
-            // Right: CIC instrument panel (four simultaneous displays)
             self.instrument_panel.render(footer_cols[1], frame);
-        }
+            footer_cols[1]
+        } else {
+            Rect::ZERO
+        };
 
         // Apply theme to textarea each frame (in case theme changed)
         self.editor.apply_theme(t.as_ref());
@@ -701,16 +708,7 @@ impl App {
             let err_bg = Color::Rgb(30, 8, 16);
             let diff_add = Color::Rgb(4, 22, 12);
             let diff_rm = Color::Rgb(22, 4, 4);
-            // Instrument panel occupies the right 60% of the footer area
-            let inst_area = if !self.focus_mode && chunks[2].width > 0 {
-                let cols = Layout::horizontal([
-                    Constraint::Percentage(40),
-                    Constraint::Percentage(60),
-                ]).split(chunks[2]);
-                cols[1]
-            } else {
-                Rect::ZERO
-            };
+            // inst_area already computed above — no duplicate layout calc
             let buf = frame.buffer_mut();
             for y in area.top()..area.bottom() {
                 for x in area.left()..area.right() {
@@ -1453,6 +1451,11 @@ impl App {
                     _ => None,
                 });
                 self.conversation.push_tool_end(&id, is_error, summary);
+
+                // Signal tool error to instrument panel
+                if is_error {
+                    self.instrument_panel.set_tool_error();
+                }
 
                 // Detect image results from view/render tools
                 if !is_error && image::is_available()

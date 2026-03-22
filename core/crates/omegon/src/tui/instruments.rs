@@ -26,6 +26,8 @@ pub struct InstrumentPanel {
     memory_intensity: f64,
     /// Tool error state → red border
     tool_error: bool,
+    /// Persistent Lissajous grid — avoids per-frame allocation
+    liss_grid: Vec<u32>,
     /// Waterfall persistent state (one per mind)
     waterfalls: [WaterfallState; 4],
     minds_active: [bool; 4],
@@ -42,11 +44,12 @@ impl Default for InstrumentPanel {
             thinking_intensity: 0.0,
             memory_intensity: 0.0,
             tool_error: false,
+            liss_grid: Vec::new(),
             waterfalls: [
-                WaterfallState::new(22, 5),
-                WaterfallState::new(22, 5),
-                WaterfallState::new(22, 5),
-                WaterfallState::new(22, 5),
+                WaterfallState::new(22, 5, 0xdeadbeef),
+                WaterfallState::new(22, 5, 0xcafebabe),
+                WaterfallState::new(22, 5, 0x8badf00d),
+                WaterfallState::new(22, 5, 0xfeedface),
             ],
             minds_active: [true, false, false, false],
             focus_mode: false,
@@ -55,13 +58,21 @@ impl Default for InstrumentPanel {
 }
 
 impl InstrumentPanel {
+    /// Update instrument telemetry from harness state.
+    ///
+    /// - `context_pct`: 0-100 context utilization
+    /// - `tool_call_delta`: tool calls THIS frame (0 if none)
+    /// - `thinking_level`: "off"/"minimal"/"low"/"medium"/"high"
+    /// - `injected_facts`: facts injected THIS turn (0 if none)
+    /// - `agent_active`: whether the agent is currently processing
+    /// - `dt`: real frame delta in seconds
     pub fn update_telemetry(
         &mut self,
         context_pct: f32,
-        tool_calls: u32,
+        tool_call_delta: u32,
         thinking_level: &str,
-        memory_facts: usize,
-        _memory_minds: &[String],
+        injected_facts: usize,
+        agent_active: bool,
         dt: f64,
     ) {
         self.time += dt;
@@ -69,44 +80,66 @@ impl InstrumentPanel {
         // Context: cap at 70% (auto-compaction threshold)
         self.context_intensity = (context_pct as f64 / 70.0).min(1.0);
 
-        // Tools: spike on calls, decay
-        if tool_calls > 0 {
-            self.tool_intensity = (self.tool_intensity + 0.3).min(1.0);
+        // Tools: spike on NEW calls, decay when idle
+        if tool_call_delta > 0 {
+            // Each call adds intensity, capped at 1.0
+            self.tool_intensity = (self.tool_intensity + tool_call_delta as f64 * 0.3).min(1.0);
         } else {
-            self.tool_intensity = (self.tool_intensity - dt * 0.5).max(0.0);
+            self.tool_intensity = (self.tool_intensity - dt * 0.6).max(0.0);
         }
 
-        // Thinking: map level name to intensity, quadratic speed ramp
-        self.thinking_intensity = match thinking_level {
+        // Tool error: set externally via set_tool_error(), decays here
+        if self.tool_error && self.tool_intensity < 0.05 {
+            self.tool_error = false;
+        }
+
+        // Thinking: target from level, smooth approach
+        let thinking_target = match thinking_level {
             "high" => 0.85, "medium" => 0.6, "low" => 0.35, "minimal" => 0.15, _ => 0.0,
         };
+        // Smooth ramp toward target (not instant jump)
+        self.thinking_intensity += (thinking_target - self.thinking_intensity) * dt * 3.0;
 
-        // Memory: based on fact count presence
-        let mem_active = memory_facts > 0;
-        self.memory_intensity = if mem_active {
-            (self.memory_intensity + dt * 0.5).min(0.4)
+        // Memory: spike on injection events, decay otherwise
+        if injected_facts > 0 {
+            self.memory_intensity = (self.memory_intensity + injected_facts as f64 * 0.05).min(1.0);
+        } else if agent_active {
+            // Slow decay during active session
+            self.memory_intensity = (self.memory_intensity - dt * 0.3).max(0.0);
         } else {
-            (self.memory_intensity - dt * 0.3).max(0.0)
-        };
+            // Faster decay when idle
+            self.memory_intensity = (self.memory_intensity - dt * 0.5).max(0.0);
+        }
 
-        // Tick waterfalls
+        // Tick waterfalls — per-mind with state-driven CA rules
         let active_count = self.minds_active.iter().filter(|&&a| a).count().max(1);
         let col_w = (22 / active_count).max(2);
         for i in 0..4 {
             if !self.minds_active[i] { continue; }
             let density = 0.008 + self.memory_intensity * 0.25;
             let scroll = 6.0 * (0.5 + self.memory_intensity * 1.5);
-            let rule = 204u8; // identity at idle; TODO: per-mind ops
+            // Rule selection: idle=204 (identity), active=chaotic rules per mind
+            let rule = if self.memory_intensity > 0.1 {
+                [30u8, 110, 90, 150][i] // project=30, working=110, episodes=90, archive=150
+            } else {
+                204 // identity — stationary bars at idle
+            };
             self.waterfalls[i].ensure_size(col_w, 5);
             self.waterfalls[i].tick(dt, scroll, density, rule, 0.85);
         }
+    }
+
+    /// Set tool error state — triggers red border on tools instrument.
+    pub fn set_tool_error(&mut self) {
+        self.tool_error = true;
+        self.tool_intensity = 0.85;
     }
 
     pub fn toggle_focus(&mut self) {
         self.focus_mode = !self.focus_mode;
     }
 
-    pub fn render(&self, area: Rect, frame: &mut Frame) {
+    pub fn render(&mut self, area: Rect, frame: &mut Frame) {
         if area.width < 8 || area.height < 4 { return; }
 
         let rows = Layout::vertical([
@@ -123,19 +156,20 @@ impl InstrumentPanel {
             (bot[1], "memory",   self.memory_intensity, false),
         ];
 
+        // Use theme-consistent colors (border_dim, dim fg)
+        let border_dim = Color::Rgb(20, 40, 55); // matches theme border_dim range
+        let label_fg = Color::Rgb(64, 88, 112);  // matches theme dim
+        let error_border = Color::Rgb(224, 72, 72); // matches theme error
+
         for (idx, (area, label, intensity, is_error)) in instruments.iter().enumerate() {
             let pct = (*intensity * 100.0) as u32;
-            let border_color = if *is_error {
-                Color::Rgb(224, 72, 72)
-            } else {
-                Color::Rgb(20, 40, 55)
-            };
+            let border_color = if *is_error { error_border } else { border_dim };
             let block = Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(border_color))
                 .title(Span::styled(
                     format!(" {} {}% ", label, pct),
-                    Style::default().fg(Color::Rgb(64, 88, 112)),
+                    Style::default().fg(label_fg),
                 ));
             let inner = block.inner(*area);
             frame.render_widget(block, *area);
@@ -144,7 +178,9 @@ impl InstrumentPanel {
 
             match idx {
                 0 => render_perlin(self.time, *intensity, inner, frame.buffer_mut()),
-                1 => render_lissajous(self.time, *intensity, inner, frame.buffer_mut()),
+                1 => {
+                    render_lissajous(self.time, *intensity, inner, frame.buffer_mut(), &mut self.liss_grid);
+                },
                 2 => render_plasma(self.time, *intensity, inner, frame.buffer_mut()),
                 3 => render_waterfall_multi(*intensity, inner, frame.buffer_mut(),
                         &self.waterfalls, &self.minds_active),
@@ -274,10 +310,12 @@ fn plasma_sample(x: f64, y: f64, t: f64) -> f64 {
 
 // ─── Lissajous curves (tools) — ported from demo ───────────────────────
 
-fn render_lissajous(time: f64, intensity: f64, area: Rect, buf: &mut Buffer) {
+fn render_lissajous(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, grid: &mut Vec<u32>) {
     let w = area.width as usize;
     let h = area.height as usize * 2;
-    let mut grid = vec![0u32; w * h];
+    let needed = w * h;
+    grid.resize(needed, 0);
+    grid.fill(0);
 
     let nc = 3; // curves=3.6 rounded
     let pts = 500usize;
@@ -337,8 +375,8 @@ pub struct WaterfallState {
 }
 
 impl WaterfallState {
-    fn new(w: usize, h: usize) -> Self {
-        Self { grid: vec![0.0; w * h], width: w, height: h, scroll_accum: 0.0, rng: 0xdeadbeef }
+    fn new(w: usize, h: usize, seed: u64) -> Self {
+        Self { grid: vec![0.0; w * h], width: w, height: h, scroll_accum: 0.0, rng: seed }
     }
 
     fn next_rand(&mut self) -> u64 {
@@ -393,8 +431,7 @@ fn render_waterfall_multi(
 
     let total_w = area.width as usize;
     let gap = if n > 1 { 1 } else { 0 };
-    let total_gaps = if n > 1 { n - 1 } else { 0 };
-    let usable = total_w.saturating_sub(total_gaps);
+    let usable = total_w.saturating_sub(if n > 1 { n - 1 } else { 0 });
     let col_w = usable / n;
 
     for (seg_idx, &mind_idx) in active_indices.iter().enumerate() {
@@ -476,7 +513,7 @@ mod tests {
 
     #[test]
     fn panel_renders_without_panic() {
-        let panel = InstrumentPanel::default();
+        let mut panel = InstrumentPanel::default();
         let area = Rect::new(0, 0, 96, 12);
         let backend = ratatui::backend::TestBackend::new(96, 12);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
@@ -485,7 +522,7 @@ mod tests {
 
     #[test]
     fn waterfall_scrolls() {
-        let mut wf = WaterfallState::new(10, 5);
+        let mut wf = WaterfallState::new(10, 5, 0xdeadbeef);
         wf.tick(0.5, 10.0, 0.1, 30, 0.85);
         let has_content = wf.grid.iter().any(|&v| v > 0.0);
         assert!(has_content, "waterfall should have content after tick");
