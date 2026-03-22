@@ -73,11 +73,12 @@ impl FractalWidget {
         };
 
         // Hue target and oscillation range per mode
+        // Locked to teal band (165-195°). No blue/purple drift.
         let (target_hue, hue_range, hue_speed) = match self.mode {
-            AgentMode::Idle =>     (190.0, 10.0, 0.15),  // 180-200° slow
-            AgentMode::Thinking => (207.0, 13.0, 0.25),  // 194-220° medium
-            AgentMode::Working =>  (170.0, 15.0, 0.30),  // 155-185° faster
-            AgentMode::Cleave =>   (180.0, 25.0, 0.40),  // 155-205° widest, fastest
+            AgentMode::Idle =>     (182.0,  6.0, 0.12),  // 176-188° slow teal
+            AgentMode::Thinking => (186.0,  8.0, 0.20),  // 178-194° slightly deeper
+            AgentMode::Working =>  (178.0,  8.0, 0.25),  // 170-186° greener teal
+            AgentMode::Cleave =>   (180.0, 12.0, 0.35),  // 168-192° wider but still teal
         };
 
         // Smooth hue center toward target
@@ -91,10 +92,10 @@ impl FractalWidget {
     /// Current hue in degrees, oscillating within the mode's band.
     fn current_hue(&self) -> f64 {
         let (_, hue_range, _) = match self.mode {
-            AgentMode::Idle =>     (190.0, 10.0, 0.15),
-            AgentMode::Thinking => (207.0, 13.0, 0.25),
-            AgentMode::Working =>  (170.0, 15.0, 0.30),
-            AgentMode::Cleave =>   (180.0, 25.0, 0.40),
+            AgentMode::Idle =>     (182.0,  6.0, 0.12),
+            AgentMode::Thinking => (186.0,  8.0, 0.20),
+            AgentMode::Working =>  (178.0,  8.0, 0.25),
+            AgentMode::Cleave =>   (180.0, 12.0, 0.35),
         };
         self.hue_center + hue_range * self.hue_phase.sin()
     }
@@ -102,7 +103,7 @@ impl FractalWidget {
     /// Convert intensity (0-1) to an RGB color at the current hue.
     fn hue_color(&self, intensity: f64) -> Color {
         if intensity < 0.005 {
-            return Color::Rgb(4, 6, 14); // surface_bg
+            return Color::Rgb(1, 2, 4); // surface_bg
         }
         let hue = self.current_hue();
         let saturation = 0.82;
@@ -324,8 +325,8 @@ mod tests {
     #[test]
     fn hue_color_below_threshold_returns_bg() {
         let w = FractalWidget::default();
-        assert!(matches!(w.hue_color(0.0), Color::Rgb(4, 6, 14)));
-        assert!(matches!(w.hue_color(0.004), Color::Rgb(4, 6, 14)));
+        assert!(matches!(w.hue_color(0.0), Color::Rgb(1, 2, 4)));
+        assert!(matches!(w.hue_color(0.004), Color::Rgb(1, 2, 4)));
     }
 
     #[test]

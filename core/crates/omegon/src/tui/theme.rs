@@ -204,9 +204,9 @@ impl Theme for JsonTheme {
 pub struct Alpharius;
 
 impl Theme for Alpharius {
-    fn bg(&self) -> Color { Color::Rgb(4, 6, 14) }
-    fn card_bg(&self) -> Color { Color::Rgb(8, 12, 22) }
-    fn surface_bg(&self) -> Color { Color::Rgb(4, 6, 14) }
+    fn bg(&self) -> Color { Color::Rgb(1, 2, 4) }
+    fn card_bg(&self) -> Color { Color::Rgb(6, 10, 18) }
+    fn surface_bg(&self) -> Color { Color::Rgb(1, 2, 4) }
     fn border(&self) -> Color { Color::Rgb(48, 112, 140) }
     fn border_dim(&self) -> Color { Color::Rgb(32, 72, 96) }
 
