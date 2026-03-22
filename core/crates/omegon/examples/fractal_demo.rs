@@ -435,31 +435,50 @@ impl TelemetrySim {
 
 // ─── Color ramp: navy → teal → amber ───────────────────────────────────
 
+/// Perceptually uniform intensity → color mapping.
+///
+/// Human vision follows a power law (Stevens/CIE L*): we're far more
+/// sensitive to changes in dark values than bright ones. A linear ramp
+/// looks "stuck in navy" at the bottom and "jumps to amber" at the top.
+///
+/// Fix: apply CIE L* perceptual linearization (cube root) before mapping
+/// to the color gradient. This makes equal numeric steps FEEL like equal
+/// visual steps across the full range.
 fn intensity_color(intensity: f64) -> Color {
-    let i = intensity.clamp(0.0, 1.0);
-    // Three-segment ramp:
-    //   0.0 → 0.3:  dark navy → visible teal (floor lifted so 10% is visible)
-    //   0.3 → 0.6:  teal deepening (brand center at ~0.5)
-    //   0.6 → 1.0:  teal → amber (hot zone starts earlier)
-    if i < 0.3 {
-        // Dark navy → dim teal. Floor at r=1,g=6,b=10 so it's never invisible.
-        let t = i / 0.3;
-        let r = (1.0 + t * 1.0) as u8;           // 1 → 2
-        let g = (6.0 + t * 24.0) as u8;           // 6 → 30
-        let b = (10.0 + t * 22.0) as u8;          // 10 → 32
+    let linear = intensity.clamp(0.0, 1.0);
+
+    // CIE L* perceptual linearization (cube root for values > threshold,
+    // linear segment near zero to avoid infinite slope)
+    let i = if linear > 0.008856 {
+        linear.cbrt()
+    } else {
+        linear * 7.787 + 16.0 / 116.0
+    };
+    // Normalize: cbrt(1.0) = 1.0, cbrt(0.008856) ≈ 0.207
+    // The 16/116 offset means i starts at ~0.138 for linear=0
+    // Rescale to 0..1 for the gradient
+    let i = ((i - 0.138) / (1.0 - 0.138)).clamp(0.0, 1.0);
+
+    // Three-stop gradient in perceptual space:
+    //   0.0 → 0.4:  dark navy → teal
+    //   0.4 → 0.7:  teal deepens (brand center)
+    //   0.7 → 1.0:  teal → amber
+    if i < 0.4 {
+        let t = i / 0.4;
+        let r = (1.0 + t * 3.0) as u8;            // 1 → 4
+        let g = (4.0 + t * 38.0) as u8;           // 4 → 42
+        let b = (6.0 + t * 34.0) as u8;           // 6 → 40
         Color::Rgb(r, g, b)
-    } else if i < 0.6 {
-        // Dim teal → full teal (brand center)
-        let t = (i - 0.3) / 0.3;
-        let r = (2.0 + t * 2.0) as u8;            // 2 → 4
-        let g = (30.0 + t * 18.0) as u8;          // 30 → 48
-        let b = (32.0 + t * 12.0) as u8;          // 32 → 44
+    } else if i < 0.7 {
+        let t = (i - 0.4) / 0.3;
+        let r = (4.0 + t * 2.0) as u8;            // 4 → 6
+        let g = (42.0 + t * 10.0) as u8;          // 42 → 52
+        let b = (40.0 + t * 4.0) as u8;           // 40 → 44
         Color::Rgb(r, g, b)
     } else {
-        // Full teal → amber (the hot zone)
-        let t = (i - 0.6) / 0.4;
-        let r = (4.0 + t * 76.0) as u8;           // 4 → 80
-        let g = (48.0 - t * 4.0) as u8;           // 48 → 44
+        let t = (i - 0.7) / 0.3;
+        let r = (6.0 + t * 74.0) as u8;           // 6 → 80
+        let g = (52.0 - t * 8.0) as u8;           // 52 → 44
         let b = (44.0 - t * 36.0) as u8;          // 44 → 8
         Color::Rgb(r, g, b)
     }
