@@ -58,14 +58,25 @@ fn main() -> io::Result<()> {
         if !state.paused {
             state.sim.update(dt);
 
-            // Tick waterfall — memory state selects CA rule, activity drives density + speed
-            let mem_intensity = state.sim.memory_activity;
-            let density = state.ca_density + mem_intensity * 0.25; // aggressive density boost
-            let scroll = state.ca_scroll_rate * (0.5 + mem_intensity * 1.5);
-            let rule = state.sim.memory_rule(); // Rule 204 idle, 30/110/90/150 per state
-            let fade = state.ca_fade;
-            state.waterfall.ensure_size(22, 5);
-            state.waterfall.tick(dt, scroll, density, rule, fade);
+            // Tick waterfalls — one per active mind, independently
+            let active_count = state.sim.minds_active.iter().filter(|&&a| a).count().max(1);
+            let col_w = (22 / active_count).max(2);
+            for i in 0..4 {
+                if !state.sim.minds_active[i] { continue; }
+                let mind = &state.sim.minds[i];
+                let density = state.ca_density + mind.activity * 0.25;
+                let scroll = state.ca_scroll_rate * (0.5 + mind.activity * 1.5);
+                let rule = if mind.activity > 0.05 {
+                    match mind.op {
+                        MindOp::Recall  => 30,
+                        MindOp::Write   => 110,
+                        MindOp::Cleanup => 150,
+                        MindOp::Idle    => 204,
+                    }
+                } else { 204 };
+                state.waterfalls[i].ensure_size(col_w, 5);
+                state.waterfalls[i].tick(dt, scroll, density, rule, state.ca_fade);
+            }
         }
 
         terminal.draw(|f| {
@@ -235,9 +246,9 @@ fn main() -> io::Result<()> {
                 Line::from(vec![
                     Span::styled("  memory   ", Style::default().fg(Color::Rgb(96, 120, 136))),
                     Span::styled(format!("{}", s.memory_label()), Style::default().fg(
-                        if s.memory_activity > 0.3 { Color::Rgb(42, 180, 200) } else { Color::Rgb(96, 120, 136) }
+                        if s.minds.iter().any(|m| m.activity > 0.3) { Color::Rgb(42, 180, 200) } else { Color::Rgb(96, 120, 136) }
                     )),
-                    Span::styled(format!("  load {:.2}", s.memory_activity), Style::default().fg(Color::Rgb(64, 88, 112))),
+                    Span::styled(format!("  {}", s.memory_label()), Style::default().fg(Color::Rgb(64, 88, 112))),
                 ]),
             ];
             f.render_widget(Paragraph::new(status_lines), right_chunks[2]);
@@ -255,7 +266,8 @@ fn main() -> io::Result<()> {
                 Line::from(Span::styled("  1 ctx 10%  2 ctx 50%  3 ctx 90%  4 compact", Style::default().fg(Color::Rgb(64, 88, 112)))),
                 Line::from(Span::styled("  5 tool     6 burst    7 cleave   8 error", Style::default().fg(Color::Rgb(64, 88, 112)))),
                 Line::from(Span::styled("  9 think    0 done     - recall   = write", Style::default().fg(Color::Rgb(64, 88, 112)))),
-                Line::from(Span::styled("  [ multi-mind          ] cleanup", Style::default().fg(Color::Rgb(64, 88, 112)))),
+                Line::from(Span::styled("  [ multi-mind  ] cleanup", Style::default().fg(Color::Rgb(64, 88, 112)))),
+                Line::from(Span::styled("  F1-F4 toggle minds  F5-F8 fire mind", Style::default().fg(Color::Rgb(64, 88, 112)))),
             ];
             f.render_widget(Paragraph::new(legend), right_chunks[4]);
 
@@ -312,11 +324,21 @@ fn main() -> io::Result<()> {
                     // Thinking scenarios
                     KeyCode::Char('9') => state.sim.thinking_start(),
                     KeyCode::Char('0') => state.sim.thinking_stop(),
-                    // Memory scenarios
-                    KeyCode::Char('-') => state.sim.memory_recall(),
-                    KeyCode::Char('=') => state.sim.memory_write(),
-                    KeyCode::Char('[') => state.sim.memory_multi_mind(),
-                    KeyCode::Char(']') => state.sim.memory_cleanup(),
+                    // Memory: fire events on specific minds
+                    KeyCode::Char('-') => state.sim.memory_recall(),    // recall from project
+                    KeyCode::Char('=') => state.sim.memory_write(),     // write to project
+                    KeyCode::Char('[') => state.sim.memory_multi_mind(),// activate + fire all
+                    KeyCode::Char(']') => state.sim.memory_cleanup(),   // cleanup project
+                    // Toggle individual minds on/off
+                    KeyCode::F(1) => state.sim.toggle_mind(0), // project
+                    KeyCode::F(2) => state.sim.toggle_mind(1), // working
+                    KeyCode::F(3) => state.sim.toggle_mind(2), // episodes
+                    KeyCode::F(4) => state.sim.toggle_mind(3), // archive
+                    // Fire event on specific mind
+                    KeyCode::F(5) => state.sim.fire_mind(0),
+                    KeyCode::F(6) => state.sim.fire_mind(1),
+                    KeyCode::F(7) => state.sim.fire_mind(2),
+                    KeyCode::F(8) => state.sim.fire_mind(3),
                     _ => {}
                 }
             }
@@ -343,16 +365,31 @@ struct TelemetrySim {
     // Thinking: 0.0 = idle, 1.0 = deep extended thinking
     thinking_level: f64,
     thinking_target: f64,
-    // Memory: 0.0 = idle, 1.0 = heavy activity. Decays.
-    memory_activity: f64,
-    memory_state: MemoryState,
+    // Memory: per-mind independent state
+    minds: [MindState; 4],
+    /// Which minds are currently "linked" (active/visible)
+    minds_active: [bool; 4],
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
 enum ToolState { #[default] Idle, Single, Burst, Cleave, Error }
 
-#[derive(Default, Clone, Copy, PartialEq)]
-enum MemoryState { #[default] Idle, Recall, Write, MultiMind, Cleanup }
+#[derive(Clone, Copy, PartialEq)]
+enum MindOp { Idle, Recall, Write, Cleanup }
+
+#[derive(Clone)]
+struct MindState {
+    activity: f64,
+    op: MindOp,
+}
+
+impl Default for MindState {
+    fn default() -> Self {
+        Self { activity: 0.0, op: MindOp::Idle }
+    }
+}
+
+const MIND_NAMES: [&str; 4] = ["project", "working", "episodes", "archive"];
 
 impl Default for TelemetrySim {
     fn default() -> Self {
@@ -360,7 +397,8 @@ impl Default for TelemetrySim {
             context_fill: 0.0, context_target: 0.0, context_speed_mult: 1.0,
             tool_activity: 0.0, tool_state: ToolState::Idle, tool_hue_override: None,
             thinking_level: 0.0, thinking_target: 0.0,
-            memory_activity: 0.0, memory_state: MemoryState::Idle,
+            minds: Default::default(),
+            minds_active: [true, false, false, false], // only project linked at start
         }
     }
 }
@@ -388,9 +426,11 @@ impl TelemetrySim {
         // Thinking: smooth approach to target
         self.thinking_level += (self.thinking_target - self.thinking_level) * dt * 3.0;
 
-        // Memory: decay toward 0
-        self.memory_activity = (self.memory_activity - dt * 0.5).max(0.0);
-        if self.memory_activity < 0.05 { self.memory_state = MemoryState::Idle; }
+        // Memory: per-mind independent decay
+        for mind in &mut self.minds {
+            mind.activity = (mind.activity - dt * 0.5).max(0.0);
+            if mind.activity < 0.05 { mind.op = MindOp::Idle; }
+        }
     }
 
     fn intensity(&self, instrument: usize) -> f64 {
@@ -400,7 +440,11 @@ impl TelemetrySim {
             0 => (self.context_fill / 0.7).min(1.0),
             1 => self.tool_activity,          // radar = tool activity
             2 => self.thinking_level,         // thermal = thinking depth
-            3 => self.memory_activity,        // signal = memory activity
+            // memory intensity = max across all active minds
+            3 => self.minds.iter().zip(self.minds_active.iter())
+                .filter(|(_, active)| **active)
+                .map(|(m, _)| m.activity)
+                .fold(0.0_f64, f64::max),
             _ => 0.0,
         }
     }
@@ -461,21 +505,36 @@ impl TelemetrySim {
     fn thinking_start(&mut self) { self.thinking_target = 0.85; }
     fn thinking_stop(&mut self)  { self.thinking_target = 0.0; }
 
-    // Memory scenarios — each state selects a different CA rule.
-    // Pushed hard into the amber zone so they pop against the dim idle.
-    fn memory_recall(&mut self)     { self.memory_activity = 0.95; self.memory_state = MemoryState::Recall; }
-    fn memory_write(&mut self)      { self.memory_activity = 0.85; self.memory_state = MemoryState::Write; }
-    fn memory_multi_mind(&mut self) { self.memory_activity = 1.0;  self.memory_state = MemoryState::MultiMind; }
-    fn memory_cleanup(&mut self)    { self.memory_activity = 0.7;  self.memory_state = MemoryState::Cleanup; }
-
-    /// Get the CA rule for the current memory state.
-    fn memory_rule(&self) -> u8 {
-        match self.memory_state {
-            MemoryState::Idle    => 204, // identity — bars stay still
-            MemoryState::Recall  => 30,  // chaotic cascade — information flowing
-            MemoryState::Write   => 110, // complex structured growth
-            MemoryState::MultiMind => 90, // Sierpinski branching — systems linking
-            MemoryState::Cleanup => 150, // structured chaos → order
+    // Memory scenarios — target specific minds
+    fn memory_op(&mut self, mind_idx: usize, op: MindOp, intensity: f64) {
+        if mind_idx < 4 {
+            self.minds_active[mind_idx] = true;
+            self.minds[mind_idx].activity = intensity;
+            self.minds[mind_idx].op = op;
+        }
+    }
+    // Convenience: recall from project
+    fn memory_recall(&mut self) { self.memory_op(0, MindOp::Recall, 0.95); }
+    // Write to project
+    fn memory_write(&mut self) { self.memory_op(0, MindOp::Write, 0.85); }
+    // Multi-mind: activate all, fire project + working + episodes
+    fn memory_multi_mind(&mut self) {
+        for i in 0..3 { self.minds_active[i] = true; }
+        self.memory_op(0, MindOp::Recall, 1.0);
+        self.memory_op(1, MindOp::Write, 0.8);
+        self.memory_op(2, MindOp::Recall, 0.7);
+    }
+    // Cleanup project memory
+    fn memory_cleanup(&mut self) { self.memory_op(0, MindOp::Cleanup, 0.7); }
+    // Toggle a specific mind on/off
+    fn toggle_mind(&mut self, idx: usize) {
+        if idx < 4 { self.minds_active[idx] = !self.minds_active[idx]; }
+    }
+    // Fire an event on a specific mind
+    fn fire_mind(&mut self, idx: usize) {
+        if idx < 4 && self.minds_active[idx] {
+            self.minds[idx].activity = 0.9;
+            self.minds[idx].op = MindOp::Write;
         }
     }
 
@@ -493,13 +552,18 @@ impl TelemetrySim {
         else if self.thinking_level > 0.2 { "active" }
         else { "idle" }
     }
-    fn memory_label(&self) -> &str {
-        match self.memory_state {
-            MemoryState::Idle => "idle",
-            MemoryState::Recall => "recalling",
-            MemoryState::Write => "writing",
-            MemoryState::MultiMind => "multi-mind",
-            MemoryState::Cleanup => "cleanup",
+    fn memory_label(&self) -> String {
+        let active: Vec<&str> = self.minds_active.iter().enumerate()
+            .filter(|(_, a)| **a)
+            .map(|(i, _)| MIND_NAMES[i])
+            .collect();
+        if active.is_empty() { return "none".to_string(); }
+        let any_active = self.minds.iter().zip(self.minds_active.iter())
+            .any(|(m, &a)| a && m.activity > 0.05);
+        if any_active {
+            format!("{} active", active.join("+"))
+        } else {
+            format!("{} linked", active.join("+"))
         }
     }
 }
@@ -606,7 +670,7 @@ fn render_instrument(idx: usize, time: f64, intensity: f64, area: Rect, buf: &mu
         0 => render_perlin(time * speed, intensity, area, buf, s, None),
         1 => render_lissajous(time * speed, intensity, area, buf, s, hue_override),
         2 => render_plasma(time * speed, intensity, area, buf, s, None),
-        3 => render_waterfall(intensity, area, buf, &s.waterfall),
+        3 => render_waterfall_multi(intensity, area, buf, &s.waterfalls, &s.sim.minds_active, &s.sim.minds),
         _ => {}
     }
 }
@@ -828,6 +892,52 @@ const NOISE_CHARS: &[char] = &[
     '█', '╬', '■', '◆',
 ];
 
+/// Render multi-mind waterfall: each active mind gets its own column segment.
+fn render_waterfall_multi(
+    intensity: f64, area: Rect, buf: &mut Buffer,
+    waterfalls: &[WaterfallState; 4],
+    minds_active: &[bool; 4],
+    minds: &[MindState; 4],
+) {
+    let active_indices: Vec<usize> = minds_active.iter().enumerate()
+        .filter(|(_, a)| **a).map(|(i, _)| i).collect();
+    let n = active_indices.len();
+    if n == 0 { return; }
+
+    let total_w = area.width as usize;
+    let gap = if n > 1 { 1 } else { 0 }; // 1-char gap between segments
+    let total_gaps = if n > 1 { n - 1 } else { 0 };
+    let usable = total_w.saturating_sub(total_gaps);
+    let col_w = usable / n;
+
+    for (seg_idx, &mind_idx) in active_indices.iter().enumerate() {
+        let x_offset = seg_idx * (col_w + gap);
+        let seg_area = Rect {
+            x: area.x + x_offset as u16,
+            y: area.y,
+            width: (col_w as u16).min(area.width - x_offset as u16),
+            height: area.height,
+        };
+
+        // Per-mind intensity
+        let mind_intensity = intensity.max(minds[mind_idx].activity);
+
+        render_waterfall(mind_intensity, seg_area, buf, &waterfalls[mind_idx]);
+
+        // Draw dim separator after each segment (except last)
+        if seg_idx < n - 1 && gap > 0 {
+            let sep_x = area.x + (x_offset + col_w) as u16;
+            for y in area.y..area.bottom() {
+                if let Some(cell) = buf.cell_mut(Position::new(sep_x, y)) {
+                    cell.set_char('│');
+                    cell.set_fg(Color::Rgb(20, 40, 55));
+                    cell.set_bg(bg_color());
+                }
+            }
+        }
+    }
+}
+
 /// Render waterfall using CRT noise glyphs — the splash screen's glitch
 /// character set applied as a scrolling signal display. Each cell picks
 /// a glyph based on its value (density) and a pseudo-random hash (variety).
@@ -894,12 +1004,11 @@ struct DemoState {
     liss_freq_spread: f64,
     liss_amplitude: f64,
     liss_points: f64,
-    // CA Waterfall (signal)
-    waterfall: WaterfallState,
-    ca_scroll_rate: f64,  // rows per second
-    ca_density: f64,      // birth probability 0-1
-    ca_rule: f64,         // Wolfram rule number (cast to u8)
-    ca_fade: f64,         // per-scroll brightness decay
+    // CA Waterfall (signal) — one per mind
+    waterfalls: [WaterfallState; 4],
+    ca_scroll_rate: f64,
+    ca_density: f64,
+    ca_fade: f64,
 }
 
 impl Default for DemoState {
@@ -915,12 +1024,16 @@ impl Default for DemoState {
             // Radar — operator tuned
             liss_num_curves: 3.6, liss_freq_base: 1.9,
             liss_freq_spread: 3.0, liss_amplitude: 0.50, liss_points: 500.0,
-            // CA Waterfall — signal/memory
-            waterfall: WaterfallState::new(22, 5),
-            ca_scroll_rate: 6.0,  // rows/sec
-            ca_density: 0.008,    // very sparse at idle — near invisible
-            ca_rule: 30.0,        // Rule 30 — chaotic, interesting patterns
-            ca_fade: 0.85,        // gentle trail fade
+            // CA Waterfalls — one per mind, sized per active count
+            waterfalls: [
+                WaterfallState::new(22, 5),
+                WaterfallState::new(22, 5),
+                WaterfallState::new(22, 5),
+                WaterfallState::new(22, 5),
+            ],
+            ca_scroll_rate: 6.0,
+            ca_density: 0.008,
+            ca_fade: 0.85,
         }
     }
 }
@@ -949,7 +1062,6 @@ impl DemoState {
             3 => vec![
                 ("scroll_rate", self.ca_scroll_rate, 2.0, 30.0),
                 ("density", self.ca_density, 0.0, 0.3),
-                ("rule", self.ca_rule, 0.0, 255.0),
                 ("fade", self.ca_fade, 0.5, 1.0),
             ],
             _ => vec![],
@@ -989,8 +1101,7 @@ impl DemoState {
             3 => match self.selected_param {
                 0 => self.ca_scroll_rate = new_val,
                 1 => self.ca_density = new_val,
-                2 => self.ca_rule = new_val,
-                3 => self.ca_fade = new_val,
+                2 => self.ca_fade = new_val,
                 _ => {}
             },
             _ => {}
