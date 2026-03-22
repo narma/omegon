@@ -203,11 +203,37 @@ impl DashboardState {
         let block = Block::default()
             .borders(Borders::LEFT)
             .border_style(Style::default().fg(t.border_dim()))
-            .title(Span::styled(" Ω Dashboard ", Style::default().fg(t.accent()).add_modifier(Modifier::BOLD)))
             .style(Style::default().bg(t.bg()));
 
-        let inner_w = area.width.saturating_sub(3) as usize; // left border + padding
+        // Render the block border, then work inside its inner area
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        // ─── Fractal state surface (top of dashboard) ───────────
+        let fractal_h = 8u16.min(inner.height.saturating_sub(4)); // reserve space for text
+        let (fractal_area, text_area) = if fractal_h >= 4 {
+            let chunks = Layout::vertical([
+                Constraint::Length(fractal_h),
+                Constraint::Min(3),
+            ]).split(inner);
+            (chunks[0], chunks[1])
+        } else {
+            (Rect::ZERO, inner)
+        };
+
+        if fractal_area.height >= 4 {
+            self.fractal.render(fractal_area, frame.buffer_mut());
+        }
+
+        let inner_w = text_area.width.saturating_sub(1) as usize;
         let mut lines: Vec<Line> = Vec::new();
+
+        // Dashboard title
+        lines.push(Line::from(Span::styled(
+            " Ω Dashboard ",
+            Style::default().fg(t.accent()).add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
 
         // ─── Status Counts (pipeline) ───────────────────────────
         if self.status_counts.total > 0 {
@@ -527,9 +553,8 @@ impl DashboardState {
         }
 
         let widget = Paragraph::new(lines)
-            .block(block)
             .wrap(Wrap { trim: true });
-        frame.render_widget(widget, area);
+        frame.render_widget(widget, text_area);
     }
 }
 

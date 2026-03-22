@@ -469,6 +469,21 @@ impl App {
             self.dashboard.context_window_k = self.footer_data.context_window;
         }
 
+        // ── Fractal telemetry (every frame for smooth animation) ────
+        {
+            let thinking = self.settings().thinking.as_str();
+            let persona_id: Option<&str> = None; // TODO: wire persona when active
+            let is_cleave = self.dashboard.cleave.as_ref().is_some_and(|c| c.active);
+            self.dashboard.fractal.update_from_status(
+                self.footer_data.context_percent,
+                thinking,
+                self.agent_active,
+                persona_id,
+                is_cleave,
+                0.016, // ~60fps frame time
+            );
+        }
+
         let area = frame.area();
 
         // ── Global background fill ──────────────────────────────────
