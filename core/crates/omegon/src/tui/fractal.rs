@@ -1,265 +1,282 @@
-//! Fractal status surface — a living visualization of harness state.
+//! Fractal status surface — living visualization of agent state.
 //!
-//! Renders a Mandelbrot/Julia fractal in the dashboard sidebar where
-//! visual properties encode multi-dimensional harness telemetry:
+//! Renders one of four algorithms in the dashboard header, switching
+//! based on agent activity:
 //!
-//! - **Zoom depth** → context utilization (deeper = fuller)
-//! - **Color palette** → cognitive mode (idle=ocean, coding=amber, design=violet)
-//! - **Animation speed** → agent activity (fast during tool calls, slow during thinking)
-//! - **Fractal type** → persona (Mandelbrot default, Julia parameterized by persona ID)
-//! - **Iteration depth** → thinking level (off=50, low=100, medium=200, high=500)
+//! - **Idle** → Perlin noise flow (smooth breathing)
+//! - **Thinking** → Plasma sine interference (rippling fabric)
+//! - **Working** → Lissajous curves (smooth looping trails)
+//! - **Cleave** → Lissajous (intensified — more curves, faster)
 //!
-//! Uses half-block characters (▀) for 2x vertical resolution.
-//! True color preferred (COLORTERM check), 256-color fallback.
+//! Color uses continuous hue rotation within the Alpharius palette band
+//! (~150-220° in HSV). The hue drifts slowly per frame, staying on-brand
+//! while always moving.
+//!
+//! Uses half-block characters (▀) for 2 color channels per cell.
 
 use ratatui::prelude::*;
 use ratatui::buffer::Buffer;
 
-/// A fractal viewport driven by harness telemetry.
-pub struct FractalWidget {
-    /// Viewport center in the complex plane.
-    pub center: (f64, f64),
-    /// Zoom level (1.0 = full view, higher = deeper).
-    pub zoom: f64,
-    /// Maximum iterations (controls detail + maps to thinking level).
-    pub max_iter: u32,
-    /// Color palette index (maps to cognitive mode).
-    pub palette: Palette,
-    /// If Some, render Julia set with this c parameter. If None, Mandelbrot.
-    pub julia_c: Option<(f64, f64)>,
-    /// Animation time — drives slow drift of center coordinates.
-    pub time: f64,
+/// Agent activity state — drives which algorithm renders.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub enum AgentMode {
+    #[default]
+    Idle,
+    Thinking,
+    Working,
+    Cleave,
 }
 
-/// Color palette — each maps to a cognitive mode.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum Palette {
-    /// Deep blue → teal → white. Idle / waiting.
-    #[default]
-    Ocean,
-    /// Amber → gold → white. Coding / execution.
-    Amber,
-    /// Violet → cyan → white. Design / exploration.
-    Violet,
-    /// Split complementary. Cleave / parallel work.
-    Split,
-    /// Desaturated, low contrast. Error / degraded.
-    Muted,
+/// The fractal state surface widget.
+pub struct FractalWidget {
+    /// Current agent mode (drives algorithm selection).
+    pub mode: AgentMode,
+    /// Animation time (accumulated from dt per frame).
+    pub time: f64,
+    /// Hue center in degrees — oscillates within the Alpharius band.
+    hue_center: f64,
+    /// Hue oscillation phase.
+    hue_phase: f64,
 }
 
 impl Default for FractalWidget {
     fn default() -> Self {
         Self {
-            // Start zoomed into the Seahorse Valley — organic tendrils,
-            // not the iconic beetle silhouette
-            center: (-0.745, 0.186),
-            zoom: 40.0,
-            max_iter: 100,
-            palette: Palette::Ocean,
-            julia_c: None,
+            mode: AgentMode::Idle,
             time: 0.0,
+            hue_center: 190.0,
+            hue_phase: 0.0,
         }
     }
 }
 
 impl FractalWidget {
-    /// Update from harness telemetry. Call once per tick.
+    /// Update from harness telemetry. Call once per frame (~60fps).
     pub fn update_from_status(
         &mut self,
-        context_pct: f32,
-        thinking_level: &str,
+        _context_pct: f32,
+        _thinking_level: &str,
         is_agent_active: bool,
-        persona_id: Option<&str>,
+        _persona_id: Option<&str>,
         is_cleave_active: bool,
         dt: f64,
     ) {
-        // Zoom tracks context utilization — deeper into the edge as context fills
-        self.zoom = 40.0 + (context_pct as f64 / 100.0) * 200.0;
-
-        // Iteration depth tracks thinking level
-        self.max_iter = match thinking_level {
-            "off" | "Off" => 50,
-            "low" | "Low" | "minimal" | "Minimal" => 100,
-            "medium" | "Medium" => 200,
-            "high" | "High" => 500,
-            _ => 100,
-        };
-
-        // Palette tracks cognitive mode
-        self.palette = if is_cleave_active {
-            Palette::Split
-        } else if is_agent_active {
-            Palette::Amber
-        } else {
-            Palette::Ocean
-        };
-
-        // Persona → Julia set with unique c parameter
-        self.julia_c = persona_id.map(|id| {
-            let hash = simple_hash(id);
-            let real = (hash & 0xFFFF) as f64 / 65536.0 * 1.2 - 0.6;
-            let imag = ((hash >> 16) & 0xFFFF) as f64 / 65536.0 * 1.2 - 0.6;
-            (real, imag)
-        });
-
-        // Drift around the Seahorse Valley edge — visible but not frantic
-        let speed = if is_agent_active { 0.15 } else { 0.03 };
         self.time += dt;
-        let drift_radius = 0.003 / (self.zoom / 40.0); // tighter orbit at higher zoom
-        self.center.0 = -0.745 + (self.time * speed).sin() * drift_radius;
-        self.center.1 = 0.186 + (self.time * speed * 0.7).cos() * drift_radius * 1.3;
+
+        // Determine mode
+        self.mode = if is_cleave_active {
+            AgentMode::Cleave
+        } else if is_agent_active {
+            AgentMode::Working
+        } else {
+            AgentMode::Idle
+        };
+
+        // Hue target and oscillation range per mode
+        let (target_hue, hue_range, hue_speed) = match self.mode {
+            AgentMode::Idle =>     (190.0, 10.0, 0.15),  // 180-200° slow
+            AgentMode::Thinking => (207.0, 13.0, 0.25),  // 194-220° medium
+            AgentMode::Working =>  (170.0, 15.0, 0.30),  // 155-185° faster
+            AgentMode::Cleave =>   (180.0, 25.0, 0.40),  // 155-205° widest, fastest
+        };
+
+        // Smooth hue center toward target
+        self.hue_center += (target_hue - self.hue_center) * dt * 2.0;
+        self.hue_phase += dt * hue_speed;
+
+        // Oscillating hue
+        let _ = hue_range; // used in current_hue()
     }
 
-    /// Render the fractal using half-block characters (▀).
-    /// Each cell = 2 vertical pixels (fg = top, bg = bottom).
-    /// Fills the entire area — no mask, no overlay.
+    /// Current hue in degrees, oscillating within the mode's band.
+    fn current_hue(&self) -> f64 {
+        let (_, hue_range, _) = match self.mode {
+            AgentMode::Idle =>     (190.0, 10.0, 0.15),
+            AgentMode::Thinking => (207.0, 13.0, 0.25),
+            AgentMode::Working =>  (170.0, 15.0, 0.30),
+            AgentMode::Cleave =>   (180.0, 25.0, 0.40),
+        };
+        self.hue_center + hue_range * self.hue_phase.sin()
+    }
+
+    /// Convert intensity (0-1) to an RGB color at the current hue.
+    fn hue_color(&self, intensity: f64) -> Color {
+        if intensity < 0.005 {
+            return Color::Rgb(6, 10, 18); // surface_bg
+        }
+        let hue = self.current_hue();
+        let saturation = 0.82;
+        let value = intensity.sqrt().clamp(0.0, 1.0) * 0.32; // max brightness ~80/255
+        hsv_to_rgb(hue, saturation, value)
+    }
+
+    /// Render into a ratatui Buffer area using half-block characters.
     pub fn render(&self, area: Rect, buf: &mut Buffer) {
         if area.width < 4 || area.height < 2 {
             return;
         }
+        match self.mode {
+            AgentMode::Idle => self.render_perlin(area, buf),
+            AgentMode::Thinking => self.render_plasma(area, buf),
+            AgentMode::Working => self.render_lissajous(area, buf, false),
+            AgentMode::Cleave => self.render_lissajous(area, buf, true),
+        }
+    }
 
-        let px_w = area.width as usize;
-        let px_h = area.height as usize * 2;
+    // ── Perlin flow (idle) ──────────────────────────────────────────────
 
-        let aspect = px_w as f64 / px_h as f64;
-        let view_h = 2.5 / self.zoom;
-        let view_w = view_h * aspect;
+    fn render_perlin(&self, area: Rect, buf: &mut Buffer) {
+        let w = area.width as usize;
+        let h = area.height as usize * 2;
+        let scale = 18.0;
+        let speed = 1.8;
 
-        for cy in (0..px_h).step_by(2) {
-            let row = cy / 2;
+        for py in (0..h).step_by(2) {
+            let row = py / 2;
             if row >= area.height as usize { break; }
+            for px in 0..w {
+                if px >= area.width as usize { break; }
+                let top = noise_octaves(px as f64 / scale, py as f64 / scale, self.time * speed, 2, 2.3);
+                let bot = noise_octaves(px as f64 / scale, (py + 1) as f64 / scale, self.time * speed, 2, 2.3);
+                let tc = self.hue_color((top * 0.5 + 0.5).clamp(0.0, 1.0) * 0.5);
+                let bc = self.hue_color((bot * 0.5 + 0.5).clamp(0.0, 1.0) * 0.5);
+                set_halfblock(buf, area, px, row, tc, bc);
+            }
+        }
+    }
 
-            for cx in 0..px_w {
-                if cx >= area.width as usize { break; }
+    // ── Plasma sine (thinking) ──────────────────────────────────────────
 
-                let top_color = self.iter_to_color(
-                    self.compute_pixel(cx, cy, px_w, px_h, view_w, view_h)
-                );
-                let bot_color = self.iter_to_color(
-                    self.compute_pixel(cx, cy + 1, px_w, px_h, view_w, view_h)
-                );
+    fn render_plasma(&self, area: Rect, buf: &mut Buffer) {
+        let w = area.width as usize;
+        let h = area.height as usize * 2;
+        let complexity = 1.65;
+        let speed = 1.46;
+        let distortion = 0.8;
 
-                if let Some(cell) = buf.cell_mut(Position::new(
-                    area.x + cx as u16,
-                    area.y + row as u16,
-                )) {
-                    cell.set_char('▀');
-                    cell.set_fg(top_color);
-                    cell.set_bg(bot_color);
+        for py in (0..h).step_by(2) {
+            let row = py / 2;
+            if row >= area.height as usize { break; }
+            for px in 0..w {
+                if px >= area.width as usize { break; }
+                let top = plasma_sample(px as f64, py as f64, self.time, complexity, speed, distortion);
+                let bot = plasma_sample(px as f64, (py + 1) as f64, self.time, complexity, speed, distortion);
+                let tc = self.hue_color((top * 0.5 + 0.5).clamp(0.0, 1.0) * 0.88);
+                let bc = self.hue_color((bot * 0.5 + 0.5).clamp(0.0, 1.0) * 0.88);
+                set_halfblock(buf, area, px, row, tc, bc);
+            }
+        }
+    }
+
+    // ── Lissajous curves (working / cleave) ─────────────────────────────
+
+    fn render_lissajous(&self, area: Rect, buf: &mut Buffer, intense: bool) {
+        let w = area.width as usize;
+        let h = area.height as usize * 2;
+        let mut grid = vec![0u32; w * h];
+
+        let num_curves = if intense { 12 } else { 8 };
+        let speed = if intense { 0.85 } else { 0.68 };
+        let points = 5375usize;
+        let freq_base = 1.9;
+        let freq_spread = 1.86;
+        let amplitude = 0.50;
+
+        for curve in 0..num_curves {
+            let fx = freq_base + curve as f64 * freq_spread / num_curves as f64;
+            let fy = freq_base + 1.0 + curve as f64 * (freq_spread * 0.8) / num_curves as f64;
+            let phase = self.time * (speed + curve as f64 * 0.03);
+            for i in 0..points {
+                let t = i as f64 / points as f64 * std::f64::consts::TAU;
+                let x = (fx * t + phase).sin();
+                let y = (fy * t + phase * 0.3).cos();
+                let gx = ((x * amplitude + 0.5) * w as f64) as usize;
+                let gy = ((y * amplitude + 0.5) * h as f64) as usize;
+                if gx < w && gy < h {
+                    grid[gy * w + gx] += 1;
                 }
             }
         }
-    }
 
-    /// Compute iteration count for a single pixel.
-    fn compute_pixel(&self, px: usize, py: usize, w: usize, h: usize, vw: f64, vh: f64) -> u32 {
-        let re = self.center.0 + (px as f64 / w as f64 - 0.5) * vw;
-        let im = self.center.1 + (py as f64 / h as f64 - 0.5) * vh;
-
-        match self.julia_c {
-            None => mandelbrot(re, im, self.max_iter),
-            Some((cr, ci)) => julia(re, im, cr, ci, self.max_iter),
-        }
-    }
-
-    /// Map iteration count to a color using the active palette.
-    ///
-    /// All palettes are subdued — the fractal is ambient, not a spotlight.
-    /// Peak brightness ~60-80 so it glows against the dark Alpharius bg
-    /// without competing with the text content below.
-    fn iter_to_color(&self, iter: u32) -> Color {
-        if iter >= self.max_iter {
-            // Inside the set = surface bg (blends with dashboard)
-            return Color::Rgb(6, 10, 18);
-        }
-
-        // Smooth coloring using log2 for gradual gradients instead of banding
-        let t = (iter as f64 / self.max_iter as f64).sqrt(); // sqrt for gentler ramp
-
-        match self.palette {
-            Palette::Ocean => {
-                // Deep teal → dark cyan. Alpharius ocean tones.
-                let r = (t * 12.0) as u8;
-                let g = (t * 36.0 + t * t * 20.0) as u8;
-                let b = (t * 50.0 + t * t * 30.0) as u8;
-                Color::Rgb(r, g, b)
-            }
-            Palette::Amber => {
-                // Warm ember glow — working, thinking
-                let r = (t * 65.0 + t * t * 20.0) as u8;
-                let g = (t * 30.0 + t * t * 10.0) as u8;
-                let b = (t * 8.0) as u8;
-                Color::Rgb(r, g, b)
-            }
-            Palette::Violet => {
-                // Cool violet — design mode
-                let r = (t * 35.0 + t * t * 15.0) as u8;
-                let g = (t * 12.0) as u8;
-                let b = (t * 55.0 + t * t * 25.0) as u8;
-                Color::Rgb(r, g, b)
-            }
-            Palette::Split => {
-                // Alternating warm/cool bands — cleave parallel work
-                if iter % 2 == 0 {
-                    let r = (t * 50.0) as u8;
-                    let g = (t * 25.0) as u8;
-                    let b = (t * 8.0) as u8;
-                    Color::Rgb(r, g, b)
-                } else {
-                    let r = (t * 8.0) as u8;
-                    let g = (t * 30.0) as u8;
-                    let b = (t * 50.0) as u8;
-                    Color::Rgb(r, g, b)
-                }
-            }
-            Palette::Muted => {
-                // Near-monochrome — error/degraded state
-                let v = (t * 30.0) as u8;
-                Color::Rgb(v, v, v.saturating_add(5))
+        let max_hits = (*grid.iter().max().unwrap_or(&1)).max(1) as f64;
+        for py in (0..h).step_by(2) {
+            let row = py / 2;
+            if row >= area.height as usize { break; }
+            for px in 0..w {
+                if px >= area.width as usize { break; }
+                let top_v = (grid[py * w + px] as f64 / max_hits).min(1.0);
+                let bot_v = if py + 1 < h { (grid[(py + 1) * w + px] as f64 / max_hits).min(1.0) } else { 0.0 };
+                let tc = self.hue_color(top_v);
+                let bc = self.hue_color(bot_v);
+                set_halfblock(buf, area, px, row, tc, bc);
             }
         }
     }
 }
 
-/// Mandelbrot iteration: z = z² + c, where c = (re, im).
-fn mandelbrot(cr: f64, ci: f64, max_iter: u32) -> u32 {
-    let mut zr = 0.0_f64;
-    let mut zi = 0.0_f64;
-    for i in 0..max_iter {
-        let zr2 = zr * zr;
-        let zi2 = zi * zi;
-        if zr2 + zi2 > 4.0 {
-            return i;
-        }
-        zi = 2.0 * zr * zi + ci;
-        zr = zr2 - zi2 + cr;
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn set_halfblock(buf: &mut Buffer, area: Rect, px: usize, row: usize, top: Color, bot: Color) {
+    if let Some(cell) = buf.cell_mut(Position::new(area.x + px as u16, area.y + row as u16)) {
+        cell.set_char('▀');
+        cell.set_fg(top);
+        cell.set_bg(bot);
     }
-    max_iter
 }
 
-/// Julia set iteration: z = z² + c, where c is fixed and z₀ = (re, im).
-fn julia(zr0: f64, zi0: f64, cr: f64, ci: f64, max_iter: u32) -> u32 {
-    let mut zr = zr0;
-    let mut zi = zi0;
-    for i in 0..max_iter {
-        let zr2 = zr * zr;
-        let zi2 = zi * zi;
-        if zr2 + zi2 > 4.0 {
-            return i;
-        }
-        zi = 2.0 * zr * zi + ci;
-        zr = zr2 - zi2 + cr;
-    }
-    max_iter
+/// HSV to RGB conversion. Hue in degrees (0-360), S and V in 0-1.
+fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Color {
+    let h = ((h % 360.0) + 360.0) % 360.0;
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = v - c;
+    let (r1, g1, b1) = match h as u32 {
+        0..=59 => (c, x, 0.0),
+        60..=119 => (x, c, 0.0),
+        120..=179 => (0.0, c, x),
+        180..=239 => (0.0, x, c),
+        240..=299 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    Color::Rgb(
+        ((r1 + m) * 255.0) as u8,
+        ((g1 + m) * 255.0) as u8,
+        ((b1 + m) * 255.0) as u8,
+    )
 }
 
-/// Simple hash for persona ID → Julia c parameter.
-fn simple_hash(s: &str) -> u64 {
-    let mut h: u64 = 5381;
-    for b in s.bytes() {
-        h = h.wrapping_mul(33).wrapping_add(b as u64);
+/// Layered noise with octaves.
+fn noise_octaves(x: f64, y: f64, z: f64, octaves: usize, lacunarity: f64) -> f64 {
+    let mut val = 0.0;
+    let mut amp = 1.0;
+    let mut freq = 1.0;
+    let mut total_amp = 0.0;
+    for _ in 0..octaves.max(1) {
+        val += noise_sample(x * freq, y * freq, z) * amp;
+        total_amp += amp;
+        amp *= 0.5;
+        freq *= lacunarity;
     }
-    h
+    val / total_amp
+}
+
+/// Fast smooth noise (sine interference).
+fn noise_sample(x: f64, y: f64, z: f64) -> f64 {
+    let v1 = (x * 1.3 + z).sin() * (y * 0.7 + z * 0.5).cos();
+    let v2 = ((x + y) * 0.8 - z * 0.3).sin();
+    let v3 = (x * 2.1 - z * 0.7).cos() * (y * 1.5 + z * 0.4).sin();
+    (v1 + v2 + v3) / 3.0
+}
+
+/// Plasma sine interference sample.
+fn plasma_sample(x: f64, y: f64, t: f64, complexity: f64, speed: f64, distortion: f64) -> f64 {
+    let c = complexity;
+    let s = t * speed;
+    let v1 = (x / (6.0 / c) + s).sin();
+    let v2 = ((y / (4.0 / c) + s * 0.7).sin() + (x / (8.0 / c)).cos()).sin();
+    let v3 = ((x * x + y * y).sqrt() * distortion / (6.0 / c) - s * 1.3).sin();
+    let v4 = (x / (3.0 / c) - s * 0.5).cos() * (y / (5.0 / c) + s * 0.9).sin();
+    (v1 + v2 + v3 + v4) / 4.0
 }
 
 #[cfg(test)]
@@ -267,49 +284,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mandelbrot_origin_is_inside() {
-        assert_eq!(mandelbrot(0.0, 0.0, 100), 100);
-    }
-
-    #[test]
-    fn mandelbrot_outside_escapes() {
-        assert!(mandelbrot(2.0, 2.0, 100) < 10);
-    }
-
-    #[test]
-    fn julia_basic() {
-        // Julia set for c = -0.7 + 0.27i — known to produce a connected set
-        assert!(julia(0.0, 0.0, -0.7, 0.27, 100) > 50);
-    }
-
-    #[test]
-    fn simple_hash_deterministic() {
-        let h1 = simple_hash("systems-engineer");
-        let h2 = simple_hash("systems-engineer");
-        assert_eq!(h1, h2);
-        assert_ne!(simple_hash("tutor"), simple_hash("systems-engineer"));
-    }
-
-    #[test]
-    fn palette_colors_in_range() {
-        let widget = FractalWidget::default();
-        for i in 0..100 {
-            let color = widget.iter_to_color(i);
-            if let Color::Rgb(r, g, b) = color {
-                // Just verify no panic — RGB values are always valid u8
-                let _ = (r, g, b);
-            }
-        }
-    }
-
-    #[test]
     fn render_to_buffer() {
         let widget = FractalWidget::default();
-        let area = Rect::new(0, 0, 20, 8);
+        let area = Rect::new(0, 0, 36, 8);
         let mut buf = Buffer::empty(area);
         widget.render(area, &mut buf);
 
-        // Verify cells were written (not all spaces)
         let mut non_space = 0;
         for y in 0..area.height {
             for x in 0..area.width {
@@ -326,23 +306,52 @@ mod tests {
         let widget = FractalWidget::default();
         let area = Rect::new(0, 0, 2, 1);
         let mut buf = Buffer::empty(area);
-        widget.render(area, &mut buf); // should not panic even if too small
+        widget.render(area, &mut buf);
     }
 
     #[test]
-    fn update_from_status_changes_state() {
-        let mut widget = FractalWidget::default();
-        widget.update_from_status(50.0, "high", true, Some("test-persona"), false, 0.016);
-        assert!(widget.zoom > 1.0, "zoom should increase with context usage");
-        assert_eq!(widget.max_iter, 500, "high thinking = 500 iterations");
-        assert!(matches!(widget.palette, Palette::Amber), "active agent = amber");
-        assert!(widget.julia_c.is_some(), "persona should enable Julia set");
+    fn hsv_conversion_basic() {
+        // Red
+        assert!(matches!(hsv_to_rgb(0.0, 1.0, 1.0), Color::Rgb(255, 0, 0)));
+        // Green
+        assert!(matches!(hsv_to_rgb(120.0, 1.0, 1.0), Color::Rgb(0, 255, 0)));
+        // Blue
+        assert!(matches!(hsv_to_rgb(240.0, 1.0, 1.0), Color::Rgb(0, 0, 255)));
+        // Black
+        assert!(matches!(hsv_to_rgb(0.0, 0.0, 0.0), Color::Rgb(0, 0, 0)));
     }
 
     #[test]
-    fn update_cleave_activates_split_palette() {
-        let mut widget = FractalWidget::default();
-        widget.update_from_status(30.0, "medium", true, None, true, 0.016);
-        assert!(matches!(widget.palette, Palette::Split));
+    fn hue_color_below_threshold_returns_bg() {
+        let w = FractalWidget::default();
+        assert!(matches!(w.hue_color(0.0), Color::Rgb(6, 10, 18)));
+        assert!(matches!(w.hue_color(0.004), Color::Rgb(6, 10, 18)));
+    }
+
+    #[test]
+    fn mode_transitions() {
+        let mut w = FractalWidget::default();
+        assert_eq!(w.mode, AgentMode::Idle);
+
+        w.update_from_status(0.0, "medium", true, None, false, 0.016);
+        assert_eq!(w.mode, AgentMode::Working);
+
+        w.update_from_status(0.0, "medium", true, None, true, 0.016);
+        assert_eq!(w.mode, AgentMode::Cleave);
+
+        w.update_from_status(0.0, "medium", false, None, false, 0.016);
+        assert_eq!(w.mode, AgentMode::Idle);
+    }
+
+    #[test]
+    fn all_modes_render_without_panic() {
+        let area = Rect::new(0, 0, 36, 8);
+        for mode in [AgentMode::Idle, AgentMode::Thinking, AgentMode::Working, AgentMode::Cleave] {
+            let mut w = FractalWidget::default();
+            w.mode = mode;
+            w.time = 5.0;
+            let mut buf = Buffer::empty(area);
+            w.render(area, &mut buf);
+        }
     }
 }
