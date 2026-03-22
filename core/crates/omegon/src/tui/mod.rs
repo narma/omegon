@@ -567,6 +567,22 @@ impl App {
             self.dashboard.render_themed(dash_area, frame, t.as_ref());
         }
 
+        // ── Sync footer data from settings (every frame) ────
+        {
+            let s = self.settings();
+            self.footer_data.model_id = s.model.clone();
+            self.footer_data.model_provider = s.provider().to_string();
+            self.footer_data.context_class = s.context_class;
+            self.footer_data.context_mode = s.context_mode;
+            self.footer_data.thinking_level = s.thinking.as_str().to_string();
+        }
+        {
+            self.footer_data.model_tier = self.footer_data.harness.capability_tier.clone();
+        }
+        self.footer_data.turn = self.turn;
+        self.footer_data.tool_calls = self.tool_calls;
+        self.footer_data.compactions = self.dashboard.compactions;
+
         // ── CIC Instrument Panel telemetry update ────
         {
             let thinking = match self.settings().thinking {

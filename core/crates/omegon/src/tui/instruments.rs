@@ -80,12 +80,15 @@ impl InstrumentPanel {
         // Context: cap at 70% (auto-compaction threshold)
         self.context_intensity = (context_pct as f64 / 70.0).min(1.0);
 
-        // Tools: spike on NEW calls, decay when idle
+        // Tools: spike on NEW calls, sustain during active agent, slow decay when idle
         if tool_call_delta > 0 {
-            // Each call adds intensity, capped at 1.0
-            self.tool_intensity = (self.tool_intensity + tool_call_delta as f64 * 0.3).min(1.0);
+            self.tool_intensity = (self.tool_intensity + tool_call_delta as f64 * 0.35).min(1.0);
+        } else if agent_active {
+            // Agent is working — very slow decay so tools sustain between calls
+            self.tool_intensity = (self.tool_intensity - dt * 0.08).max(0.0);
         } else {
-            self.tool_intensity = (self.tool_intensity - dt * 0.6).max(0.0);
+            // Agent idle — moderate decay back to zero
+            self.tool_intensity = (self.tool_intensity - dt * 0.25).max(0.0);
         }
 
         // Tool error: set externally via set_tool_error(), decays here
@@ -112,19 +115,17 @@ impl InstrumentPanel {
         }
 
         // Tick waterfalls — per-mind with state-driven CA rules
-        let active_count = self.minds_active.iter().filter(|&&a| a).count().max(1);
-        let col_w = (22 / active_count).max(2);
+        // Width is determined at render time; tick uses current grid size
         for i in 0..4 {
             if !self.minds_active[i] { continue; }
+            if self.waterfalls[i].width == 0 { continue; } // not yet rendered
             let density = 0.008 + self.memory_intensity * 0.25;
             let scroll = 6.0 * (0.5 + self.memory_intensity * 1.5);
-            // Rule selection: idle=204 (identity), active=chaotic rules per mind
             let rule = if self.memory_intensity > 0.1 {
-                [30u8, 110, 90, 150][i] // project=30, working=110, episodes=90, archive=150
+                [30u8, 110, 90, 150][i]
             } else {
-                204 // identity — stationary bars at idle
+                204
             };
-            self.waterfalls[i].ensure_size(col_w, 5);
             self.waterfalls[i].tick(dt, scroll, density, rule, 0.85);
         }
     }
@@ -183,7 +184,7 @@ impl InstrumentPanel {
                 },
                 2 => render_plasma(self.time, *intensity, inner, frame.buffer_mut()),
                 3 => render_waterfall_multi(*intensity, inner, frame.buffer_mut(),
-                        &self.waterfalls, &self.minds_active),
+                        &mut self.waterfalls, &self.minds_active),
                 _ => {}
             }
         }
@@ -422,7 +423,7 @@ impl WaterfallState {
 
 fn render_waterfall_multi(
     intensity: f64, area: Rect, buf: &mut Buffer,
-    waterfalls: &[WaterfallState; 4], minds_active: &[bool; 4],
+    waterfalls: &mut [WaterfallState; 4], minds_active: &[bool; 4],
 ) {
     let active_indices: Vec<usize> = minds_active.iter().enumerate()
         .filter(|(_, a)| **a).map(|(i, _)| i).collect();
@@ -436,12 +437,15 @@ fn render_waterfall_multi(
 
     for (seg_idx, &mind_idx) in active_indices.iter().enumerate() {
         let x_offset = seg_idx * (col_w + gap);
+        let seg_w = col_w.min(total_w.saturating_sub(x_offset));
         let seg_area = Rect {
             x: area.x + x_offset as u16,
             y: area.y,
-            width: (col_w as u16).min(area.width.saturating_sub(x_offset as u16)),
+            width: seg_w as u16,
             height: area.height,
         };
+        // Resize waterfall to match actual render area
+        waterfalls[mind_idx].ensure_size(seg_w, area.height as usize);
         render_waterfall(intensity, seg_area, buf, &waterfalls[mind_idx]);
 
         if seg_idx < n - 1 && gap > 0 {

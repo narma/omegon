@@ -38,6 +38,10 @@ pub struct FooterData {
     /// Compaction flash counter — set to 3 when compaction occurs, decrements each frame.
     /// When > 0, system card renders with accent border.
     pub compaction_flash_ticks: u8,
+    /// Current thinking level name (for engine panel display).
+    pub thinking_level: String,
+    /// Current model tier name (for engine panel display).
+    pub model_tier: String,
 }
 
 impl FooterData {
@@ -187,23 +191,38 @@ impl FooterData {
         }
         lines.push(Line::from(bar_spans));
 
-        // Line 5: thinking + context mode + turn
-        let _thinking = &self.harness;
-        let mut status_parts: Vec<Span<'static>> = vec![
+        // Line 5: tier + thinking level
+        let tier_color = match self.model_tier.as_str() {
+            "gloriana" => t.accent(),
+            "victory" => t.fg(),
+            "retribution" => t.dim(),
+            _ => t.muted(),
+        };
+        let think_color = match self.thinking_level.as_str() {
+            "high" => t.accent(),
+            "medium" => t.accent_muted(),
+            "low" => t.muted(),
+            _ => t.dim(),
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {}", self.model_tier), Style::default().fg(tier_color)),
+            Span::styled(" · ", Style::default().fg(t.border_dim())),
+            Span::styled(format!("◎ {}", self.thinking_level), Style::default().fg(think_color)),
+            Span::styled(" · ", Style::default().fg(t.border_dim())),
             Span::styled(
-                format!(" {} {}", self.context_mode.icon(), self.context_mode.as_str()),
+                format!("{} {}", self.context_mode.icon(), self.context_mode.as_str()),
                 Style::default().fg(t.dim()),
             ),
-        ];
-        if self.turn > 0 {
-            status_parts.push(Span::styled(" · ", Style::default().fg(t.border_dim())));
-            status_parts.push(Span::styled(format!("T·{}", self.turn), Style::default().fg(t.muted())));
-        }
-        if self.tool_calls > 0 {
-            status_parts.push(Span::styled(" · ", Style::default().fg(t.border_dim())));
-            status_parts.push(Span::styled(format!("⚙ {}", self.tool_calls), Style::default().fg(t.muted())));
-        }
-        lines.push(Line::from(status_parts));
+        ]));
+
+        // Line 6: session counters (always visible, even at 0)
+        lines.push(Line::from(vec![
+            Span::styled(format!(" T·{}", self.turn), Style::default().fg(t.muted())),
+            Span::styled(" · ", Style::default().fg(t.border_dim())),
+            Span::styled(format!("⚙ {}", self.tool_calls), Style::default().fg(t.muted())),
+            Span::styled(" · ", Style::default().fg(t.border_dim())),
+            Span::styled(format!("↻ {}", self.compactions), Style::default().fg(t.dim())),
+        ]));
 
         let widget = Paragraph::new(lines).style(Style::default().bg(bg));
         frame.render_widget(widget, inner);
