@@ -57,6 +57,15 @@ fn main() -> io::Result<()> {
         // Update telemetry simulation
         if !state.paused {
             state.sim.update(dt);
+
+            // Tick waterfall — memory activity drives density and scroll rate
+            let mem_intensity = state.sim.memory_activity;
+            let density = state.ca_density + mem_intensity * 0.15; // more births when active
+            let scroll = state.ca_scroll_rate * (0.5 + mem_intensity * 1.5); // faster scroll when active
+            let rule = state.ca_rule as u8;
+            let fade = state.ca_fade;
+            state.waterfall.ensure_size(22, 10); // match real instrument size
+            state.waterfall.tick(dt, scroll, density, rule, fade);
         }
 
         terminal.draw(|f| {
@@ -101,7 +110,7 @@ fn main() -> io::Result<()> {
                 ("sonar", "context"),
                 ("radar", "tools"),
                 ("thermal", "thinking"),
-                ("signal", "memory"),
+                ("waterfall", "memory"),
             ];
 
             for (idx, (name, telemetry)) in instruments.iter().enumerate() {
@@ -414,7 +423,7 @@ impl TelemetrySim {
                 let level = self.thinking_level;
                 0.2 + level * level * 2.0   // quadratic: slow start, fast finish
             },
-            3 => 0.3 + self.memory_activity * 2.0,
+            3 => 1.0, // waterfall scroll is handled separately
             _ => 1.0,
         }
     }
@@ -589,7 +598,7 @@ fn render_instrument(idx: usize, time: f64, intensity: f64, area: Rect, buf: &mu
         0 => render_perlin(time * speed, intensity, area, buf, s, None),
         1 => render_lissajous(time * speed, intensity, area, buf, s, hue_override),
         2 => render_plasma(time * speed, intensity, area, buf, s, None),
-        3 => render_attractor(time * speed, intensity, area, buf, s, None),
+        3 => render_waterfall(intensity, area, buf, &s.waterfall),
         _ => {}
     }
 }
@@ -711,40 +720,108 @@ fn render_lissajous(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, s: 
     }
 }
 
-// ─── Clifford attractor (signal — memory activity) ──────────────────────
+// ─── CA waterfall (signal — memory activity) ────────────────────────────
+//
+// A 1D cellular automaton runs across the width. Each tick, rows scroll
+// up and a new row is computed from the bottom row using a Wolfram-style
+// rule. The rule number and birth density are driven by memory telemetry.
+//
+// Idle:   sparse random births, simple rule → dim scattered dots
+// Active: dense births, complex rule → structured patterns flowing upward
+// The waterfall has HISTORY — you see recent activity trailing up.
 
-fn render_attractor(time: f64, intensity: f64, area: Rect, buf: &mut Buffer, s: &DemoState, _hue_override: Option<[u8; 3]>) {
-    let w = area.width as usize;
-    let h = area.height as usize * 2;
-    let mut grid = vec![0u32; w * h];
+/// Persistent waterfall state — lives across frames.
+struct WaterfallState {
+    /// 2D grid of cell values (0.0 = dead, 1.0 = alive, with fade)
+    grid: Vec<f64>,
+    width: usize,
+    height: usize, // in half-block pixels
+    /// Accumulator for scroll timing
+    scroll_accum: f64,
+    /// Simple RNG state
+    rng: u64,
+}
 
-    let phase = (time * s.attr_evolve_speed).sin() * 0.5 + 0.5;
-    let a = s.attr_a + phase * 0.2;
-    let b = s.attr_b + (1.0 - phase) * 0.15;
-    let c = 1.0 + phase * 0.3;
-    let d = 0.7 + (1.0 - phase) * 0.2;
-
-    let iters = s.attr_iterations as usize;
-    let spread = s.attr_spread;
-    let mut x = 0.1_f64;
-    let mut y = 0.1_f64;
-    for _ in 0..iters {
-        let nx = (a * y).sin() + c * (a * x).cos();
-        let ny = (b * x).sin() + d * (b * y).cos();
-        x = nx; y = ny;
-        let gx = ((x + spread / 2.0) / spread * w as f64) as usize;
-        let gy = ((y + spread / 2.0) / spread * h as f64) as usize;
-        if gx < w && gy < h { grid[gy * w + gx] += 1; }
+impl WaterfallState {
+    fn new(w: usize, h: usize) -> Self {
+        Self {
+            grid: vec![0.0; w * h],
+            width: w,
+            height: h,
+            scroll_accum: 0.0,
+            rng: 0xdeadbeef_u64,
+        }
     }
 
-    let max_hits = (*grid.iter().max().unwrap_or(&1)).max(1) as f64;
+    fn next_rand(&mut self) -> u64 {
+        // xorshift64
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        self.rng
+    }
+
+    /// Advance the waterfall: scroll up, compute new bottom row.
+    /// `scroll_rate`: rows per second. `density`: 0-1 birth probability.
+    /// `rule`: Wolfram rule number (0-255). `fade`: per-scroll decay.
+    fn tick(&mut self, dt: f64, scroll_rate: f64, density: f64, rule: u8, fade: f64) {
+        self.scroll_accum += dt * scroll_rate;
+
+        while self.scroll_accum >= 1.0 {
+            self.scroll_accum -= 1.0;
+            let w = self.width;
+            let h = self.height;
+
+            // Scroll up: shift all rows up by one
+            for y in 0..(h - 1) {
+                for x in 0..w {
+                    self.grid[y * w + x] = self.grid[(y + 1) * w + x] * fade;
+                }
+            }
+
+            // Compute new bottom row from CA rule applied to previous bottom
+            let prev_row = h - 2;
+            let new_row = h - 1;
+            for x in 0..w {
+                let left = if x > 0 { (self.grid[prev_row * w + x - 1] > 0.3) as u8 } else { 0 };
+                let center = (self.grid[prev_row * w + x] > 0.3) as u8;
+                let right = if x + 1 < w { (self.grid[prev_row * w + x + 1] > 0.3) as u8 } else { 0 };
+                let neighborhood = (left << 2) | (center << 1) | right;
+                let alive = (rule >> neighborhood) & 1 == 1;
+
+                // Random births based on density
+                let random_birth = (self.next_rand() % 1000) < (density * 1000.0) as u64;
+
+                self.grid[new_row * w + x] = if alive || random_birth { 1.0 } else { 0.0 };
+            }
+        }
+    }
+
+    /// Resize if needed (when the instrument area changes).
+    fn ensure_size(&mut self, w: usize, h: usize) {
+        if self.width != w || self.height != h {
+            self.grid = vec![0.0; w * h];
+            self.width = w;
+            self.height = h;
+        }
+    }
+}
+
+fn render_waterfall(intensity: f64, area: Rect, buf: &mut Buffer, wf: &WaterfallState) {
+    let w = area.width as usize;
+    let h = area.height as usize * 2;
+
     for py in (0..h).step_by(2) {
         let row = py / 2;
         if row >= area.height as usize { break; }
         for px in 0..w {
             if px >= area.width as usize { break; }
-            let top_v = (grid[py * w + px] as f64 / max_hits).powf(s.attr_gamma);
-            let bot_v = if py+1 < h { (grid[(py+1) * w + px] as f64 / max_hits).powf(s.attr_gamma) } else { 0.0 };
+            let top_v = if py < wf.height && px < wf.width {
+                wf.grid[py * wf.width + px]
+            } else { 0.0 };
+            let bot_v = if py + 1 < wf.height && px < wf.width {
+                wf.grid[(py + 1) * wf.width + px]
+            } else { 0.0 };
             let tc = pixel_color_floor(top_v, intensity, 0.2);
             let bc = pixel_color_floor(bot_v, intensity, 0.2);
             set_halfblock(buf, area, px, row, tc, bc);
@@ -774,13 +851,12 @@ struct DemoState {
     liss_freq_spread: f64,
     liss_amplitude: f64,
     liss_points: f64,
-    // Clifford (signal)
-    attr_iterations: f64,
-    attr_evolve_speed: f64,
-    attr_a: f64,
-    attr_b: f64,
-    attr_spread: f64,
-    attr_gamma: f64,
+    // CA Waterfall (signal)
+    waterfall: WaterfallState,
+    ca_scroll_rate: f64,  // rows per second
+    ca_density: f64,      // birth probability 0-1
+    ca_rule: f64,         // Wolfram rule number (cast to u8)
+    ca_fade: f64,         // per-scroll brightness decay
 }
 
 impl Default for DemoState {
@@ -796,8 +872,12 @@ impl Default for DemoState {
             // Radar — operator tuned
             liss_num_curves: 3.6, liss_freq_base: 1.9,
             liss_freq_spread: 3.0, liss_amplitude: 0.50, liss_points: 500.0,
-            attr_iterations: 12000.0, attr_evolve_speed: 0.03, attr_a: -1.4,
-            attr_b: 1.6, attr_spread: 5.0, attr_gamma: 0.45,
+            // CA Waterfall — signal/memory
+            waterfall: WaterfallState::new(22, 10),
+            ca_scroll_rate: 8.0,  // rows/sec
+            ca_density: 0.02,     // sparse at idle
+            ca_rule: 30.0,        // Rule 30 — chaotic, interesting patterns
+            ca_fade: 0.85,        // gentle trail fade
         }
     }
 }
@@ -824,12 +904,10 @@ impl DemoState {
                 ("amplitude", self.plasma_amplitude, 0.1, 1.0),
             ],
             3 => vec![
-                ("iterations", self.attr_iterations, 2000.0, 32000.0),
-                ("evolve", self.attr_evolve_speed, 0.005, 0.1),
-                ("a", self.attr_a, -2.0, -0.5),
-                ("b", self.attr_b, 1.0, 2.0),
-                ("spread", self.attr_spread, 3.0, 8.0),
-                ("gamma", self.attr_gamma, 0.2, 1.0),
+                ("scroll_rate", self.ca_scroll_rate, 2.0, 30.0),
+                ("density", self.ca_density, 0.0, 0.3),
+                ("rule", self.ca_rule, 0.0, 255.0),
+                ("fade", self.ca_fade, 0.5, 1.0),
             ],
             _ => vec![],
         }
@@ -866,12 +944,10 @@ impl DemoState {
                 _ => {}
             },
             3 => match self.selected_param {
-                0 => self.attr_iterations = new_val,
-                1 => self.attr_evolve_speed = new_val,
-                2 => self.attr_a = new_val,
-                3 => self.attr_b = new_val,
-                4 => self.attr_spread = new_val,
-                5 => self.attr_gamma = new_val,
+                0 => self.ca_scroll_rate = new_val,
+                1 => self.ca_density = new_val,
+                2 => self.ca_rule = new_val,
+                3 => self.ca_fade = new_val,
                 _ => {}
             },
             _ => {}
