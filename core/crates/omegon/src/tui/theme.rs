@@ -186,6 +186,9 @@ impl Theme for JsonTheme {
     fn warning(&self) -> Color { self.get("orange") }
     fn caution(&self) -> Color { self.get("yellow") }
 
+    fn footer_bg(&self) -> Color {
+        self.vars.get("footerBg").copied().unwrap_or(Color::Rgb(1, 3, 6))
+    }
     fn user_msg_bg(&self) -> Color { self.get("userMsgBg") }
     fn tool_success_bg(&self) -> Color {
         self.vars.get("toolSuccessBg").copied().unwrap_or_else(|| self.card_bg())
