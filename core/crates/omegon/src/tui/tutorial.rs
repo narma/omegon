@@ -200,23 +200,41 @@ impl Tutorial {
 
         let step = self.step();
 
-        // Calculate overlay position and size
-        let overlay = match step.anchor {
-            Anchor::Center => centered_rect(area),
-            Anchor::Upper => upper_rect(area, footer_height),
+        // Smart positioning: avoid covering highlighted areas
+        let overlay = match (&step.anchor, &step.highlight) {
+            // Steps highlighting footer elements → position in upper area
+            (_, Some(Highlight::EnginePanel | Highlight::InstrumentPanel)) => {
+                upper_rect(area, footer_height)
+            }
+            // Steps highlighting input → position in center-upper (above input bar)
+            (_, Some(Highlight::InputBar)) => {
+                upper_rect(area, footer_height + 3) // extra 3 for input bar
+            }
+            // Center for steps with no highlight or Center anchor
+            (Anchor::Center, _) => centered_rect(area),
+            (Anchor::Upper, _) => upper_rect(area, footer_height),
         };
 
         // Clear the area behind the overlay
         Clear.render(overlay, buf);
 
-        // Build the content
-        let progress = format!(" {}/{} ", self.current + 1, STEPS.len());
-        let trigger_hint = match &step.trigger {
-            Trigger::Enter => "\u{25b6} Enter".to_string(),
-            Trigger::Command(cmd) => format!("\u{25b6} Type /{cmd}"),
-            Trigger::AnyInput => "\u{25b6} Send a message".to_string(),
+        // Build the call-to-action — prominent line inside the content
+        let cta = match &step.trigger {
+            Trigger::Enter => "  \u{25b6} Press Enter to continue",
+            Trigger::Command("focus") => "  \u{25b6} Type /focus in the input bar below",
+            Trigger::Command(cmd) => {
+                // Leak is fine for static step data rendered per-frame
+                return self.render_with_cta(overlay, buf, theme, &format!("  \u{25b6} Type /{cmd} in the input bar below"));
+            }
+            Trigger::AnyInput => "  \u{25b6} Type a message in the input bar below",
         };
 
+        self.render_with_cta(overlay, buf, theme, cta);
+    }
+
+    fn render_with_cta(&self, overlay: Rect, buf: &mut Buffer, theme: &dyn super::theme::Theme, cta: &str) {
+        let step = self.step();
+        let progress = format!(" {}/{} ", self.current + 1, STEPS.len());
         let title_line = format!("\u{1f4d8} {} ", step.title);
 
         let block = Block::default()
@@ -227,8 +245,6 @@ impl Tutorial {
                 Line::from(vec![
                     Span::styled(&progress, Style::default().fg(theme.muted())),
                     Span::raw("  "),
-                    Span::styled(&trigger_hint, Style::default().fg(theme.accent())),
-                    Span::raw("  "),
                     Span::styled("[Esc skip]", Style::default().fg(theme.muted())),
                 ]).right_aligned()
             );
@@ -236,10 +252,25 @@ impl Tutorial {
         let inner = block.inner(overlay);
         block.render(overlay, buf);
 
-        let text = Paragraph::new(step.body)
+        // Body text + call-to-action as last line
+        let body_with_cta = format!("{}\n\n{}", step.body, cta);
+        let text = Paragraph::new(body_with_cta)
             .style(Style::default().fg(theme.fg()))
             .wrap(Wrap { trim: false });
         text.render(inner, buf);
+
+        // Highlight the CTA line by coloring it accent
+        // Find the last non-empty line in the inner area and tint it
+        let cta_y = inner.bottom().saturating_sub(1);
+        if cta_y > inner.y {
+            for x in inner.x..inner.right() {
+                if let Some(cell) = buf.cell_mut(ratatui::prelude::Position::new(x, cta_y)) {
+                    if cell.symbol() != " " {
+                        cell.set_fg(theme.accent_bright());
+                    }
+                }
+            }
+        }
     }
 }
 

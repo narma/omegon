@@ -306,9 +306,9 @@ impl InstrumentPanel {
             return;
         }
 
-        // Context bar: top 2 rows
-        let bar_h = 2u16.min(inner.height);
-        let bar_area = Rect { x: inner.x, y: inner.y, width: inner.width, height: bar_h };
+        // Context bar: single row
+        let bar_h = 1u16;
+        let bar_area = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
         self.render_context_bar(bar_area, buf);
 
         // Tree + memory strings: break through the left border
@@ -326,9 +326,11 @@ impl InstrumentPanel {
 
     fn render_context_bar(&self, area: Rect, buf: &mut Buffer) {
         let w = area.width as usize;
-        let fill_cols = (self.context_fill * w as f64) as usize;
+        // Reserve 5 chars at the end for " XX%" label
+        let bar_w = w.saturating_sub(5);
+        let fill_cols = (self.context_fill * bar_w as f64) as usize;
 
-        for x in 0..w {
+        for x in 0..bar_w {
             let intensity = if x < fill_cols {
                 (x as f64 / fill_cols.max(1) as f64) * self.context_fill
             } else { 0.0 };
@@ -356,14 +358,15 @@ impl InstrumentPanel {
             }
         }
 
-        // Row 2: percentage
-        if area.height > 1 {
-            let pct = (self.context_fill * 70.0) as u32; // show actual %, not normalized
-            let label = format!(" {}%", pct);
+        // Inline percentage at end of bar row
+        {
+            let pct = (self.context_fill * 70.0) as u32;
+            let label = format!("{:>3}%", pct);
             let color = intensity_color(self.context_fill);
             for (i, ch) in label.chars().enumerate() {
-                if i >= w { break; }
-                if let Some(cell) = buf.cell_mut(Position::new(area.x + i as u16, area.y + 1)) {
+                let x = area.x + bar_w as u16 + 1 + i as u16;
+                if x >= area.right() { break; }
+                if let Some(cell) = buf.cell_mut(Position::new(x, area.y)) {
                     cell.set_char(ch);
                     cell.set_fg(color);
                     cell.set_bg(bg_color());
