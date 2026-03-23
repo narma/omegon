@@ -272,11 +272,14 @@ impl InstrumentPanel {
         let bar_area = Rect { x: inner.x, y: inner.y, width: inner.width, height: bar_h };
         self.render_context_bar(bar_area, buf);
 
-        // Tree + memory strings: remaining rows
+        // Tree + memory strings: break through the left border
         if inner.height > bar_h && !active_minds.is_empty() {
+            // Start at the panel's left BORDER (area.x, not inner.x)
+            // so the tree trunk overlays the border character
             let tree_area = Rect {
-                x: inner.x, y: inner.y + bar_h,
-                width: inner.width, height: inner.height - bar_h,
+                x: area.x, y: inner.y + bar_h,
+                width: inner.width + 1, // include border column
+                height: inner.height - bar_h,
             };
             self.render_memory_strings(&active_minds, tree_area, buf);
         }
