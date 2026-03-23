@@ -194,6 +194,7 @@ impl Tutorial {
 
     /// Render the tutorial overlay into the given area.
     /// `footer_height` is the actual footer height so we can position above it.
+    /// Highlighting is handled by the widgets themselves — see tutorial_highlight field on App.
     pub fn render(&self, area: Rect, buf: &mut Buffer, theme: &dyn super::theme::Theme, footer_height: u16) {
         if !self.active { return; }
 
@@ -207,11 +208,6 @@ impl Tutorial {
 
         // Clear the area behind the overlay
         Clear.render(overlay, buf);
-
-        // Highlight border: pulse the relevant region
-        if let Some(highlight) = step.highlight {
-            render_highlight(area, buf, theme, highlight, footer_height);
-        }
 
         // Build the content
         let progress = format!(" {}/{} ", self.current + 1, STEPS.len());
@@ -244,51 +240,6 @@ impl Tutorial {
             .style(Style::default().fg(theme.fg()))
             .wrap(Wrap { trim: false });
         text.render(inner, buf);
-    }
-}
-
-/// Render a highlight border around a UI region.
-fn render_highlight(area: Rect, buf: &mut Buffer, theme: &dyn super::theme::Theme, highlight: Highlight, footer_height: u16) {
-    let highlight_style = Style::default().fg(theme.accent_bright());
-
-    // Approximate regions based on the known layout
-    let footer_top = area.bottom().saturating_sub(footer_height);
-    let region = match highlight {
-        Highlight::EnginePanel => {
-            // Engine panel: left 40% of footer
-            let w = area.width * 40 / 100;
-            Rect::new(area.x, footer_top, w, footer_height)
-        }
-        Highlight::InstrumentPanel => {
-            // Instrument panel: right 60% of footer
-            let engine_w = area.width * 40 / 100;
-            Rect::new(area.x + engine_w, footer_top, area.width - engine_w, footer_height)
-        }
-        Highlight::InputBar => {
-            // Input bar: bottom row of conversation area (above footer)
-            Rect::new(area.x, footer_top.saturating_sub(1), area.width, 1)
-        }
-    };
-
-    // Draw highlight markers on the corners
-    if region.width > 2 && region.height > 0 {
-        let top = region.y;
-        let bot = region.bottom().saturating_sub(1);
-        let left = region.x;
-        let right = region.right().saturating_sub(1);
-
-        // Safety: only write if within buffer bounds
-        let (bw, bh) = (buf.area().width, buf.area().height);
-        for &(x, y, ch) in &[
-            (left, top, '▶'),
-            (right, top, '◀'),
-            (left, bot, '▶'),
-            (right, bot, '◀'),
-        ] {
-            if x < bw && y < bh {
-                buf[(x, y)].set_char(ch).set_style(highlight_style);
-            }
-        }
     }
 }
 

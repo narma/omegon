@@ -95,6 +95,18 @@ impl FooterData {
 
     /// Render the left panel for the split-panel layout (engine + memory).
     /// This replaces the 4-card layout when instruments are visible on the right.
+    /// Render with optional tutorial highlight — pulses the border bright.
+    pub fn render_left_panel_with_highlight(&self, area: Rect, frame: &mut Frame, t: &dyn Theme, highlight: bool) {
+        self.render_left_panel(area, frame, t);
+        if highlight {
+            // Render a bright border over the panel
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(t.accent_bright()));
+            frame.render_widget(block, area);
+        }
+    }
+
     pub fn render_left_panel(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let bg = t.footer_bg();
         let bg_block = Block::default().style(Style::default().bg(bg));

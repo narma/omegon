@@ -144,6 +144,8 @@ pub struct App {
     previous_harness_status: Option<crate::status::HarnessStatus>,
     /// Tutorial overlay — game-style first-play advisor.
     tutorial_overlay: Option<tutorial::Tutorial>,
+    /// Tutorial highlight target — the widget should pulse/flash its border.
+    tutorial_highlight: Option<tutorial::Highlight>,
     /// Legacy tutorial state — lesson-file based (for sandbox projects).
     tutorial: Option<TutorialState>,
 }
@@ -219,6 +221,7 @@ impl App {
             pending_image: None,
             previous_harness_status: None,
             tutorial_overlay: None,
+            tutorial_highlight: None,
             tutorial: None,
         }
     }
@@ -922,6 +925,10 @@ impl App {
             );
         }
 
+        // ── Sync tutorial highlight into widget state ──────────────
+        self.tutorial_highlight = self.tutorial_overlay.as_ref()
+            .and_then(|t| t.current_highlight());
+
         // ── Split-panel footer: text left, instruments right ─────────
         // Store inst_area for cleanup pass to skip
         let inst_area = if !self.focus_mode {
@@ -931,8 +938,13 @@ impl App {
                 Constraint::Percentage(60),
             ]).split(footer_area);
 
-            self.footer_data.render_left_panel(footer_cols[0], frame, t.as_ref());
-            self.instrument_panel.render(footer_cols[1], frame);
+            // Pulse engine panel border when tutorial highlights it
+            let engine_highlight = matches!(self.tutorial_highlight, Some(tutorial::Highlight::EnginePanel));
+            self.footer_data.render_left_panel_with_highlight(footer_cols[0], frame, t.as_ref(), engine_highlight);
+
+            // Pulse instrument panel border when tutorial highlights it
+            let inst_highlight = matches!(self.tutorial_highlight, Some(tutorial::Highlight::InstrumentPanel));
+            self.instrument_panel.render_with_highlight(footer_cols[1], frame, inst_highlight, t.as_ref());
             footer_cols[1]
         } else {
             Rect::ZERO
@@ -966,9 +978,14 @@ impl App {
             (Span::styled(" ▸ ", t.style_accent()), String::new())
         };
 
+        let editor_border_style = if matches!(self.tutorial_highlight, Some(tutorial::Highlight::InputBar)) {
+            Style::default().fg(t.accent_bright()).bg(t.surface_bg())
+        } else {
+            Style::default().fg(t.accent_muted()).bg(t.surface_bg())
+        };
         let editor_block = Block::default()
             .borders(Borders::TOP)
-            .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+            .border_style(editor_border_style)
             .title(editor_title);
 
         if !editor_content.is_empty() {

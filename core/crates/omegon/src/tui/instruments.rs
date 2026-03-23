@@ -242,7 +242,8 @@ impl InstrumentPanel {
 
     pub fn toggle_focus(&mut self) { self.focus_mode = !self.focus_mode; }
 
-    pub fn render(&mut self, area: Rect, frame: &mut Frame) {
+    /// Render the instrument panel, with optional tutorial highlight.
+    pub fn render_with_highlight(&mut self, area: Rect, frame: &mut Frame, highlight: bool, theme: &dyn super::theme::Theme) {
         if area.width < 20 || area.height < 4 { return; }
 
         let panels = Layout::horizontal([
@@ -252,6 +253,13 @@ impl InstrumentPanel {
 
         self.render_inference(panels[0], frame);
         self.render_tools(panels[1], frame);
+
+        if highlight {
+            let block = Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(theme.accent_bright()));
+            frame.render_widget(block, area);
+        }
     }
 
     fn render_inference(&self, area: Rect, frame: &mut Frame) {
@@ -552,7 +560,7 @@ mod tests {
         let area = Rect::new(0, 0, 96, 12);
         let backend = ratatui::backend::TestBackend::new(96, 12);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
-        terminal.draw(|f| panel.render(area, f)).unwrap();
+        terminal.draw(|f| panel.render_with_highlight(area, f, false, &crate::tui::theme::Alpharius)).unwrap();
     }
 
     #[test]
