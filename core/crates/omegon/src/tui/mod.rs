@@ -818,12 +818,13 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
+        let footer_height = if self.focus_mode { 0u16 } else { 12 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(3),     // [0] conversation (all remaining space)
-                Constraint::Length(3),  // [1] editor (input box)
-                Constraint::Length(12), // [2] instrument panel (CIC telemetry)
+                Constraint::Min(3),                    // [0] conversation (all remaining space)
+                Constraint::Length(3),                 // [1] editor (input box)
+                Constraint::Length(footer_height),     // [2] instrument panel (0 in focus mode)
             ])
             .split(main_area);
 
