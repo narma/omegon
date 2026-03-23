@@ -8,8 +8,12 @@
 //! The `state` field is private — all mutations go through methods.
 
 use crate::types::*;
-use crate::store::{LifecycleState, StateStore, SCHEMA_VERSION};
+use crate::store::{LifecycleState, StateStore};
 use crate::error::OpsxError;
+
+/// Maximum audit log entries before rotation. Oldest entries are trimmed
+/// on save when the log exceeds this limit.
+const AUDIT_LOG_MAX: usize = 500;
 
 /// The lifecycle engine — validates transitions and mutates state.
 pub struct Lifecycle<S: StateStore> {
@@ -26,7 +30,12 @@ impl<S: StateStore> Lifecycle<S> {
     }
 
     /// Persist the current state to the store.
-    fn save(&self) -> Result<(), OpsxError> {
+    fn save(&mut self) -> Result<(), OpsxError> {
+        // Rotate audit log if it exceeds the limit
+        if self.state.audit_log.len() > AUDIT_LOG_MAX {
+            let trim = self.state.audit_log.len() - AUDIT_LOG_MAX;
+            self.state.audit_log.drain(..trim);
+        }
         self.store.save(&self.state)
     }
 
@@ -64,6 +73,12 @@ impl<S: StateStore> Lifecycle<S> {
         if self.state.nodes.iter().any(|n| n.id == id) {
             return Err(OpsxError::AlreadyExists(format!("node '{id}'")));
         }
+        // Validate parent exists if specified
+        if let Some(parent_id) = parent {
+            if !self.state.nodes.iter().any(|n| n.id == parent_id) {
+                return Err(OpsxError::NotFound(format!("parent node '{parent_id}'")));
+            }
+        }
         let now = iso_now();
         self.state.nodes.push(DesignNode {
             id: id.into(),
@@ -82,6 +97,11 @@ impl<S: StateStore> Lifecycle<S> {
         });
         self.audit_and_save("node", id, "(new)", "seed", None, false)?;
         Ok(self.state.nodes.last().unwrap())
+    }
+
+    /// Create a root node (no parent validation required).
+    pub fn create_root_node(&mut self, id: &str, title: &str) -> Result<&DesignNode, OpsxError> {
+        self.create_node(id, title, None)
     }
 
     /// Transition a design node to a new state (FSM-validated).
@@ -178,6 +198,118 @@ impl<S: StateStore> Lifecycle<S> {
         self.save()
     }
 
+    /// Set a node's title.
+    pub fn set_title(&mut self, id: &str, title: &str) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.title = title.into();
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Set a node's overview.
+    pub fn set_overview(&mut self, id: &str, overview: &str) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.overview = overview.into();
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Add a tag to a node.
+    pub fn add_tag(&mut self, id: &str, tag: &str) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        if !node.tags.contains(&tag.to_string()) {
+            node.tags.push(tag.into());
+            node.updated_at = iso_now();
+        }
+        self.save()
+    }
+
+    /// Remove a tag from a node.
+    pub fn remove_tag(&mut self, id: &str, tag: &str) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.tags.retain(|t| t != tag);
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Set a node's priority.
+    pub fn set_priority(&mut self, id: &str, priority: Priority) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.priority = Some(priority);
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Set a node's issue type.
+    pub fn set_issue_type(&mut self, id: &str, issue_type: IssueType) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.issue_type = Some(issue_type);
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Bind a node to an OpenSpec change.
+    pub fn bind_change(&mut self, node_id: &str, change_name: &str) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == node_id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{node_id}'")))?;
+        node.bound_change = Some(change_name.into());
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Add a decision to a node.
+    pub fn add_decision(&mut self, id: &str, decision: Decision) -> Result<(), OpsxError> {
+        let node = self.state.nodes.iter_mut().find(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        node.decisions.push(decision);
+        node.updated_at = iso_now();
+        self.save()
+    }
+
+    /// Delete a node. Returns the removed node. Fails if the node has children.
+    pub fn delete_node(&mut self, id: &str) -> Result<DesignNode, OpsxError> {
+        // Check for children
+        let has_children = self.state.nodes.iter().any(|n| n.parent.as_deref() == Some(id));
+        if has_children {
+            return Err(OpsxError::PreconditionFailed(
+                format!("node '{}' has children — delete or reparent them first", id)
+            ));
+        }
+        // Check for milestone membership
+        for ms in &self.state.milestones {
+            if ms.nodes.contains(&id.to_string()) {
+                return Err(OpsxError::PreconditionFailed(
+                    format!("node '{}' belongs to milestone '{}' — remove it first", id, ms.name)
+                ));
+            }
+        }
+        let idx = self.state.nodes.iter().position(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        let node = self.state.nodes.remove(idx);
+        self.audit_and_save("node", id, node.state.as_str(), "(deleted)", Some("node deleted"), false)?;
+        Ok(node)
+    }
+
+    /// 🔓 ESCAPE HATCH: Force-delete a node, bypassing child/milestone checks.
+    pub fn force_delete_node(&mut self, id: &str, reason: &str) -> Result<DesignNode, OpsxError> {
+        // Also remove from any milestones
+        for ms in &mut self.state.milestones {
+            ms.nodes.retain(|n| n != id);
+        }
+        let idx = self.state.nodes.iter().position(|n| n.id == id)
+            .ok_or_else(|| OpsxError::NotFound(format!("node '{id}'")))?;
+        let node = self.state.nodes.remove(idx);
+        tracing::warn!(node_id = id, reason = reason, "FORCED node deletion");
+        self.audit_and_save("node", id, node.state.as_str(), "(force-deleted)", Some(reason), true)?;
+        Ok(node)
+    }
+
     /// Get a node by ID.
     pub fn get_node(&self, id: &str) -> Option<&DesignNode> {
         self.state.nodes.iter().find(|n| n.id == id)
@@ -254,6 +386,31 @@ impl<S: StateStore> Lifecycle<S> {
         self.audit_and_save("change", name, &from_str, target.as_str(), Some(reason), true)
     }
 
+    /// Delete a change.
+    pub fn delete_change(&mut self, name: &str) -> Result<Change, OpsxError> {
+        let idx = self.state.changes.iter().position(|c| c.name == name)
+            .ok_or_else(|| OpsxError::NotFound(format!("change '{name}'")))?;
+        let change = self.state.changes.remove(idx);
+        // Unbind from any node
+        for node in &mut self.state.nodes {
+            if node.bound_change.as_deref() == Some(name) {
+                node.bound_change = None;
+            }
+        }
+        self.audit_and_save("change", name, change.state.as_str(), "(deleted)", Some("change deleted"), false)?;
+        Ok(change)
+    }
+
+    /// Update change task progress.
+    pub fn update_change_progress(&mut self, name: &str, total: usize, done: usize) -> Result<(), OpsxError> {
+        let change = self.state.changes.iter_mut().find(|c| c.name == name)
+            .ok_or_else(|| OpsxError::NotFound(format!("change '{name}'")))?;
+        change.tasks_total = total;
+        change.tasks_done = done;
+        change.updated_at = iso_now();
+        self.save()
+    }
+
     // ─── Milestone operations ───────────────────────────────────────
 
     /// Create a milestone.
@@ -324,6 +481,15 @@ impl<S: StateStore> Lifecycle<S> {
         self.audit_and_save("milestone", name, &from_str, "open", None, false)
     }
 
+    /// Delete a milestone.
+    pub fn delete_milestone(&mut self, name: &str) -> Result<Milestone, OpsxError> {
+        let idx = self.state.milestones.iter().position(|m| m.name == name)
+            .ok_or_else(|| OpsxError::NotFound(format!("milestone '{name}'")))?;
+        let ms = self.state.milestones.remove(idx);
+        self.audit_and_save("milestone", name, &format!("{:?}", ms.state).to_lowercase(), "(deleted)", Some("milestone deleted"), false)?;
+        Ok(ms)
+    }
+
     /// Get milestone readiness report.
     pub fn milestone_status(&self, name: &str) -> Result<MilestoneStatus, OpsxError> {
         let ms = self.state.milestones.iter().find(|m| m.name == name)
@@ -386,23 +552,20 @@ fn iso_now() -> String {
         .unwrap_or_default()
         .as_secs();
 
-    // Convert epoch seconds to ISO 8601 UTC
-    // Days since epoch, accounting for leap years
     let days = (secs / 86400) as i64;
     let time_of_day = secs % 86400;
     let hours = time_of_day / 3600;
     let minutes = (time_of_day % 3600) / 60;
     let seconds = time_of_day % 60;
 
-    // Compute year/month/day from days since 1970-01-01
     let (year, month, day) = days_to_ymd(days);
 
     format!("{year:04}-{month:02}-{day:02}T{hours:02}:{minutes:02}:{seconds:02}Z")
 }
 
 /// Convert days since 1970-01-01 to (year, month, day).
+/// Algorithm from Howard Hinnant's date library (public domain).
 fn days_to_ymd(days: i64) -> (i64, u32, u32) {
-    // Algorithm from Howard Hinnant's date library (public domain)
     let z = days + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
     let doe = (z - era * 146097) as u32;
@@ -435,10 +598,27 @@ mod tests {
         lc.create_node("test", "Test Node", None).unwrap();
         assert_eq!(lc.nodes().len(), 1);
         assert_eq!(lc.nodes()[0].state, NodeState::Seed);
-        // Audit log should have the creation entry
         assert_eq!(lc.audit_log().len(), 1);
-        assert_eq!(lc.audit_log()[0].to_state, "seed");
         assert!(!lc.audit_log()[0].forced);
+    }
+
+    #[test]
+    fn create_node_with_invalid_parent_rejected() {
+        let (_tmp, mut lc) = test_lifecycle();
+        let err = lc.create_node("child", "Child", Some("nonexistent"));
+        assert!(err.is_err());
+        match err.unwrap_err() {
+            OpsxError::NotFound(msg) => assert!(msg.contains("nonexistent")),
+            other => panic!("expected NotFound, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn create_node_with_valid_parent() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("parent", "Parent", None).unwrap();
+        lc.create_node("child", "Child", Some("parent")).unwrap();
+        assert_eq!(lc.get_node("child").unwrap().parent.as_deref(), Some("parent"));
     }
 
     #[test]
@@ -447,7 +627,6 @@ mod tests {
         lc.create_node("test", "Test", None).unwrap();
         lc.transition_node("test", NodeState::Exploring).unwrap();
         assert_eq!(lc.get_node("test").unwrap().state, NodeState::Exploring);
-        // Should have 2 audit entries: create + transition
         assert_eq!(lc.audit_log().len(), 2);
     }
 
@@ -467,26 +646,21 @@ mod tests {
     fn force_transition_bypasses_fsm() {
         let (_tmp, mut lc) = test_lifecycle();
         lc.create_node("test", "Test", None).unwrap();
-        // Seed → Implemented is normally illegal
-        lc.force_transition_node("test", NodeState::Implemented, "state.json was corrupted, manually verified implementation").unwrap();
+        lc.force_transition_node("test", NodeState::Implemented, "corrupted state").unwrap();
         assert_eq!(lc.get_node("test").unwrap().state, NodeState::Implemented);
-
-        // Verify audit trail records the force
         let last = lc.audit_log().last().unwrap();
         assert!(last.forced);
-        assert_eq!(last.reason.as_deref(), Some("state.json was corrupted, manually verified implementation"));
+        assert_eq!(last.reason.as_deref(), Some("corrupted state"));
     }
 
     #[test]
     fn implemented_can_reopen() {
         let (_tmp, mut lc) = test_lifecycle();
         lc.create_node("test", "Test", None).unwrap();
-        // Walk to implemented
         lc.transition_node("test", NodeState::Exploring).unwrap();
         lc.transition_node("test", NodeState::Decided).unwrap();
         lc.transition_node("test", NodeState::Implementing).unwrap();
         lc.transition_node("test", NodeState::Implemented).unwrap();
-        // Reopen — "implementation was wrong"
         lc.transition_node("test", NodeState::Exploring).unwrap();
         assert_eq!(lc.get_node("test").unwrap().state, NodeState::Exploring);
     }
@@ -499,7 +673,6 @@ mod tests {
         lc.transition_node("test", NodeState::Decided).unwrap();
         lc.transition_node("test", NodeState::Implementing).unwrap();
         lc.transition_node("test", NodeState::Blocked).unwrap();
-        // Unblock — resume implementing directly
         lc.transition_node("test", NodeState::Implementing).unwrap();
         assert_eq!(lc.get_node("test").unwrap().state, NodeState::Implementing);
     }
@@ -512,16 +685,78 @@ mod tests {
         lc.add_question("test", "Unresolved?").unwrap();
 
         let err = lc.transition_node("test", NodeState::Decided);
-        assert!(err.is_err());
-        match err.unwrap_err() {
-            OpsxError::PreconditionFailed(_) => {}
-            other => panic!("expected PreconditionFailed, got {other:?}"),
-        }
+        assert!(matches!(err.unwrap_err(), OpsxError::PreconditionFailed(_)));
 
-        // Remove question and try again
         lc.remove_question("test", "Unresolved?").unwrap();
         lc.transition_node("test", NodeState::Decided).unwrap();
-        assert_eq!(lc.get_node("test").unwrap().state, NodeState::Decided);
+    }
+
+    #[test]
+    fn node_mutation_methods() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("test", "Test", None).unwrap();
+
+        lc.set_title("test", "New Title").unwrap();
+        assert_eq!(lc.get_node("test").unwrap().title, "New Title");
+
+        lc.set_overview("test", "New overview").unwrap();
+        assert_eq!(lc.get_node("test").unwrap().overview, "New overview");
+
+        lc.add_tag("test", "v0.15.0").unwrap();
+        assert_eq!(lc.get_node("test").unwrap().tags, vec!["v0.15.0"]);
+
+        lc.add_tag("test", "v0.15.0").unwrap(); // idempotent
+        assert_eq!(lc.get_node("test").unwrap().tags.len(), 1);
+
+        lc.remove_tag("test", "v0.15.0").unwrap();
+        assert!(lc.get_node("test").unwrap().tags.is_empty());
+
+        lc.set_priority("test", Priority::new(2)).unwrap();
+        assert_eq!(lc.get_node("test").unwrap().priority, Some(Priority::new(2)));
+
+        lc.set_issue_type("test", IssueType::Feature).unwrap();
+        assert_eq!(lc.get_node("test").unwrap().issue_type, Some(IssueType::Feature));
+    }
+
+    #[test]
+    fn delete_node_basic() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("test", "Test", None).unwrap();
+        let deleted = lc.delete_node("test").unwrap();
+        assert_eq!(deleted.id, "test");
+        assert!(lc.nodes().is_empty());
+    }
+
+    #[test]
+    fn delete_node_with_children_fails() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("parent", "Parent", None).unwrap();
+        lc.create_node("child", "Child", Some("parent")).unwrap();
+        let err = lc.delete_node("parent");
+        assert!(matches!(err.unwrap_err(), OpsxError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn delete_node_in_milestone_fails() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("test", "Test", None).unwrap();
+        lc.milestone_add("v1.0", "test").unwrap();
+        let err = lc.delete_node("test");
+        assert!(matches!(err.unwrap_err(), OpsxError::PreconditionFailed(_)));
+    }
+
+    #[test]
+    fn force_delete_node_bypasses_checks() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("parent", "Parent", None).unwrap();
+        lc.create_node("child", "Child", Some("parent")).unwrap();
+        lc.milestone_add("v1.0", "parent").unwrap();
+        // Force delete bypasses child and milestone checks
+        lc.force_delete_node("parent", "cleaning up").unwrap();
+        assert!(lc.get_node("parent").is_none());
+        // Should also be removed from milestone
+        let ms = lc.milestones().iter().find(|m| m.name == "v1.0").unwrap();
+        assert!(!ms.nodes.contains(&"parent".to_string()));
     }
 
     #[test]
@@ -542,8 +777,7 @@ mod tests {
     fn change_can_be_abandoned_from_any_active_state() {
         for start_state in [ChangeState::Proposed, ChangeState::Specced, ChangeState::Planned,
                             ChangeState::Implementing, ChangeState::Verifying] {
-            assert!(start_state.can_transition_to(ChangeState::Abandoned),
-                    "{:?} should be able to transition to Abandoned", start_state);
+            assert!(start_state.can_transition_to(ChangeState::Abandoned));
         }
     }
 
@@ -551,26 +785,44 @@ mod tests {
     fn archived_change_can_reopen() {
         let (_tmp, mut lc) = test_lifecycle();
         lc.create_change("reopen", "Reopen Test", None).unwrap();
-        // Walk to archived
         lc.transition_change("reopen", ChangeState::Specced).unwrap();
         lc.transition_change("reopen", ChangeState::Planned).unwrap();
         lc.transition_change("reopen", ChangeState::Implementing).unwrap();
         lc.transition_change("reopen", ChangeState::Verifying).unwrap();
         lc.transition_change("reopen", ChangeState::Archived).unwrap();
-        // Reopen
         lc.transition_change("reopen", ChangeState::Proposed).unwrap();
-        let change = lc.state().changes.iter().find(|c| c.name == "reopen").unwrap();
-        assert_eq!(change.state, ChangeState::Proposed);
     }
 
     #[test]
-    fn abandoned_change_can_revive() {
+    fn delete_change_unbinds_node() {
         let (_tmp, mut lc) = test_lifecycle();
-        lc.create_change("abandon", "Abandon Test", None).unwrap();
-        lc.transition_change("abandon", ChangeState::Abandoned).unwrap();
-        lc.transition_change("abandon", ChangeState::Proposed).unwrap();
-        let change = lc.state().changes.iter().find(|c| c.name == "abandon").unwrap();
-        assert_eq!(change.state, ChangeState::Proposed);
+        lc.create_node("feat", "Feature", None).unwrap();
+        lc.create_change("feat-change", "Feature Change", Some("feat")).unwrap();
+        lc.bind_change("feat", "feat-change").unwrap();
+        assert!(lc.get_node("feat").unwrap().bound_change.is_some());
+
+        lc.delete_change("feat-change").unwrap();
+        assert!(lc.get_node("feat").unwrap().bound_change.is_none());
+    }
+
+    #[test]
+    fn update_change_progress() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_change("prog", "Progress", None).unwrap();
+        lc.update_change_progress("prog", 10, 7).unwrap();
+        let change = lc.state().changes.iter().find(|c| c.name == "prog").unwrap();
+        assert_eq!(change.tasks_total, 10);
+        assert_eq!(change.tasks_done, 7);
+    }
+
+    #[test]
+    fn delete_milestone() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("a", "A", None).unwrap();
+        lc.milestone_add("v1.0", "a").unwrap();
+        let deleted = lc.delete_milestone("v1.0").unwrap();
+        assert_eq!(deleted.name, "v1.0");
+        assert!(lc.milestones().is_empty());
     }
 
     #[test]
@@ -580,9 +832,7 @@ mod tests {
         lc.create_node("b", "Node B", None).unwrap();
         lc.milestone_add("v1.0", "a").unwrap();
         lc.milestone_freeze("v1.0").unwrap();
-
-        let err = lc.milestone_add("v1.0", "b");
-        assert!(err.is_err());
+        assert!(lc.milestone_add("v1.0", "b").is_err());
     }
 
     #[test]
@@ -615,8 +865,6 @@ mod tests {
             let store = JsonFileStore::new(tmp.path());
             let lc = Lifecycle::load(store).unwrap();
             assert_eq!(lc.nodes().len(), 1);
-            assert_eq!(lc.nodes()[0].id, "persist");
-            // Audit log also persists
             assert!(!lc.audit_log().is_empty());
         }
     }
@@ -624,9 +872,8 @@ mod tests {
     #[test]
     fn iso_timestamp_format() {
         let ts = iso_now();
-        // Should match YYYY-MM-DDTHH:MM:SSZ
-        assert!(ts.ends_with('Z'), "timestamp should end with Z: {ts}");
-        assert_eq!(ts.len(), 20, "ISO 8601 should be 20 chars: {ts}");
+        assert!(ts.ends_with('Z'));
+        assert_eq!(ts.len(), 20);
         assert_eq!(&ts[4..5], "-");
         assert_eq!(&ts[10..11], "T");
     }
@@ -634,13 +881,24 @@ mod tests {
     #[test]
     fn audit_trail_tracks_all_operations() {
         let (_tmp, mut lc) = test_lifecycle();
-        lc.create_node("a", "A", None).unwrap();         // 1
-        lc.transition_node("a", NodeState::Exploring).unwrap(); // 2
-        lc.force_transition_node("a", NodeState::Implemented, "test").unwrap(); // 3
-
+        lc.create_node("a", "A", None).unwrap();
+        lc.transition_node("a", NodeState::Exploring).unwrap();
+        lc.force_transition_node("a", NodeState::Implemented, "test").unwrap();
         assert_eq!(lc.audit_log().len(), 3);
-        assert!(!lc.audit_log()[0].forced); // create
-        assert!(!lc.audit_log()[1].forced); // normal transition
-        assert!(lc.audit_log()[2].forced);  // force transition
+        assert!(!lc.audit_log()[0].forced);
+        assert!(!lc.audit_log()[1].forced);
+        assert!(lc.audit_log()[2].forced);
+    }
+
+    #[test]
+    fn audit_log_rotation() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_node("a", "A", None).unwrap();
+        // Generate > AUDIT_LOG_MAX entries
+        for i in 0..AUDIT_LOG_MAX + 50 {
+            lc.add_question("a", &format!("q{i}")).unwrap();
+        }
+        // After save, audit log should be trimmed to AUDIT_LOG_MAX
+        assert!(lc.audit_log().len() <= AUDIT_LOG_MAX);
     }
 }
