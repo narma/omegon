@@ -85,7 +85,7 @@ fn main() -> io::Result<()> {
             let ctrl_area = Rect { x: area.x, y: area.bottom() - 2, width: area.width, height: 2 };
             let controls = vec![
                 Line::from(Span::styled(
-                    " 1-4=ctx  5-8=tools  9/0=think  -/==mem store/recall  [/]=minds  r=reset  q=quit",
+                    " 1-4=ctx  5-8=tools  9/0=think  -=store  ==recall  \\=supersede  [/]=minds  r=reset  q=quit",
                     Style::default().fg(Color::Rgb(64, 88, 112)),
                 )),
             ];
@@ -106,8 +106,9 @@ fn main() -> io::Result<()> {
                     KeyCode::Char('8') => state.fire_tool("memory_store"),
                     KeyCode::Char('9') => state.thinking_active = true,
                     KeyCode::Char('0') => state.thinking_active = false,
-                    KeyCode::Char('-') => state.pluck_mind(0, WaveDirection::Right), // store
-                    KeyCode::Char('=') => state.pluck_mind(0, WaveDirection::Left),  // recall
+                    KeyCode::Char('-') => state.pluck_mind(0, WaveDirection::Right), // store →
+                    KeyCode::Char('=') => state.pluck_mind(0, WaveDirection::Left),  // recall ←
+                    KeyCode::Char('\\') => state.pluck_mind(0, WaveDirection::Center), // supersede ↔
                     KeyCode::Char('[') => state.toggle_mind(1),
                     KeyCode::Char(']') => { if state.minds[1].active { state.toggle_mind(1); } else { state.toggle_mind(2); } }
                     KeyCode::Char('r') => state = LabState::default(),
@@ -156,7 +157,7 @@ const NOISE_CHARS: &[char] = &[
 // ─── State ──────────────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq)]
-enum WaveDirection { Left, Right }
+enum WaveDirection { Left, Right, Center }
 
 struct MindState {
     name: &'static str,
@@ -178,16 +179,34 @@ impl MindState {
     /// Pluck the string — inject a wave packet traveling in a direction
     fn pluck(&mut self, direction: WaveDirection) {
         let w = self.wave.len();
-        let center = w / 2;
-        let sign = match direction {
-            WaveDirection::Right => 1.0,
-            WaveDirection::Left => -1.0,
-        };
-        // Gaussian pulse in the center
-        for i in 0..w {
-            let dx = (i as f64 - center as f64) / 4.0;
-            let pulse = (-dx * dx / 2.0).exp() * 2.0;
-            self.velocity[i] += pulse * sign * 0.5;
+        match direction {
+            WaveDirection::Right => {
+                // Store: wave originates from LEFT, travels right
+                // Pulse at the left end
+                for i in 0..w {
+                    let dx = i as f64 / 4.0;
+                    let pulse = (-dx * dx / 2.0).exp() * 2.5;
+                    self.velocity[i] += pulse;
+                }
+            }
+            WaveDirection::Left => {
+                // Recall: wave originates from RIGHT, travels left
+                // Pulse at the right end
+                for i in 0..w {
+                    let dx = (w - 1 - i) as f64 / 4.0;
+                    let pulse = (-dx * dx / 2.0).exp() * 2.5;
+                    self.velocity[i] -= pulse;
+                }
+            }
+            WaveDirection::Center => {
+                // Supersede: center-out symmetric twang
+                let center = w / 2;
+                for i in 0..w {
+                    let dx = (i as f64 - center as f64) / 3.0;
+                    let pulse = (-dx * dx / 2.0).exp() * 3.0;
+                    self.velocity[i] += if i < center { pulse } else { -pulse };
+                }
+            }
         }
     }
 
@@ -449,41 +468,55 @@ fn render_memory_strings(state: &LabState, active_minds: &[usize], area: Rect, b
             }
         }
 
-        // Sine wave (columns 13+)
-        let wave_start = 13usize;
+        // Sine wave using braille dots — sub-character vertical resolution.
+        // Each braille cell is 2 dots wide × 4 dots tall.
+        // The wave displacement maps to which dots are lit.
+        //
+        // Braille dot positions (bit values):
+        //   col 0: 0x01(top) 0x02 0x04 0x40(bottom)
+        //   col 1: 0x08(top) 0x10 0x20 0x80(bottom)
+        //
+        // Displacement -1..+1 maps to rows 0..3 (top=+1, bottom=-1)
+        // Center (0) = rows 1-2, positive = row 0-1, negative = rows 2-3
+
+        let wave_start = (name_start + mind.name.len() + 1).min(w / 3);
         let wave_w = w.saturating_sub(wave_start);
         if wave_w == 0 { continue; }
 
-        // Map wave samples to the available width
         let wave_len = mind.wave.len();
         for wx in 0..wave_w {
             let x = wave_start + wx;
             if x >= w { break; }
 
-            // Sample the wave at this position
-            let sample_pos = (wx as f64 / wave_w as f64) * wave_len as f64;
-            let idx = (sample_pos as usize).min(wave_len - 1);
-            let displacement = mind.wave[idx]; // -2 to +2 range typically
+            // Sample two adjacent wave points (one per braille column)
+            let pos0 = (wx as f64 * 2.0 / (wave_w as f64 * 2.0)) * wave_len as f64;
+            let pos1 = ((wx as f64 * 2.0 + 1.0) / (wave_w as f64 * 2.0)) * wave_len as f64;
+            let d0 = mind.wave[(pos0 as usize).min(wave_len - 1)];
+            let d1 = mind.wave[(pos1 as usize).min(wave_len - 1)];
 
-            // Map displacement to a character
-            // The wave occupies 1 row — we use characters to show vertical displacement
-            let amp = displacement.abs();
+            // Map displacement (-2..+2 typical) to row (0=top, 3=bottom)
+            // Center=0 maps to ~1.5, positive goes up (row 0), negative goes down (row 3)
+            let row0 = (1.5 - d0 * 0.8).clamp(0.0, 3.0) as u8;
+            let row1 = (1.5 - d1 * 0.8).clamp(0.0, 3.0) as u8;
+
+            // Set braille dots for each column at the wave's row
+            let bit0 = match row0 { 0 => 0x01, 1 => 0x02, 2 => 0x04, _ => 0x40 };
+            let bit1 = match row1 { 0 => 0x08, 1 => 0x10, 2 => 0x20, _ => 0x80 };
+
+            let mut dots = bit0 | bit1;
+
+            // At idle (near zero displacement), show a flat middle line
+            let amp = d0.abs().max(d1.abs());
+            if amp < 0.02 {
+                dots = 0x04 | 0x20; // middle row, both columns — flat line
+            }
+
+            let ch = char::from_u32(0x2800 + dots as u32).unwrap_or('·');
             let intensity = (amp * 0.5).min(1.0);
-
-            let ch = if amp < 0.05 {
-                '─'  // flat string
-            } else if amp < 0.3 {
-                if displacement > 0.0 { '∿' } else { '∿' }
-            } else if amp < 0.8 {
-                if displacement > 0.0 { '╱' } else { '╲' }
-            } else {
-                if displacement > 0.0 { '▀' } else { '▄' }
-            };
-
             let color = if intensity > 0.01 {
                 intensity_color(intensity)
             } else {
-                Color::Rgb(20, 40, 55) // dim flat string
+                Color::Rgb(20, 40, 55)
             };
 
             if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, y)) {

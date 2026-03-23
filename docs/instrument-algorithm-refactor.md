@@ -20,6 +20,48 @@ The four instrument algorithms need better visual differentiation and semantic m
 
 
 
+### Wave direction semantics and boundary-crossing connector
+
+## Wave direction (revised)
+
+- **Store** (inference → mind): wave propagates LEFT to RIGHT. Data flows from the inference context outward into the mind's storage. The wave originates from the connector junction and travels along the string toward the right edge.
+
+- **Recall** (mind → inference): wave propagates RIGHT to LEFT. Data flows from the mind's storage back up into inference context. The wave originates from the right side and travels toward the connector junction.
+
+- **Supersede**: center-out symmetric pluck. Both directions simultaneously — the old fact goes out, the new fact comes in. Visually a standing wave burst.
+
+## Boundary-crossing connector
+
+The tree connector (│├└) should visually break out of the inference panel border. The line exits the left edge of the inference panel, creating a sense of physical connection between the inference space and the memory space. Like a pipe or conduit — data physically flows through this connection.
+
+Implementation options:
+1. Render the connector OVER the panel border chars — the │ from the tree overwrites the panel's left border
+2. Use the panel's left border itself as part of the connector — the border becomes the trunk
+3. Render the connector in a margin area between the engine text panel and the inference panel
+
+Option 2 is cleanest — the panel border IS the tree trunk. The ├ and └ branches are part of the border itself. This means the inference panel's left border serves double duty as decoration AND as the memory tree trunk.
+
+## Character selection for wave rendering
+
+Current: ─∿╱╲▀▄ — too limited, looks blocky
+
+Proposed: **braille dots** for sub-character sine wave tracing.
+Each braille cell (U+2800-U+28FF) is a 2×4 dot matrix.
+A sine wave maps the displacement to dot positions within each cell.
+
+Example sine wave in braille:
+⠉⠒⠤⢄⣀⡠⠔⠊⠉⠒⠤⢄⣀⡠⠔⠊
+
+This traces a smooth curve at 8× vertical resolution per character.
+The wave position determines which of the 4 vertical positions per
+cell has a dot lit. Wave amplitude determines how many dots are lit
+(thin line = 1 dot, fat wave = 2-3 dots).
+
+When idle: ⠒⠒⠒⠒⠒⠒⠒⠒ (flat middle line, barely visible)
+Store pluck: ⠉⠒⠤⢄⣀⡠⠔⠊ → traveling right
+Recall pluck: ⠊⠔⡠⣀⢄⠤⠒⠉ ← traveling left
+Supersede: ⠉⣀⠉⣀ center-out burst
+
 ## Decisions
 
 ### Decision: Thinking glitch overlays the context bar as a static field, not a waterfall
