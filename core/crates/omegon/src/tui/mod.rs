@@ -648,6 +648,7 @@ impl App {
                 .arg("--no-splash")
                 .arg("--context-class")
                 .arg("squad")
+                .arg("--tutorial")
                 .current_dir(&tutorial_dir)
                 .exec();
             SlashResult::Display(format!("Failed to launch tutorial: {err}"))
@@ -658,6 +659,7 @@ impl App {
                 .arg("--no-splash")
                 .arg("--context-class")
                 .arg("squad")
+                .arg("--tutorial")
                 .current_dir(&tutorial_dir)
                 .spawn();
             self.should_quit = true;
@@ -2134,6 +2136,9 @@ pub struct TuiConfig {
     pub dashboard_handles: dashboard::DashboardHandles,
     /// Initial prompt to queue after startup (sent automatically, TUI stays open).
     pub initial_prompt: Option<String>,
+    /// Auto-start the tutorial overlay on first frame (used by --tutorial flag
+    /// when exec()'ing into the demo project).
+    pub auto_tutorial: bool,
 }
 
 /// Initial state snapshot gathered during setup, before the TUI event loop starts.
@@ -2658,6 +2663,16 @@ pub async fn run_tui(
     // Queue initial prompt if provided (--initial-prompt / --initial-prompt-file)
     if let Some(prompt) = config.initial_prompt {
         app.queue_prompt(prompt);
+    }
+
+    // Auto-start tutorial overlay when --tutorial flag is passed (demo project launch).
+    if config.auto_tutorial {
+        let cwd_path = std::path::Path::new(&app.footer_data.cwd);
+        let has_design_tree = crate::paths::design_docs_dir(cwd_path)
+            .read_dir()
+            .map(|mut d| d.next().is_some())
+            .unwrap_or(false);
+        app.tutorial_overlay = Some(tutorial::Tutorial::with_context(has_design_tree));
     }
 
     // First-run hint is now baked into the welcome message above — no toast needed.

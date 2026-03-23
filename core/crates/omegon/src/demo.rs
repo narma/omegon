@@ -43,7 +43,7 @@ pub fn launch_bundled_demo() -> Result<(), String> {
     {
         use std::os::unix::process::CommandExt;
         let err = Command::new(&exe)
-            .args(["--no-splash", "--context-class", "squad"])
+            .args(["--no-splash", "--context-class", "squad", "--tutorial"])
             .current_dir(&dir)
             .exec();
         Err(format!("exec failed: {err}"))
@@ -51,13 +51,11 @@ pub fn launch_bundled_demo() -> Result<(), String> {
 
     #[cfg(not(unix))]
     {
-        use std::io::Write;
         Command::new(&exe)
-            .args(["--no-splash", "--context-class", "squad"])
+            .args(["--no-splash", "--context-class", "squad", "--tutorial"])
             .current_dir(&dir)
             .spawn()
             .map_err(|e| format!("spawn: {e}"))?;
-        // On non-Unix we can't exec(), so just exit after spawning
         std::process::exit(0);
     }
 }
