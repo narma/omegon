@@ -812,13 +812,52 @@ impl App {
 
         
 
-        // ── Horizontal split: main area | dashboard panel ───────────
-        // Dashboard appears as a right-side panel when terminal is wide enough.
-        let show_dashboard = area.width >= 120
-            && (self.dashboard.status_counts.total > 0
-                || self.dashboard.focused_node.is_some()
-                || !self.dashboard.active_changes.is_empty()
-                || self.dashboard.cleave.as_ref().is_some_and(|c| c.active || c.total_children > 0));
+        // ── Responsive layout tiers ─────────────────────────────────
+        // Progressive degradation based on terminal size:
+        //   Tier 1 (full):     ≥120w, ≥30h — sidebar + full footer
+        //   Tier 2 (no side):  <120w or <30h — full footer, no sidebar
+        //   Tier 3 (compact):  <24h — compact 4-row footer
+        //   Tier 4 (no foot):  <18h — conversation + editor only
+        //   Tier 5 (too small): <10h or <40w — "terminal too small" message
+        let w = area.width;
+        let h = area.height;
+
+        if h < 10 || w < 40 {
+            // Tier 5: too small — centered message, no layout
+            let msg = " terminal too small ";
+            let y = area.y + h / 2;
+            if y < area.bottom() {
+                let line = Line::from(Span::styled(
+                    msg,
+                    Style::default().fg(self.theme.warning()).add_modifier(Modifier::BOLD),
+                ));
+                frame.render_widget(
+                    ratatui::widgets::Paragraph::new(line)
+                        .alignment(Alignment::Center),
+                    Rect { x: area.x, y, width: w, height: 1 },
+                );
+            }
+            return;
+        }
+
+        // Determine footer height based on responsive tier
+        // (focus_mode override: operator toggle always wins)
+        let footer_height: u16 = if self.focus_mode {
+            0
+        } else if h < 18 {
+            0       // Tier 4: no footer
+        } else if h < 24 {
+            4       // Tier 3: compact footer
+        } else {
+            9       // Tier 1/2: full footer
+        };
+
+        let has_dashboard_content = self.dashboard.status_counts.total > 0
+            || self.dashboard.focused_node.is_some()
+            || !self.dashboard.active_changes.is_empty()
+            || self.dashboard.cleave.as_ref().is_some_and(|c| c.active || c.total_children > 0);
+
+        let show_dashboard = w >= 120 && h >= 30 && has_dashboard_content;
 
         let (main_area, dash_area) = if show_dashboard {
             let h = Layout::horizontal([
@@ -831,13 +870,12 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
-        let footer_height = if self.focus_mode { 0u16 } else { 9 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(3),                    // [0] conversation (all remaining space)
                 Constraint::Length(3),                 // [1] editor (input box)
-                Constraint::Length(footer_height),     // [2] instrument panel (0 in focus mode)
+                Constraint::Length(footer_height),     // [2] instrument panel (0 when collapsed)
             ])
             .split(main_area);
 
@@ -945,7 +983,8 @@ impl App {
 
         // ── Split-panel footer: text left, instruments right ─────────
         // Store inst_area for cleanup pass to skip
-        let inst_area = if !self.focus_mode {
+        let inst_area = if footer_height >= 9 {
+            // Full footer: engine (40%) + instruments (60%)
             let footer_area = chunks[2];
             let footer_cols = Layout::horizontal([
                 Constraint::Percentage(40),
@@ -960,6 +999,11 @@ impl App {
             let inst_highlight = matches!(self.tutorial_highlight, Some(tutorial::Highlight::InstrumentPanel));
             self.instrument_panel.render_with_highlight(footer_cols[1], frame, inst_highlight, t.as_ref());
             footer_cols[1]
+        } else if footer_height > 0 {
+            // Compact footer (Tier 3): engine-only summary, no instruments
+            let footer_area = chunks[2];
+            self.footer_data.render_compact(footer_area, frame, t.as_ref());
+            Rect::ZERO
         } else {
             Rect::ZERO
         };
@@ -1096,8 +1140,7 @@ impl App {
         // ── Tutorial overlay — rendered absolutely last, on top of everything ──
         if let Some(ref tut) = self.tutorial_overlay {
             if tut.active {
-                let footer_h: u16 = if self.focus_mode { 0 } else { 12 };
-                tut.render(area, frame.buffer_mut(), self.theme.as_ref(), footer_h);
+                tut.render(area, frame.buffer_mut(), self.theme.as_ref(), footer_height);
             }
         }
     }

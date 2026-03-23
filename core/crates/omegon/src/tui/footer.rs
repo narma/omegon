@@ -124,6 +124,82 @@ impl FooterData {
         }
     }
 
+    /// Compact footer for Tier 3 (terminal height 18–23).
+    /// 4 rows: bordered box with 2 lines of essential telemetry.
+    pub fn render_compact(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
+        let bg = t.footer_bg();
+        let block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(Color::Rgb(20, 40, 55)))
+            .style(Style::default().bg(bg));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.height < 1 || inner.width < 20 {
+            return;
+        }
+
+        let model_short = short_model(&self.model_id);
+        let pct = self.context_percent as u32;
+        let tier_short = match self.model_tier.as_str() {
+            "gloriana" => "G",
+            "victory" => "V",
+            "retribution" => "R",
+            "local" => "L",
+            _ => "?",
+        };
+        let think_short = match self.thinking_level.as_str() {
+            "high" => "H",
+            "medium" => "M",
+            "low" => "L",
+            "minimal" => "m",
+            "off" => "·",
+            _ => "?",
+        };
+
+        // Line 1: model + tier + thinking + context%
+        let line1 = Line::from(vec![
+            Span::styled(
+                format!(" Ω {model_short}"),
+                Style::default().fg(t.fg()).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {tier_short}·{think_short}"),
+                Style::default().fg(t.dim()),
+            ),
+            Span::styled(
+                format!(" {pct}%"),
+                Style::default().fg(if pct > 80 {
+                    t.warning()
+                } else {
+                    t.muted()
+                }),
+            ),
+        ]);
+
+        // Line 2: session counters + memory facts
+        let line2 = Line::from(vec![
+            Span::styled(
+                format!(" T·{} ⚙·{}", self.turn, self.tool_calls),
+                Style::default().fg(t.dim()),
+            ),
+            Span::styled(
+                format!(" ⌗{}", self.total_facts),
+                Style::default().fg(t.dim()),
+            ),
+        ]);
+
+        let mut lines = vec![line1];
+        if inner.height > 1 {
+            lines.push(line2);
+        }
+
+        frame.render_widget(
+            Paragraph::new(lines).style(Style::default().bg(bg)),
+            inner,
+        );
+    }
+
     pub fn render_left_panel(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let bg = t.footer_bg();
         let bg_block = Block::default().style(Style::default().bg(bg));
@@ -679,5 +755,46 @@ mod tests {
         let data = FooterData::default();
         assert!(data.model_id.is_empty());
         assert_eq!(data.context_percent, 0.0);
+    }
+
+    #[test]
+    fn footer_compact_renders() {
+        let data = FooterData {
+            model_id: "claude-sonnet-4-6".into(),
+            model_provider: "anthropic".into(),
+            model_tier: "victory".into(),
+            thinking_level: "medium".into(),
+            context_percent: 35.0,
+            turn: 8,
+            tool_calls: 23,
+            total_facts: 150,
+            ..Default::default()
+        };
+        let backend = TestBackend::new(80, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| {
+            data.render_compact(frame.area(), frame, &super::super::theme::Alpharius);
+        }).unwrap();
+
+        let text: String = {
+            let buf = terminal.backend().buffer();
+            let a = buf.area;
+            (0..a.height)
+                .flat_map(|y| (0..a.width).map(move |x| buf[(x, y)].symbol().to_string()))
+                .collect()
+        };
+        assert!(text.contains("sonnet"), "should show model: {text}");
+        assert!(text.contains("35%"), "should show context%: {text}");
+    }
+
+    #[test]
+    fn footer_compact_narrow() {
+        // Should not panic at very narrow widths
+        let data = FooterData::default();
+        let backend = TestBackend::new(15, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| {
+            data.render_compact(frame.area(), frame, &super::super::theme::Alpharius);
+        }).unwrap();
     }
 }
