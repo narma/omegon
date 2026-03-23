@@ -2470,12 +2470,19 @@ pub async fn run_tui(
         app.queue_prompt(prompt);
     }
 
-    // Auto-start tutorial on first run (no .omegon/ directory yet = fresh project)
+    // First-run hint: suggest /tutorial if this looks like a fresh session.
+    // "First run" = no .omegon/tutorial_completed marker AND no memory facts exist.
+    // A project with memory facts has been used before — don't nag.
     {
         let omegon_dir = std::path::Path::new(&app.footer_data.cwd).join(".omegon");
         let tutorial_done = omegon_dir.join("tutorial_completed");
-        if !tutorial_done.exists() && app.queued_prompt.is_none() {
-            app.tutorial_overlay = Some(tutorial::Tutorial::new());
+        let has_memory = omegon_dir.join("memory").join("facts.jsonl").exists()
+            || std::path::Path::new(&app.footer_data.cwd).join(".pi").join("memory").join("facts.jsonl").exists();
+        if !tutorial_done.exists() && !has_memory && app.queued_prompt.is_none() {
+            app.show_toast(
+                "Welcome to Omegon! Type /tutorial for an interactive guide.",
+                ratatui_toaster::ToastType::Info,
+            );
         }
     }
 
