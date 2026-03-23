@@ -70,7 +70,7 @@ impl LifecycleFeature {
     /// Bootstrap a markdown design node into opsx-core.
     /// Creates the node and syncs state + open questions from the markdown source.
     fn bootstrap_node_to_opsx(&self, opsx: &mut OpsxLifecycle<JsonFileStore>, node: &DesignNode) {
-        let current_opsx = OpsxNodeState::from_status_str(node.status.as_str())
+        let current_opsx = OpsxNodeState::parse(node.status.as_str())
             .unwrap_or(OpsxNodeState::Seed);
         // Create (parent validation is skipped — parent may not be in opsx yet)
         let _ = opsx.create_node(&node.id, &node.title, None);
@@ -292,7 +292,7 @@ impl LifecycleFeature {
                     let _ = opsx.create_node(id, title, None);
                     // If a non-seed status was requested, transition to it
                     if let Some(status_str) = status {
-                        if let Some(target) = OpsxNodeState::from_status_str(status_str) {
+                        if let Some(target) = OpsxNodeState::parse(status_str) {
                             if target != OpsxNodeState::Seed {
                                 // Use force_transition for bootstrap — the node was just created
                                 let _ = opsx.force_transition_node(id, target, "initial status on create");
@@ -313,7 +313,7 @@ impl LifecycleFeature {
                     .ok_or_else(|| anyhow::anyhow!("Invalid status: {status_str}"))?;
 
                 // Validate transition via opsx-core FSM
-                let opsx_target = OpsxNodeState::from_status_str(status_str)
+                let opsx_target = OpsxNodeState::parse(status_str)
                     .ok_or_else(|| anyhow::anyhow!("Invalid status for FSM: {status_str}"))?;
 
                 let mut opsx = self.opsx.lock().unwrap();

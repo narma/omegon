@@ -34,6 +34,7 @@ impl<S: StateStore> Lifecycle<S> {
         // Rotate audit log if it exceeds the limit
         if self.state.audit_log.len() > AUDIT_LOG_MAX {
             let trim = self.state.audit_log.len() - AUDIT_LOG_MAX;
+            tracing::debug!(trimmed = trim, max = AUDIT_LOG_MAX, "audit log rotation — oldest entries trimmed");
             self.state.audit_log.drain(..trim);
         }
         self.store.save(&self.state)
@@ -533,7 +534,7 @@ impl<S: StateStore> Lifecycle<S> {
     pub fn milestone_freeze(&mut self, name: &str) -> Result<(), OpsxError> {
         let ms = self.state.milestones.iter_mut().find(|m| m.name == name)
             .ok_or_else(|| OpsxError::NotFound(format!("milestone '{name}'")))?;
-        let from_str = format!("{:?}", ms.state).to_lowercase();
+        let from_str = ms.state.to_string();
         ms.state = MilestoneState::Frozen;
         ms.updated_at = iso_now();
         self.audit_and_save("milestone", name, &from_str, "frozen", None, false)
@@ -543,7 +544,7 @@ impl<S: StateStore> Lifecycle<S> {
     pub fn milestone_unfreeze(&mut self, name: &str) -> Result<(), OpsxError> {
         let ms = self.state.milestones.iter_mut().find(|m| m.name == name)
             .ok_or_else(|| OpsxError::NotFound(format!("milestone '{name}'")))?;
-        let from_str = format!("{:?}", ms.state).to_lowercase();
+        let from_str = ms.state.to_string();
         ms.state = MilestoneState::Open;
         ms.updated_at = iso_now();
         self.audit_and_save("milestone", name, &from_str, "open", None, false)
@@ -554,7 +555,7 @@ impl<S: StateStore> Lifecycle<S> {
         let idx = self.state.milestones.iter().position(|m| m.name == name)
             .ok_or_else(|| OpsxError::NotFound(format!("milestone '{name}'")))?;
         let ms = self.state.milestones.remove(idx);
-        self.audit_and_save("milestone", name, &format!("{:?}", ms.state).to_lowercase(), "(deleted)", Some("milestone deleted"), false)?;
+        self.audit_and_save("milestone", name, &ms.state.to_string(), "(deleted)", Some("milestone deleted"), false)?;
         Ok(ms)
     }
 

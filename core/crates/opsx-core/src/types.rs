@@ -16,6 +16,12 @@ pub enum NodeState {
     Deferred,
 }
 
+impl std::fmt::Display for NodeState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl NodeState {
     /// Valid transitions from this state.
     pub fn valid_transitions(self) -> &'static [NodeState] {
@@ -84,6 +90,12 @@ pub enum ChangeState {
     Abandoned,
 }
 
+impl std::fmt::Display for ChangeState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 impl ChangeState {
     pub fn valid_transitions(self) -> &'static [ChangeState] {
         use ChangeState::*;
@@ -138,6 +150,16 @@ pub enum MilestoneState {
     Open,
     Frozen,
     Released,
+}
+
+impl std::fmt::Display for MilestoneState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Open => f.write_str("open"),
+            Self::Frozen => f.write_str("frozen"),
+            Self::Released => f.write_str("released"),
+        }
+    }
 }
 
 /// Priority levels (1 = critical, 5 = trivial).
