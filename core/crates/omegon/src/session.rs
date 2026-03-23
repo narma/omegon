@@ -29,20 +29,27 @@ pub struct SessionEntry {
     pub meta: SessionMeta,
 }
 
-/// Get the sessions directory for a given cwd.
-/// Returns `~/.config/omegon/sessions/<cwd-slug>/`.
-/// Falls back to legacy `~/.pi/agent/sessions/` if it has content.
+/// Get the sessions directory for **reading** — checks primary then legacy.
+/// Returns `~/.config/omegon/sessions/<cwd-slug>/` or legacy location.
 pub fn sessions_dir(cwd: &Path) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let slug = cwd_slug(cwd);
     let primary = home.join(".config/omegon/sessions").join(&slug);
-    if !primary.exists() {
-        let legacy = home.join(".pi/agent/sessions").join(&slug);
-        if legacy.exists() {
-            return Some(legacy);
-        }
+    if primary.exists() {
+        return Some(primary);
+    }
+    let legacy = home.join(".pi/agent/sessions").join(&slug);
+    if legacy.exists() {
+        return Some(legacy);
     }
     Some(primary)
+}
+
+/// Get the sessions directory for **writing** — always the primary location.
+pub fn sessions_dir_write(cwd: &Path) -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    let slug = cwd_slug(cwd);
+    Some(home.join(".config/omegon/sessions").join(slug))
 }
 
 /// Convert a cwd path to a directory slug: `/Users/cwilson/workspace` → `--Users-cwilson-workspace--`
@@ -104,7 +111,7 @@ fn days_to_ymd(days: u64) -> (u64, u64, u64) {
 
 /// Save a session after the agent loop completes.
 pub fn save_session(conversation: &ConversationState, cwd: &Path) -> anyhow::Result<PathBuf> {
-    let dir = sessions_dir(cwd).ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let dir = sessions_dir_write(cwd).ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     fs::create_dir_all(&dir)?;
 
     let session_id = generate_session_id();

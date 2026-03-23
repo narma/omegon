@@ -88,8 +88,8 @@ impl OAuthCredentials {
     }
 }
 
-/// Path to auth.json — primary location is ~/.config/omegon/auth.json,
-/// with fallback to legacy ~/.pi/agent/auth.json for backward compat.
+/// Path to auth.json for **reading** — checks primary then legacy.
+/// Use `auth_json_write_path()` for writes.
 pub fn auth_json_path() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     let primary = home.join(".config/omegon/auth.json");
@@ -100,8 +100,15 @@ pub fn auth_json_path() -> Option<PathBuf> {
     if legacy.exists() {
         return Some(legacy);
     }
-    // Default to primary for new writes
+    // Neither exists — return primary so callers don't get None
     Some(primary)
+}
+
+/// Path to auth.json for **writing** — always the primary location.
+/// Credential writes must never go to the legacy path.
+pub fn auth_json_write_path() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    Some(home.join(".config/omegon/auth.json"))
 }
 
 /// Read credentials for a provider from auth.json.
@@ -115,18 +122,17 @@ pub fn read_credentials(provider: &str) -> Option<OAuthCredentials> {
 
 /// Write credentials for a provider to auth.json.
 pub fn write_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let write_path = auth_json_write_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let _ = std::fs::create_dir_all(write_path.parent().unwrap());
 
-    let mut auth: Value = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&content).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
+    // Read existing credentials from wherever they are (may be legacy path)
+    let mut auth: Value = auth_json_path()
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or(json!({}));
 
     auth[provider] = serde_json::to_value(creds)?;
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+    std::fs::write(&write_path, serde_json::to_string_pretty(&auth)?)?;
     Ok(())
 }
 
@@ -210,13 +216,14 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
 
 /// Remove stored credentials for a provider.
 pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let read_path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let write_path = auth_json_write_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     
-    if !path.exists() {
+    if !read_path.exists() {
         return Err(anyhow::anyhow!("No credentials found for {provider}"));
     }
     
-    let content = std::fs::read_to_string(&path)?;
+    let content = std::fs::read_to_string(&read_path)?;
     let mut auth: Value = serde_json::from_str(&content)?;
     
     let auth_key = if provider == "openai" { "openai-codex" } else { provider };
@@ -230,8 +237,9 @@ pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
         obj.remove(auth_key);
     }
     
-    // Write back
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+    // Write to primary location
+    let _ = std::fs::create_dir_all(write_path.parent().unwrap());
+    std::fs::write(&write_path, serde_json::to_string_pretty(&auth)?)?;
     Ok(())
 }
 
@@ -623,20 +631,19 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
 }
 
 fn write_credentials_with_extra(provider: &str, creds: &OAuthCredentials, account_id: Option<&str>) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-    let _ = std::fs::create_dir_all(path.parent().unwrap());
-    let mut auth: Value = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&content).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
+    let write_path = auth_json_write_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let _ = std::fs::create_dir_all(write_path.parent().unwrap());
+    // Read existing credentials from wherever they are (may be legacy path)
+    let mut auth: Value = auth_json_path()
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or(json!({}));
     let mut entry = serde_json::to_value(creds)?;
     if let Some(id) = account_id {
         entry["accountId"] = json!(id);
     }
     auth[provider] = entry;
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+    std::fs::write(&write_path, serde_json::to_string_pretty(&auth)?)?;
     Ok(())
 }
 

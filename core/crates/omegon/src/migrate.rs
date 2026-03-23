@@ -484,17 +484,13 @@ enum ConventionKind {
     Instructions,
     /// Memory/facts data → ai/memory/
     Memory,
-    /// Design docs → ai/docs/
-    DesignDocs,
-    /// OpenSpec/lifecycle → ai/openspec/
-    Lifecycle,
     /// Agent config → .omegon/
     Config,
 }
 
 /// Scan the project for agent conventions from other tools, migrate what's
 /// found, and bootstrap the ai/ directory structure.
-pub fn init_project(cwd: &Path) -> String {
+pub fn init_project(cwd: &Path, move_all: bool) -> String {
     let mut lines: Vec<String> = vec![];
     let detected = scan_conventions(cwd);
     let mut actions = 0;
@@ -583,11 +579,21 @@ pub fn init_project(cwd: &Path) -> String {
             .unwrap_or(false);
 
         if has_design_docs {
-            lines.push(format!(
-                "📋 Design docs in `docs/` ({} files) — Omegon will read from here.\n\
-                 To adopt ai/ convention: `mv docs/ ai/docs/`",
-                std::fs::read_dir(&legacy_docs).map(|e| e.count()).unwrap_or(0)
-            ));
+            if move_all {
+                let _ = std::fs::create_dir_all(cwd.join("ai"));
+                if std::fs::rename(&legacy_docs, &ai_docs).is_ok() {
+                    lines.push("✓ Moved docs/ → ai/docs/".into());
+                    actions += 1;
+                } else {
+                    lines.push("⚠ Failed to move docs/ → ai/docs/ (check permissions)".into());
+                }
+            } else {
+                let count = std::fs::read_dir(&legacy_docs).map(|e| e.count()).unwrap_or(0);
+                lines.push(format!(
+                    "📋 Design docs in `docs/` ({count} files) — Omegon reads from here.\n\
+                     Run `/init migrate` to move to `ai/docs/`."
+                ));
+            }
         }
     }
 
@@ -595,10 +601,20 @@ pub fn init_project(cwd: &Path) -> String {
     let ai_openspec = cwd.join("ai/openspec");
     let legacy_openspec = cwd.join("openspec");
     if !ai_openspec.exists() && legacy_openspec.is_dir() {
-        lines.push(format!(
-            "📋 OpenSpec in `openspec/` — Omegon will read from here.\n\
-             To adopt ai/ convention: `mv openspec/ ai/openspec/`"
-        ));
+        if move_all {
+            let _ = std::fs::create_dir_all(cwd.join("ai"));
+            if std::fs::rename(&legacy_openspec, &ai_openspec).is_ok() {
+                lines.push("✓ Moved openspec/ → ai/openspec/".into());
+                actions += 1;
+            } else {
+                lines.push("⚠ Failed to move openspec/ → ai/openspec/ (check permissions)".into());
+            }
+        } else {
+            lines.push(
+                "📋 OpenSpec in `openspec/` — Omegon reads from here.\n\
+                 Run `/init migrate` to move to `ai/openspec/`.".into()
+            );
+        }
     }
 
     // ── Migrate lifecycle state (.omegon/lifecycle/ → ai/lifecycle/) ─
@@ -632,21 +648,24 @@ pub fn init_project(cwd: &Path) -> String {
         actions += 1;
     }
 
-    // ── Auto-migrate user-level auth (pi → omegon) ──────────────────
-    let h = home();
-    let omegon_auth = h.join(".config/omegon/auth.json");
-    let pi_auth = h.join(".pi/agent/auth.json");
-    if !omegon_auth.exists() && pi_auth.exists() {
-        let _ = std::fs::create_dir_all(omegon_auth.parent().unwrap());
-        let _ = std::fs::copy(&pi_auth, &omegon_auth);
-        lines.push("✓ Migrated auth.json from ~/.pi/agent/ → ~/.config/omegon/".into());
-        actions += 1;
+    // ── User-level auth migration (runs once, regardless of project) ─
+    let user_migration = migrate_user_config();
+    if !user_migration.is_empty() {
+        lines.push(String::new());
+        lines.push("### User Config".into());
+        for msg in user_migration {
+            lines.push(msg);
+            actions += 1;
+        }
     }
 
     // ── Summary ──────────────────────────────────────────────────────
     lines.push(String::new());
     if actions > 0 {
         lines.push(format!("**{actions} action(s) completed.**"));
+        if move_all {
+            lines.push("\n⚠ Restart Omegon to pick up the new ai/ paths.".into());
+        }
     } else {
         lines.push("Project is already configured for Omegon.".into());
     }
@@ -672,6 +691,34 @@ pub fn init_project(cwd: &Path) -> String {
     }
 
     lines.join("\n")
+}
+
+/// Migrate user-level config from legacy locations to ~/.config/omegon/.
+/// Returns a list of actions taken (empty if nothing to do).
+fn migrate_user_config() -> Vec<String> {
+    let mut actions = Vec::new();
+    let h = home();
+
+    // Auth: ~/.pi/agent/auth.json → ~/.config/omegon/auth.json
+    let omegon_auth = h.join(".config/omegon/auth.json");
+    let pi_auth = h.join(".pi/agent/auth.json");
+    if !omegon_auth.exists() && pi_auth.exists() {
+        let _ = std::fs::create_dir_all(omegon_auth.parent().unwrap());
+        if std::fs::copy(&pi_auth, &omegon_auth).is_ok() {
+            actions.push("✓ Migrated auth.json from ~/.pi/agent/ → ~/.config/omegon/".into());
+        }
+    }
+
+    // MCP config: ~/.pi/agent/mcp.json → ~/.config/omegon/mcp.json
+    let omegon_mcp = h.join(".config/omegon/mcp.json");
+    let pi_mcp = h.join(".pi/agent/mcp.json");
+    if !omegon_mcp.exists() && pi_mcp.exists() {
+        if std::fs::copy(&pi_mcp, &omegon_mcp).is_ok() {
+            actions.push("✓ Migrated mcp.json from ~/.pi/agent/ → ~/.config/omegon/".into());
+        }
+    }
+
+    actions
 }
 
 /// Scan for agent conventions in the project directory.
@@ -909,7 +956,7 @@ mod tests {
     #[test]
     fn init_empty_project_creates_config() {
         let dir = tempfile::tempdir().unwrap();
-        let report = init_project(dir.path());
+        let report = init_project(dir.path(), false);
         assert!(report.contains("Created `.omegon/` config directory"), "{report}");
         assert!(dir.path().join(".omegon").is_dir());
     }
@@ -918,7 +965,7 @@ mod tests {
     fn init_migrates_claude_md_to_agents_md() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("CLAUDE.md"), "# Rules\nBe concise").unwrap();
-        let report = init_project(dir.path());
+        let report = init_project(dir.path(), false);
         assert!(report.contains("Created `AGENTS.md`"), "{report}");
         let content = std::fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
         assert!(content.contains("Be concise"));
@@ -931,7 +978,7 @@ mod tests {
         let pi_mem = dir.path().join(".pi/memory");
         std::fs::create_dir_all(&pi_mem).unwrap();
         std::fs::write(pi_mem.join("facts.jsonl"), r#"{"_type":"fact","id":"x"}"#).unwrap();
-        let report = init_project(dir.path());
+        let report = init_project(dir.path(), false);
         assert!(report.contains("Migrated facts.jsonl"), "{report}");
         assert!(dir.path().join("ai/memory/facts.jsonl").exists());
     }
@@ -942,7 +989,7 @@ mod tests {
         let lc = dir.path().join(".omegon/lifecycle");
         std::fs::create_dir_all(&lc).unwrap();
         std::fs::write(lc.join("state.json"), r#"{"version":1,"nodes":[]}"#).unwrap();
-        let report = init_project(dir.path());
+        let report = init_project(dir.path(), false);
         assert!(report.contains("Migrated lifecycle state"), "{report}");
         assert!(dir.path().join("ai/lifecycle/state.json").exists());
     }
@@ -953,7 +1000,7 @@ mod tests {
         // Pre-create the config dir and AGENTS.md
         std::fs::create_dir_all(dir.path().join(".omegon")).unwrap();
         std::fs::write(dir.path().join("AGENTS.md"), "# My Directives").unwrap();
-        let report = init_project(dir.path());
+        let report = init_project(dir.path(), false);
         // Should mention AGENTS.md exists, not try to create it
         assert!(report.contains("already exists"), "{report}");
     }

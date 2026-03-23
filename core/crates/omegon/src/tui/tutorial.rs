@@ -362,12 +362,24 @@ impl Tutorial {
             .wrap(Wrap { trim: false });
         text.render(inner, buf);
 
-        // Highlight the CTA line by coloring it accent
-        // Find the last non-empty line in the inner area and tint it
-        let cta_y = inner.bottom().saturating_sub(1);
-        if cta_y > inner.y {
+        // Highlight the CTA line by coloring it accent.
+        // Scan upward from the bottom to find the first non-blank line —
+        // that's where the CTA actually rendered (not always the last row
+        // since wrapping can shift content upward in narrow terminals).
+        let mut cta_y = None;
+        for y in (inner.y..inner.bottom()).rev() {
+            let has_content = (inner.x..inner.right()).any(|x| {
+                buf.cell(ratatui::prelude::Position::new(x, y))
+                    .is_some_and(|c| c.symbol() != " ")
+            });
+            if has_content {
+                cta_y = Some(y);
+                break;
+            }
+        }
+        if let Some(y) = cta_y {
             for x in inner.x..inner.right() {
-                if let Some(cell) = buf.cell_mut(ratatui::prelude::Position::new(x, cta_y)) {
+                if let Some(cell) = buf.cell_mut(ratatui::prelude::Position::new(x, y)) {
                     if cell.symbol() != " " {
                         cell.set_fg(theme.accent_bright());
                     }

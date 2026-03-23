@@ -80,14 +80,20 @@ pub fn memory_dir(repo_root: &Path) -> PathBuf {
     primary
 }
 
-/// Resolve the memory directory for writes (always primary).
+/// Resolve the memory directory for writes.
+/// Prefers ai/memory/ if it exists, then .omegon/memory/ if it exists,
+/// otherwise defaults to ai/memory/ for new projects.
 pub fn memory_dir_write(repo_root: &Path) -> PathBuf {
-    // If legacy exists but primary doesn't, use legacy to avoid splitting
+    let ai = repo_root.join("ai/memory");
+    if ai.is_dir() {
+        return ai;
+    }
     let omegon = repo_root.join(".omegon/memory");
-    if omegon.is_dir() && !repo_root.join("ai/memory").is_dir() {
+    if omegon.is_dir() {
         return omegon;
     }
-    repo_root.join("ai/memory")
+    // New project — default to ai/memory/
+    ai
 }
 
 /// Resolve the lifecycle state directory (opsx-core).

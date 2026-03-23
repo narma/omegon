@@ -1600,7 +1600,8 @@ impl App {
 
             "init" => {
                 let cwd = std::path::Path::new(&self.footer_data.cwd);
-                let report = crate::migrate::init_project(cwd);
+                let move_all = args == "migrate";
+                let report = crate::migrate::init_project(cwd, move_all);
                 SlashResult::Display(report)
             }
 
