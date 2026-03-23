@@ -6,6 +6,7 @@ members = [
     "crates/omegon-memory",
     "crates/omegon-secrets",
     "crates/omegon-traits",
+    "crates/opsx-core",
 ]
 
 [profile.release]
