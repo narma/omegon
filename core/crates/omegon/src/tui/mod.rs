@@ -2764,19 +2764,27 @@ pub async fn run_tui(
                                         }
                                     }
                                 }
-                            } else if app.agent_active {
-                                // Agent busy — queue the prompt
-                                app.queue_prompt(text.clone());
                             } else {
-                                // Agent idle — send immediately
-                                app.conversation.push_user(&text);
-                                app.history.push(text.clone());
-                                app.history_idx = None;
-                                app.agent_active = true;
-                                if let Some(img) = app.pending_image.take() {
-                                    let _ = command_tx.send(TuiCommand::UserPromptWithImages(text, vec![img])).await;
+                                // Non-slash text — check tutorial AnyInput trigger
+                                if let Some(ref mut tut) = app.tutorial_overlay {
+                                    tut.check_any_input();
+                                    if !tut.active { app.mark_tutorial_completed(); }
+                                }
+
+                                if app.agent_active {
+                                    // Agent busy — queue the prompt
+                                    app.queue_prompt(text.clone());
                                 } else {
-                                    let _ = command_tx.send(TuiCommand::UserPrompt(text)).await;
+                                    // Agent idle — send immediately
+                                    app.conversation.push_user(&text);
+                                    app.history.push(text.clone());
+                                    app.history_idx = None;
+                                    app.agent_active = true;
+                                    if let Some(img) = app.pending_image.take() {
+                                        let _ = command_tx.send(TuiCommand::UserPromptWithImages(text, vec![img])).await;
+                                    } else {
+                                        let _ = command_tx.send(TuiCommand::UserPrompt(text)).await;
+                                    }
                                 }
                             }
                         }
