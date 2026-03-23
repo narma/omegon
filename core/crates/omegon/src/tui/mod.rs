@@ -2538,6 +2538,11 @@ pub async fn run_tui(
 
         let version = env!("CARGO_PKG_VERSION");
         let sha = env!("OMEGON_GIT_SHA");
+        let cwd_path = std::path::Path::new(&app.footer_data.cwd);
+        let tutorial_done = crate::paths::config_dir(cwd_path).join("tutorial_completed");
+        let has_memory = crate::paths::has_memory_facts(cwd_path);
+        let is_first_run = !tutorial_done.exists() && !has_memory;
+
         let mut welcome = format!("Ω Omegon {version} ({sha}) — {project}");
         welcome.push_str(&format!("\n  ▸ {model_short}  ·  {ctx}k context"));
         if facts > 0 {
@@ -2547,6 +2552,9 @@ pub async fn run_tui(
         welcome.push_str("\n  /model  switch provider    /think  reasoning level");
         welcome.push_str("\n  /context  context class      /help   all commands");
         welcome.push_str("\n  Ctrl+R  search history      Ctrl+C  cancel/quit");
+        if is_first_run {
+            welcome.push_str("\n\n  ▸ New here? Type /tutorial for an interactive guide.");
+        }
 
         app.conversation.push_system(&welcome);
     }
@@ -2626,20 +2634,7 @@ pub async fn run_tui(
         app.queue_prompt(prompt);
     }
 
-    // First-run hint: suggest /tutorial if this looks like a fresh session.
-    // "First run" = no .omegon/tutorial_completed marker AND no memory facts exist.
-    // A project with memory facts has been used before — don't nag.
-    {
-        let cwd_path = std::path::Path::new(&app.footer_data.cwd);
-        let tutorial_done = crate::paths::config_dir(cwd_path).join("tutorial_completed");
-        let has_memory = crate::paths::has_memory_facts(cwd_path);
-        if !tutorial_done.exists() && !has_memory && app.queued_prompt.is_none() {
-            app.show_toast(
-                "Welcome to Omegon! Type /tutorial for an interactive guide.",
-                ratatui_toaster::ToastType::Info,
-            );
-        }
-    }
+    // First-run hint is now baked into the welcome message above — no toast needed.
 
     loop {
         // ── Splash replay (/splash command) ─────────────────────────
