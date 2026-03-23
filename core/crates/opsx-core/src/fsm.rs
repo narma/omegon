@@ -339,6 +339,7 @@ impl<S: StateStore> Lifecycle<S> {
             state: ChangeState::Proposed,
             bound_node: bound_node.map(|s| s.into()),
             specs: vec![],
+            test_files: vec![],
             tasks_total: 0,
             tasks_done: 0,
             created_at: now.clone(),
@@ -382,10 +383,17 @@ impl<S: StateStore> Lifecycle<S> {
                     ));
                 }
             }
-            ChangeState::Implementing => {
+            ChangeState::Testing => {
                 if change.specs.is_empty() {
                     return Err(OpsxError::PreconditionFailed(
-                        format!("change '{}' has no specs — tests must be defined in specs before code is written", name)
+                        format!("change '{}' has no specs — specs with scenarios are required before writing test stubs", name)
+                    ));
+                }
+            }
+            ChangeState::Implementing => {
+                if change.test_files.is_empty() {
+                    return Err(OpsxError::PreconditionFailed(
+                        format!("change '{}' has no test files — write failing test stubs before implementing (TDD)", name)
                     ));
                 }
             }
@@ -430,6 +438,17 @@ impl<S: StateStore> Lifecycle<S> {
             .ok_or_else(|| OpsxError::NotFound(format!("change '{name}'")))?;
         if !change.specs.contains(&domain.to_string()) {
             change.specs.push(domain.into());
+            change.updated_at = iso_now();
+        }
+        self.save()
+    }
+
+    /// Register a test file on a change (TDD — stubs written before implementation).
+    pub fn add_test_file(&mut self, name: &str, path: &str) -> Result<(), OpsxError> {
+        let change = self.state.changes.iter_mut().find(|c| c.name == name)
+            .ok_or_else(|| OpsxError::NotFound(format!("change '{name}'")))?;
+        if !change.test_files.contains(&path.to_string()) {
+            change.test_files.push(path.into());
             change.updated_at = iso_now();
         }
         self.save()
@@ -813,17 +832,20 @@ mod tests {
         let (_tmp, mut lc) = test_lifecycle();
         lc.create_change("my-change", "My Change", None).unwrap();
 
-        // Must add specs before transitioning to specced
+        // 1. Specs before specced
         lc.add_spec("my-change", "core").unwrap();
         lc.transition_change("my-change", ChangeState::Specced).unwrap();
 
-        // Must add tasks before transitioning to planned
+        // 2. Tasks before planned
         lc.update_change_progress("my-change", 3, 0).unwrap();
         lc.transition_change("my-change", ChangeState::Planned).unwrap();
 
+        // 3. TDD: test stubs before implementing
+        lc.transition_change("my-change", ChangeState::Testing).unwrap();
+        lc.add_test_file("my-change", "src/core.test.ts").unwrap();
         lc.transition_change("my-change", ChangeState::Implementing).unwrap();
 
-        // Must complete tasks before verifying
+        // 4. Complete tasks before verifying
         lc.update_change_progress("my-change", 3, 3).unwrap();
         lc.transition_change("my-change", ChangeState::Verifying).unwrap();
         lc.transition_change("my-change", ChangeState::Archived).unwrap();
@@ -859,20 +881,42 @@ mod tests {
     }
 
     #[test]
-    fn implementing_requires_specs() {
+    fn implementing_requires_test_files() {
         let (_tmp, mut lc) = test_lifecycle();
         lc.create_change("impl-test", "Impl Test", None).unwrap();
         lc.add_spec("impl-test", "core").unwrap();
         lc.transition_change("impl-test", ChangeState::Specced).unwrap();
         lc.update_change_progress("impl-test", 2, 0).unwrap();
         lc.transition_change("impl-test", ChangeState::Planned).unwrap();
+        lc.transition_change("impl-test", ChangeState::Testing).unwrap();
 
-        // Implementing is allowed (specs exist from specced stage)
+        // Try implementing without test files — TDD rejects
+        let err = lc.transition_change("impl-test", ChangeState::Implementing);
+        assert!(err.is_err());
+        let msg = err.unwrap_err().to_string();
+        assert!(msg.contains("no test files"), "should mention missing test files: {msg}");
+
+        // Add test stubs and try again
+        lc.add_test_file("impl-test", "src/core.test.ts").unwrap();
         lc.transition_change("impl-test", ChangeState::Implementing).unwrap();
         assert_eq!(
             lc.state().changes.iter().find(|c| c.name == "impl-test").unwrap().state,
             ChangeState::Implementing
         );
+    }
+
+    #[test]
+    fn testing_requires_specs() {
+        let (_tmp, mut lc) = test_lifecycle();
+        lc.create_change("test-test", "Test Test", None).unwrap();
+        // Force to Planned without proper preconditions to test Testing gate
+        lc.add_spec("test-test", "core").unwrap();
+        lc.transition_change("test-test", ChangeState::Specced).unwrap();
+        lc.update_change_progress("test-test", 1, 0).unwrap();
+        lc.transition_change("test-test", ChangeState::Planned).unwrap();
+
+        // Testing should succeed (specs exist)
+        lc.transition_change("test-test", ChangeState::Testing).unwrap();
     }
 
     #[test]
@@ -883,6 +927,8 @@ mod tests {
         lc.transition_change("verify-test", ChangeState::Specced).unwrap();
         lc.update_change_progress("verify-test", 2, 0).unwrap();
         lc.transition_change("verify-test", ChangeState::Planned).unwrap();
+        lc.transition_change("verify-test", ChangeState::Testing).unwrap();
+        lc.add_test_file("verify-test", "test.rs").unwrap();
         lc.transition_change("verify-test", ChangeState::Implementing).unwrap();
 
         // Try to verify with zero completed tasks
@@ -899,8 +945,9 @@ mod tests {
     #[test]
     fn change_can_be_abandoned_from_any_active_state() {
         for start_state in [ChangeState::Proposed, ChangeState::Specced, ChangeState::Planned,
-                            ChangeState::Implementing, ChangeState::Verifying] {
-            assert!(start_state.can_transition_to(ChangeState::Abandoned));
+                            ChangeState::Testing, ChangeState::Implementing, ChangeState::Verifying] {
+            assert!(start_state.can_transition_to(ChangeState::Abandoned),
+                    "{:?} should be able to transition to Abandoned", start_state);
         }
     }
 
@@ -912,6 +959,8 @@ mod tests {
         lc.transition_change("reopen", ChangeState::Specced).unwrap();
         lc.update_change_progress("reopen", 1, 0).unwrap();
         lc.transition_change("reopen", ChangeState::Planned).unwrap();
+        lc.transition_change("reopen", ChangeState::Testing).unwrap();
+        lc.add_test_file("reopen", "test.rs").unwrap();
         lc.transition_change("reopen", ChangeState::Implementing).unwrap();
         lc.update_change_progress("reopen", 1, 1).unwrap();
         lc.transition_change("reopen", ChangeState::Verifying).unwrap();

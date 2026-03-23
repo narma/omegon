@@ -74,6 +74,9 @@ pub enum ChangeState {
     Proposed,
     Specced,
     Planned,
+    /// Testing — test stubs written from spec scenarios, all failing.
+    /// TDD: tests exist before implementation code.
+    Testing,
     Implementing,
     Verifying,
     Archived,
@@ -87,12 +90,11 @@ impl ChangeState {
         match self {
             Proposed => &[Specced, Abandoned],
             Specced => &[Planned, Proposed, Abandoned],
-            Planned => &[Implementing, Specced, Abandoned],
-            Implementing => &[Verifying, Planned, Abandoned],
+            Planned => &[Testing, Specced, Abandoned],
+            Testing => &[Implementing, Planned, Abandoned],
+            Implementing => &[Verifying, Testing, Abandoned], // can go back to Testing
             Verifying => &[Archived, Implementing, Abandoned],
-            // Archived can be reopened — "we archived too early"
             Archived => &[Proposed],
-            // Abandoned can be revived — "actually, let's do this"
             Abandoned => &[Proposed],
         }
     }
@@ -106,10 +108,25 @@ impl ChangeState {
             Self::Proposed => "proposed",
             Self::Specced => "specced",
             Self::Planned => "planned",
+            Self::Testing => "testing",
             Self::Implementing => "implementing",
             Self::Verifying => "verifying",
             Self::Archived => "archived",
             Self::Abandoned => "abandoned",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "proposed" => Some(Self::Proposed),
+            "specced" => Some(Self::Specced),
+            "planned" => Some(Self::Planned),
+            "testing" => Some(Self::Testing),
+            "implementing" => Some(Self::Implementing),
+            "verifying" => Some(Self::Verifying),
+            "archived" => Some(Self::Archived),
+            "abandoned" => Some(Self::Abandoned),
+            _ => None,
         }
     }
 }
@@ -185,6 +202,9 @@ pub struct Change {
     pub state: ChangeState,
     pub bound_node: Option<String>,
     pub specs: Vec<String>,  // spec domain names
+    /// Test file paths — registered when test stubs are written (TDD).
+    #[serde(default)]
+    pub test_files: Vec<String>,
     pub tasks_total: usize,
     pub tasks_done: usize,
     pub created_at: String,
@@ -240,8 +260,12 @@ mod tests {
     #[test]
     fn change_state_transitions() {
         assert!(ChangeState::Proposed.can_transition_to(ChangeState::Specced));
+        assert!(ChangeState::Planned.can_transition_to(ChangeState::Testing));
+        assert!(ChangeState::Testing.can_transition_to(ChangeState::Implementing));
         assert!(ChangeState::Implementing.can_transition_to(ChangeState::Verifying));
         assert!(!ChangeState::Proposed.can_transition_to(ChangeState::Archived));
+        // Can't skip Testing
+        assert!(!ChangeState::Planned.can_transition_to(ChangeState::Implementing));
         // Abandoned from any active state
         assert!(ChangeState::Proposed.can_transition_to(ChangeState::Abandoned));
         assert!(ChangeState::Planned.can_transition_to(ChangeState::Abandoned));

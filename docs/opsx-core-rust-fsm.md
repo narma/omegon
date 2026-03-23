@@ -42,6 +42,11 @@ Replace markdown-as-source-of-truth with a Rust state machine that owns the life
 **Status:** decided
 **Rationale:** opsx-core owns: state transitions (FSM validation), milestones (freeze enforcement), audit trail (who changed what when), and referential integrity (parent validation, delete guards). Markdown (docs/*.md) owns: rich content (research, decisions, questions, file scope, overview). Integration: design.rs calls opsx_core::transition_node() to validate before writing markdown. If the FSM rejects, the markdown write doesn't happen. Two stores, one authority per concern.
 
+### Decision: TDD via Testing state (Option A) — first-class lifecycle phase between Planned and Implementing
+
+**Status:** decided
+**Rationale:** For harness development, the state machine must literally encode TDD: test stubs written and failing before implementation code. A dedicated Testing state makes this semantically explicit — the operator and agent both know what phase they're in. Proposed → Specced → Planned → Testing → Implementing → Verifying → Archived.
+
 ## Open Questions
 
 *No open questions.*
