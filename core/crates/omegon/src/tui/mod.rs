@@ -719,6 +719,18 @@ impl App {
         false
     }
 
+    /// Whether the dashboard panel should be shown (based on terminal width + content).
+    fn show_dashboard(&self) -> bool {
+        // We can't know terminal width without a frame, but the dashboard
+        // has a minimum width threshold of 120 and must have content to show.
+        // Since we check this from key handlers (not during rendering),
+        // we just check content availability.
+        self.dashboard.status_counts.total > 0
+            || self.dashboard.focused_node.is_some()
+            || !self.dashboard.active_changes.is_empty()
+            || self.dashboard.cleave.as_ref().is_some_and(|c| c.active || c.total_children > 0)
+    }
+
     /// Update the dashboard with lifecycle context.
     pub fn update_dashboard_from_lifecycle(
         &mut self,
@@ -740,6 +752,7 @@ impl App {
                     assumptions,
                     decisions: decisions_count,
                     readiness,
+                    openspec_change: n.openspec_change.clone(),
                 }
             })
         });
@@ -810,7 +823,7 @@ impl App {
         let (main_area, dash_area) = if show_dashboard {
             let h = Layout::horizontal([
                 Constraint::Min(60),
-                Constraint::Length(36),
+                Constraint::Length(40),
             ]).split(area);
             (h[0], h[1])
         } else {
@@ -818,7 +831,7 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
-        let footer_height = if self.focus_mode { 0u16 } else { 12 };
+        let footer_height = if self.focus_mode { 0u16 } else { 9 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -2634,6 +2647,26 @@ pub async fn run_tui(
                     }
                 }
 
+                // ── Sidebar navigation ─────────────────────────
+                // When sidebar is active, route keys to the dashboard tree.
+                // Enter on a selected node triggers design-focus via bus.
+                if app.dashboard.sidebar_active {
+                    if key.code == KeyCode::Enter {
+                        if let Some(node_id) = app.dashboard.selected_node_id().map(|s| s.to_string()) {
+                            // Focus the selected node in agent context
+                            let _ = command_tx.send(TuiCommand::BusCommand {
+                                name: "design-focus".into(),
+                                args: node_id,
+                            }).await;
+                            app.dashboard.sidebar_active = false;
+                        }
+                        continue;
+                    }
+                    if app.dashboard.handle_key(key) {
+                        continue;
+                    }
+                }
+
                 match (key.code, key.modifiers) {
                     // ── Interrupt: Escape or Ctrl+C ─────────────────
                     (KeyCode::Esc, _) => {
@@ -2693,6 +2726,16 @@ pub async fn run_tui(
                     }
                     (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                         app.editor.start_reverse_search();
+                    }
+
+                    // Ctrl+D: enter sidebar navigation mode (if dashboard visible)
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                        if app.show_dashboard() {
+                            app.dashboard.sidebar_active = !app.dashboard.sidebar_active;
+                            if app.dashboard.sidebar_active && app.dashboard.tree_state.selected().is_empty() {
+                                app.dashboard.tree_state.select_first();
+                            }
+                        }
                     }
 
                     // Meta (Alt) key combos for word operations
