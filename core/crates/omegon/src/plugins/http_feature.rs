@@ -162,9 +162,9 @@ impl Feature for HttpPluginFeature {
             let mut dir = cwd;
             for _ in 0..6 {
                 let path = dir.join(local_file);
-                if path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
-                        if !content.trim().is_empty() {
+                if path.exists()
+                    && let Ok(content) = std::fs::read_to_string(&path)
+                        && !content.trim().is_empty() {
                             return Some(ContextInjection {
                                 source: format!("plugin:{}", self.manifest.plugin.name),
                                 content,
@@ -172,8 +172,6 @@ impl Feature for HttpPluginFeature {
                                 priority: ctx_config.priority as u8,
                             });
                         }
-                    }
-                }
                 if !dir.pop() { break; }
             }
         }

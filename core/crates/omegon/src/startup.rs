@@ -99,11 +99,10 @@ pub fn classify_tier(results: &[ProbeResult]) -> CapabilityTier {
     let hw = results.iter().find(|r| r.label == "hardware");
 
     // Full cloud: any major cloud provider key present
-    if let Some(r) = cloud {
-        if r.state == ProbeState::Done && (r.summary.contains("anthropic") || r.summary.contains("openai")) {
+    if let Some(r) = cloud
+        && r.state == ProbeState::Done && (r.summary.contains("anthropic") || r.summary.contains("openai")) {
             return CapabilityTier::FullCloud;
         }
-    }
 
     // Beefy local: Ollama with models + sufficient RAM
     let has_good_local = local
@@ -119,11 +118,10 @@ pub fn classify_tier(results: &[ProbeResult]) -> CapabilityTier {
     }
 
     // Free cloud: OpenRouter key present
-    if let Some(r) = cloud {
-        if r.state == ProbeState::Done && r.summary.contains("openrouter") {
+    if let Some(r) = cloud
+        && r.state == ProbeState::Done && r.summary.contains("openrouter") {
             return CapabilityTier::FreeCloud;
         }
-    }
 
     // Small local: Ollama running with any model
     if has_good_local {
@@ -180,15 +178,12 @@ fn probe_cloud() -> ProbeResult {
 
     // Also check stored credentials using canonical provider map
     for p in crate::auth::PROVIDERS {
-        if matches!(p.auth_method, crate::auth::AuthMethod::OAuth | crate::auth::AuthMethod::ApiKey) {
-            if crate::auth::read_credentials(p.auth_key)
+        if matches!(p.auth_method, crate::auth::AuthMethod::OAuth | crate::auth::AuthMethod::ApiKey)
+            && crate::auth::read_credentials(p.auth_key)
                 .is_some_and(|c| !c.access.is_empty())
-            {
-                if !providers.contains(&p.id) {
+                && !providers.contains(&p.id) {
                     providers.push(p.id);
                 }
-            }
-        }
     }
 
     if providers.is_empty() {
@@ -258,12 +253,11 @@ fn probe_hardware() -> ProbeResult {
         }
 
         // RAM via sysctl
-        if let Some(out) = timed_command("sysctl", &["-n", "hw.memsize"], 500) {
-            if let Ok(bytes) = String::from_utf8_lossy(&out.stdout).trim().parse::<u64>() {
+        if let Some(out) = timed_command("sysctl", &["-n", "hw.memsize"], 500)
+            && let Ok(bytes) = String::from_utf8_lossy(&out.stdout).trim().parse::<u64>() {
                 let gb = bytes / (1024 * 1024 * 1024);
                 parts.push(format!("{gb}GB"));
             }
-        }
     }
 
     #[cfg(target_os = "linux")]
@@ -312,8 +306,8 @@ fn probe_memory(cwd: &str) -> ProbeResult {
     ];
 
     for path in &facts_paths {
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
+        if path.exists()
+            && let Ok(content) = std::fs::read_to_string(path) {
                 let count = content.lines().filter(|l| !l.trim().is_empty() && !l.starts_with('#')).count();
                 if count > 0 {
                     return ProbeResult {
@@ -323,7 +317,6 @@ fn probe_memory(cwd: &str) -> ProbeResult {
                     };
                 }
             }
-        }
     }
 
     ProbeResult { label: "memory", state: ProbeState::Done, summary: "empty".into() }
@@ -376,8 +369,8 @@ fn probe_secrets() -> ProbeResult {
 fn probe_container() -> ProbeResult {
     // Try podman first, then docker — with timeout (Docker Desktop can be slow)
     for (cmd, name) in &[("podman", "podman"), ("docker", "docker")] {
-        if let Some(out) = timed_command(cmd, &["--version"], 1000) {
-            if out.status.success() {
+        if let Some(out) = timed_command(cmd, &["--version"], 1000)
+            && out.status.success() {
                 let ver = String::from_utf8_lossy(&out.stdout);
                 let version = ver.split_whitespace()
                     .find(|s| s.chars().next().is_some_and(|c| c.is_ascii_digit()))
@@ -388,7 +381,6 @@ fn probe_container() -> ProbeResult {
                     summary: format!("{name} {version}"),
                 };
             }
-        }
     }
 
     ProbeResult { label: "container", state: ProbeState::Failed, summary: "not found".into() }

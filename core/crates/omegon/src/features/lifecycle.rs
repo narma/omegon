@@ -303,14 +303,12 @@ impl LifecycleFeature {
                     // Don't require parent to exist in opsx-core — lazy sync
                     let _ = opsx.create_node(id, title, None);
                     // If a non-seed status was requested, transition to it
-                    if let Some(status_str) = status {
-                        if let Some(target) = OpsxNodeState::parse(status_str) {
-                            if target != OpsxNodeState::Seed {
+                    if let Some(status_str) = status
+                        && let Some(target) = OpsxNodeState::parse(status_str)
+                            && target != OpsxNodeState::Seed {
                                 // Use force_transition for bootstrap — the node was just created
                                 let _ = opsx.force_transition_node(id, target, "initial status on create");
                             }
-                        }
-                    }
                 }
 
                 let node = design::create_node(&docs_dir, id, title, parent, status, &tags, overview)?;

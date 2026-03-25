@@ -58,6 +58,12 @@ pub struct DelegateResultStore {
     next_id: Arc<Mutex<u32>>,
 }
 
+impl Default for DelegateResultStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DelegateResultStore {
     pub fn new() -> Self {
         Self {
@@ -128,8 +134,8 @@ impl DelegateRunner {
         if let Some(ref persona_id) = mind {
             // Try to find the persona in installed plugins and load its directive + facts
             let (personas, _) = crate::plugins::persona_loader::scan_available();
-            if let Some(available) = personas.iter().find(|p| p.id.contains(persona_id) || p.name.to_lowercase().contains(&persona_id.to_lowercase())) {
-                if let Ok(persona) = crate::plugins::persona_loader::load_persona(&available.path) {
+            if let Some(available) = personas.iter().find(|p| p.id.contains(persona_id) || p.name.to_lowercase().contains(&persona_id.to_lowercase()))
+                && let Ok(persona) = crate::plugins::persona_loader::load_persona(&available.path) {
                     field_kit_context.push_str(&format!("\n## Persona: {}\n{}\n", persona.name, persona.directive));
                     if !persona.mind_facts.is_empty() {
                         field_kit_context.push_str(&format!("\n## Mind Facts ({} facts)\n", persona.mind_facts.len()));
@@ -138,16 +144,14 @@ impl DelegateRunner {
                         }
                     }
                 }
-            }
         }
-        if let Some(ref fact_list) = facts {
-            if !fact_list.is_empty() {
+        if let Some(ref fact_list) = facts
+            && !fact_list.is_empty() {
                 field_kit_context.push_str("\n## Injected Facts\n");
                 for f in fact_list {
                     field_kit_context.push_str(&format!("- {f}\n"));
                 }
             }
-        }
 
         let task_entry = DelegateTask {
             task_id: task_id.clone(),
@@ -341,11 +345,10 @@ impl Feature for DelegateFeature {
                 let background = args.get("background").and_then(|v| v.as_bool()).unwrap_or(true);
 
                 // Validate agent if specified
-                if let Some(ref agent_name) = agent {
-                    if !self.available_agents.iter().any(|a| a.name == *agent_name) {
+                if let Some(ref agent_name) = agent
+                    && !self.available_agents.iter().any(|a| a.name == *agent_name) {
                         return Err(anyhow::anyhow!("Unknown agent: {}", agent_name));
                     }
-                }
 
                 let task_id = self.result_store.generate_task_id();
 
@@ -528,8 +531,8 @@ impl Feature for DelegateFeature {
                 let mut requests = Vec::new();
 
                 for task in tasks {
-                    if let DelegateTaskStatus::Completed { success } = task.status {
-                        if let Some(completed_at) = task.completed_at {
+                    if let DelegateTaskStatus::Completed { success } = task.status
+                        && let Some(completed_at) = task.completed_at {
                             // Only notify if completed recently (within last 5 seconds)
                             if completed_at.elapsed().unwrap_or_default().as_secs() < 5 {
                                 let message = if success {
@@ -544,7 +547,6 @@ impl Feature for DelegateFeature {
                                 });
                             }
                         }
-                    }
                 }
 
                 requests
@@ -561,15 +563,12 @@ pub fn scan_agents(cwd: &PathBuf) -> Vec<AgentSpec> {
 
     if let Ok(entries) = std::fs::read_dir(&agents_dir) {
         for entry in entries.flatten() {
-            if let Some(extension) = entry.path().extension() {
-                if extension == "md" {
-                    if let Ok(content) = std::fs::read_to_string(entry.path()) {
-                        if let Some(agent) = parse_agent_spec(&content) {
+            if let Some(extension) = entry.path().extension()
+                && extension == "md"
+                    && let Ok(content) = std::fs::read_to_string(entry.path())
+                        && let Some(agent) = parse_agent_spec(&content) {
                             agents.push(agent);
                         }
-                    }
-                }
-            }
         }
     }
 

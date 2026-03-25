@@ -77,7 +77,7 @@ pub fn list() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("{:<20} {:<12} {:<10} {}", "NAME", "TYPE", "VERSION", "DESCRIPTION");
+    println!("{:<20} {:<12} {:<10} DESCRIPTION", "NAME", "TYPE", "VERSION");
     println!("{}", "─".repeat(72));
 
     for entry in &entries {
@@ -92,7 +92,7 @@ pub fn list() -> anyhow::Result<()> {
         let manifest_path = resolved.join("plugin.toml");
         if !manifest_path.exists() {
             let name = dir.file_name().unwrap_or_default().to_string_lossy();
-            println!("{:<20} {:<12} {:<10} {}", name, "?", "?", "(no plugin.toml)");
+            println!("{:<20} {:<12} {:<10} (no plugin.toml)", name, "?", "?");
             continue;
         }
 

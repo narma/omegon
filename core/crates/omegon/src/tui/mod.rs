@@ -457,7 +457,7 @@ impl App {
             }
             _ => {
                 // Parse: /calibrate <param> <value>
-                let parts: Vec<&str> = args.trim().split_whitespace().collect();
+                let parts: Vec<&str> = args.split_whitespace().collect();
                 if parts.len() != 2 {
                     return SlashResult::Display(
                         "Usage: /calibrate <gamma|saturation|hue> <value>\n       /calibrate reset".into()
@@ -499,8 +499,8 @@ impl App {
     fn handle_tutorial(&mut self, args: &str) -> SlashResult {
         match args.trim() {
             "status" => {
-                if let Some(ref overlay) = self.tutorial_overlay {
-                    if overlay.active {
+                if let Some(ref overlay) = self.tutorial_overlay
+                    && overlay.active {
                         return SlashResult::Display(format!(
                             "Tutorial: step {}/{} — \"{}\"",
                             overlay.step_index() + 1,
@@ -508,7 +508,6 @@ impl App {
                             overlay.step().title,
                         ));
                     }
-                }
                 if let Some(ref tut) = self.tutorial {
                     return SlashResult::Display(tut.status_line());
                 }
@@ -537,15 +536,14 @@ impl App {
                 // Check for lesson-file tutorial (sandbox project)
                 let tutorial_dir = std::path::Path::new(&self.footer_data.cwd)
                     .join(".omegon").join("tutorial");
-                if tutorial_dir.is_dir() {
-                    if let Some(tut) = TutorialState::load(&tutorial_dir) {
+                if tutorial_dir.is_dir()
+                    && let Some(tut) = TutorialState::load(&tutorial_dir) {
                         let lesson = tut.current_lesson().clone();
                         let status = tut.status_line();
                         self.tutorial = Some(tut);
                         self.queue_prompt(lesson.content);
                         return SlashResult::Display(format!("{status}\n\nLesson queued."));
                     }
-                }
                 // No lesson files — start the built-in overlay tutorial.
                 // Check design tree presence so Act 2/3 steps can adapt.
                 let cwd = std::path::Path::new(&self.footer_data.cwd);
@@ -568,14 +566,13 @@ impl App {
 
     /// Advance to the next tutorial step (overlay or lesson-file).
     fn handle_tutorial_next(&mut self) -> SlashResult {
-        if let Some(ref mut overlay) = self.tutorial_overlay {
-            if overlay.active {
+        if let Some(ref mut overlay) = self.tutorial_overlay
+            && overlay.active {
                 if !overlay.advance() {
                     return SlashResult::Display("🎉 Tutorial complete!".into());
                 }
                 return SlashResult::Handled;
             }
-        }
         if let Some(ref mut tut) = self.tutorial {
             if tut.advance() {
                 let lesson = tut.current_lesson().clone();
@@ -591,14 +588,13 @@ impl App {
 
     /// Go back to the previous tutorial step.
     fn handle_tutorial_prev(&mut self) -> SlashResult {
-        if let Some(ref mut overlay) = self.tutorial_overlay {
-            if overlay.active {
+        if let Some(ref mut overlay) = self.tutorial_overlay
+            && overlay.active {
                 if !overlay.go_back() {
                     return SlashResult::Display("Already at the first step.".into());
                 }
                 return SlashResult::Handled;
             }
-        }
         if let Some(ref mut tut) = self.tutorial {
             if tut.go_back() {
                 let lesson = tut.current_lesson().clone();
@@ -1249,11 +1245,10 @@ impl App {
         }
 
         // ── Tutorial overlay — rendered absolutely last, on top of everything ──
-        if let Some(ref tut) = self.tutorial_overlay {
-            if tut.active {
+        if let Some(ref tut) = self.tutorial_overlay
+            && tut.active {
                 tut.render(area, frame.buffer_mut(), self.theme.as_ref(), footer_height);
             }
-        }
     }
 
     /// Mark tutorial as completed so it doesn't auto-start again.
@@ -1598,8 +1593,7 @@ impl App {
                         SlashResult::Handled
                     }
                     _ => {
-                        if args.starts_with("login ") {
-                            let provider = &args[6..];
+                        if let Some(provider) = args.strip_prefix("login ") {
                             if provider.is_empty() {
                                 SlashResult::Display("Usage: /auth login <provider>\nSupported: anthropic, openai".into())
                             } else {
@@ -1609,8 +1603,7 @@ impl App {
                                 });
                                 SlashResult::Handled
                             }
-                        } else if args.starts_with("logout ") {
-                            let provider = &args[7..];
+                        } else if let Some(provider) = args.strip_prefix("logout ") {
                             if provider.is_empty() {
                                 SlashResult::Display("Usage: /auth logout <provider>\nSupported: anthropic, openai".into())
                             } else {
@@ -2017,11 +2010,10 @@ impl App {
                 self.conversation.push_tool_end(&id, is_error, summary);
 
                 // Signal tool error to instrument panel
-                if is_error {
-                    if let Some(ref name) = self.last_tool_name {
+                if is_error
+                    && let Some(ref name) = self.last_tool_name {
                         self.instrument_panel.set_tool_error(name);
                     }
-                }
 
                 // Detect image results from view/render tools
                 if !is_error && image::is_available()
@@ -2816,8 +2808,8 @@ pub async fn run_tui(
                 // Tab advances, Shift+Tab goes back, Escape dismisses.
                 // Tab is unambiguous — doesn't conflict with Enter (submit)
                 // or any other keybinding.
-                if let Some(ref mut tut) = app.tutorial_overlay {
-                    if tut.active {
+                if let Some(ref mut tut) = app.tutorial_overlay
+                    && tut.active {
                         // ── Project-choice widget (step 0, empty project) ──────
                         if tut.showing_choice() {
                             match key.code {
@@ -2894,7 +2886,6 @@ pub async fn run_tui(
                             }
                         }
                     }
-                }
 
                 // ── Sidebar navigation ─────────────────────────
                 // When sidebar is active, route keys to the dashboard tree.

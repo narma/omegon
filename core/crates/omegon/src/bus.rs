@@ -137,7 +137,7 @@ impl EventBus {
             .and_then(|d| d.lock().ok());
         self.tool_defs.iter()
             .filter(|(_, d)| {
-                disabled.as_ref().map_or(true, |set| !set.contains(&d.name))
+                disabled.as_ref().is_none_or(|set| !set.contains(&d.name))
             })
             .map(|(_, d)| d.clone())
             .collect()

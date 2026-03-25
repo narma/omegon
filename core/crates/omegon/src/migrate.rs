@@ -516,8 +516,8 @@ pub fn init_project(cwd: &Path, move_all: bool) -> String {
         let instructions: Vec<&DetectedConvention> = detected.iter()
             .filter(|d| matches!(d.kind, ConventionKind::Instructions))
             .collect();
-        if let Some(best) = instructions.first() {
-            if let Ok(content) = std::fs::read_to_string(&best.path) {
+        if let Some(best) = instructions.first()
+            && let Ok(content) = std::fs::read_to_string(&best.path) {
                 let header = format!(
                     "# Project Directives\n\n> Migrated from {} by Omegon /init\n\n",
                     best.source
@@ -526,7 +526,6 @@ pub fn init_project(cwd: &Path, move_all: bool) -> String {
                 lines.push(format!("✓ Created `AGENTS.md` from {}", best.source));
                 actions += 1;
             }
-        }
     } else if agents_md.exists() {
         lines.push("✓ `AGENTS.md` already exists".into());
     }
@@ -712,11 +711,10 @@ fn migrate_user_config() -> Vec<String> {
     // MCP config: ~/.pi/agent/mcp.json → ~/.config/omegon/mcp.json
     let omegon_mcp = h.join(".config/omegon/mcp.json");
     let pi_mcp = h.join(".pi/agent/mcp.json");
-    if !omegon_mcp.exists() && pi_mcp.exists() {
-        if std::fs::copy(&pi_mcp, &omegon_mcp).is_ok() {
+    if !omegon_mcp.exists() && pi_mcp.exists()
+        && std::fs::copy(&pi_mcp, &omegon_mcp).is_ok() {
             actions.push("✓ Migrated mcp.json from ~/.pi/agent/ → ~/.config/omegon/".into());
         }
-    }
 
     actions
 }

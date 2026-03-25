@@ -46,14 +46,13 @@ pub fn resolve_api_key_sync(provider: &str) -> Option<(String, bool)> {
 
     // OAuth token from env
     for oauth_var in OAUTH_ENV_VARS {
-        if env_keys.contains(oauth_var) {
-            if let Ok(val) = std::env::var(oauth_var)
+        if env_keys.contains(oauth_var)
+            && let Ok(val) = std::env::var(oauth_var)
                 && !val.is_empty()
             {
                 tracing::debug!(provider, source = oauth_var, "OAuth token resolved from env");
                 return Some((val, true));
             }
-        }
     }
 
     // auth.json — using canonical key
@@ -349,13 +348,11 @@ impl AnthropicClient {
             LlmMessage::Assistant { text, thinking, tool_calls, raw } => {
                 // Prefer raw content blocks if available — they preserve provider-specific
                 // fields like thinking signatures that are required for round-tripping.
-                if let Some(raw_val) = raw {
-                    if let Some(raw_content) = raw_val.get("content").and_then(|c| c.as_array()) {
-                        if !raw_content.is_empty() {
+                if let Some(raw_val) = raw
+                    && let Some(raw_content) = raw_val.get("content").and_then(|c| c.as_array())
+                        && !raw_content.is_empty() {
                             return json!({"role": "assistant", "content": raw_content});
                         }
-                    }
-                }
                 // Fallback: reconstruct from parsed fields (no signatures — works for
                 // providers that don't need them, or for decayed/compacted messages)
                 let mut content = Vec::new();
@@ -507,17 +504,17 @@ impl LlmBridge for AnthropicClient {
             )
             .header("anthropic-version", "2023-06-01")
             .header("anthropic-beta", {
-                let flags = if is_oauth {
-                    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14".to_string()
-                } else {
-                    "interleaved-thinking-2025-05-14".to_string()
-                };
+                
                 // NOTE: context-1m-2025-08-07 is NEVER sent. Sonnet 4.6 and
                 // Opus 4.6 support 1M context natively without a beta flag.
                 // Sending it triggers "Extra usage is required for long context
                 // requests" (429) on OAuth subscriptions — a deprecated billing
                 // gate that no longer corresponds to a capability gate.
-                flags
+                if is_oauth {
+                    "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14".to_string()
+                } else {
+                    "interleaved-thinking-2025-05-14".to_string()
+                }
             })
             .header("content-type", "application/json")
             // Claude Code identity headers for OAuth subscription recognition
@@ -710,11 +707,10 @@ async fn parse_anthropic_stream(
                         None => current_thinking_signature = Some(sig.to_string()),
                     }
                     // Patch the last thinking block in content_blocks if it exists
-                    if let Some(last) = content_blocks.last_mut() {
-                        if last.get("type").and_then(|t| t.as_str()) == Some("thinking") {
+                    if let Some(last) = content_blocks.last_mut()
+                        && last.get("type").and_then(|t| t.as_str()) == Some("thinking") {
                             last["signature"] = json!(current_thinking_signature.as_deref().unwrap_or(""));
                         }
-                    }
                 }
                 tracing::trace!(event_type = etype, "signature event");
             }
@@ -951,16 +947,14 @@ impl CodexClient {
     /// Looks for: CHATGPT_OAUTH_TOKEN env var, then openai-codex in auth.json.
     pub fn from_env() -> Option<Self> {
         // 1. Try env var
-        if let Ok(token) = std::env::var("CHATGPT_OAUTH_TOKEN") {
-            if !token.is_empty() && token.starts_with("eyJ") {
-                if let Some(account_id) = crate::auth::extract_jwt_claim(
+        if let Ok(token) = std::env::var("CHATGPT_OAUTH_TOKEN")
+            && !token.is_empty() && token.starts_with("eyJ")
+                && let Some(account_id) = crate::auth::extract_jwt_claim(
                     &token, "https://api.openai.com/auth", "chatgpt_account_id"
                 ) {
                     tracing::debug!("CodexClient: resolved from CHATGPT_OAUTH_TOKEN env var");
                     return Some(Self::new(token, account_id));
                 }
-            }
-        }
 
         // 2. Try auth.json (openai-codex entry) — JWT tokens stored by /login openai-codex oauth
         let creds = crate::auth::read_credentials("openai-codex")?;
@@ -1055,7 +1049,7 @@ impl CodexClient {
                             format!("fc_{msg_index}")
                         };
                         let call_id = if tc.id.contains('|') {
-                            tc.id.splitn(2, '|').next().unwrap_or(&tc.id).to_string()
+                            tc.id.split('|').next().unwrap_or(&tc.id).to_string()
                         } else {
                             tc.id.clone()
                         };
@@ -1076,7 +1070,7 @@ impl CodexClient {
                 LlmMessage::ToolResult { call_id, content, .. } => {
                     // Strip compound ID: use just the call_id part
                     let cid = if call_id.contains('|') {
-                        call_id.splitn(2, '|').next().unwrap_or(call_id).to_string()
+                        call_id.split('|').next().unwrap_or(call_id).to_string()
                     } else {
                         call_id.clone()
                     };
@@ -1389,11 +1383,10 @@ async fn parse_codex_stream(
             }
             "response.function_call_arguments.done" => {
                 // Final arguments — overwrite partial
-                if let Some(tc) = tool_calls.last_mut() {
-                    if let Some(args) = event["arguments"].as_str() {
+                if let Some(tc) = tool_calls.last_mut()
+                    && let Some(args) = event["arguments"].as_str() {
                         tc.args_json = args.to_string();
                     }
-                }
             }
 
             // ── Content part events (for message items) ──────────────────
@@ -1564,10 +1557,7 @@ impl OpenAICompatClient {
         let mut client = Self::new(key, base_url.to_string(), provider_id.to_string());
 
         // Provider-specific defaults
-        match provider_id {
-            "openrouter" => { client.default_model = Some("openrouter/auto".into()); }
-            _ => {}
-        }
+        if provider_id == "openrouter" { client.default_model = Some("openrouter/auto".into()); }
 
         Some(client)
     }
@@ -1624,23 +1614,21 @@ impl LlmBridge for OpenAICompatClient {
         }
 
         // Apply default model if none specified
-        if opts.model.is_none() || opts.model.as_deref() == Some("") {
-            if let Some(ref default) = self.default_model {
+        if (opts.model.is_none() || opts.model.as_deref() == Some(""))
+            && let Some(ref default) = self.default_model {
                 opts.model = Some(default.clone());
             }
-        }
 
         // For providers that aren't "openai", strip the "openai:" prefix
         // that the OpenAI client expects (since it does strip_prefix("openai:"))
         // We need the raw model name on the wire.
-        if self.provider_id != "openai" {
-            if let Some(ref mut m) = opts.model {
+        if self.provider_id != "openai"
+            && let Some(ref mut m) = opts.model {
                 // Wrap with a fake "openai:" prefix so OpenAIClient strips it correctly
                 if !m.starts_with("openai:") {
                     *m = format!("openai:{m}");
                 }
             }
-        }
 
         self.inner.stream(system_prompt, messages, tools, &opts).await
     }

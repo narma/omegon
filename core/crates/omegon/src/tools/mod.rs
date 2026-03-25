@@ -429,11 +429,10 @@ impl ToolProvider for CoreTools {
                     .ok_or_else(|| anyhow::anyhow!("missing 'content' argument"))?;
                 let path = self.resolve_path(path_str)?;
                 let result = write::execute(&path, content, &self.cwd).await;
-                if result.is_ok() {
-                    if let Some(ref model) = self.repo_model {
+                if result.is_ok()
+                    && let Some(ref model) = self.repo_model {
                         model.record_edit(path_str);
                     }
-                }
                 result
             }
             reg::EDIT => {
@@ -448,11 +447,10 @@ impl ToolProvider for CoreTools {
                     .ok_or_else(|| anyhow::anyhow!("missing 'newText' argument"))?;
                 let path = self.resolve_path(path_str)?;
                 let result = edit::execute(&path, old_text, new_text, &self.cwd).await;
-                if result.is_ok() {
-                    if let Some(ref model) = self.repo_model {
+                if result.is_ok()
+                    && let Some(ref model) = self.repo_model {
                         model.record_edit(path_str);
                     }
-                }
                 result
             }
             reg::CHANGE => {
@@ -475,13 +473,12 @@ impl ToolProvider for CoreTools {
                     },
                 ).await;
                 // Track all edited files in the working set
-                if result.is_ok() {
-                    if let Some(ref model) = self.repo_model {
+                if result.is_ok()
+                    && let Some(ref model) = self.repo_model {
                         for edit in &edits {
                             model.record_edit(&edit.file);
                         }
                     }
-                }
                 result
             }
             reg::COMMIT => {
@@ -560,15 +557,14 @@ impl ToolProvider for CoreTools {
                     let sub_prefix = format!("{}/", sub_path);
                     let touches_sub = paths.is_empty()
                         || paths.iter().any(|p| p.starts_with(&sub_prefix));
-                    if touches_sub {
-                        if let Ok(n) = omegon_git::commit::commit_in_submodule(
+                    if touches_sub
+                        && let Ok(n) = omegon_git::commit::commit_in_submodule(
                             &self.cwd,
                             sub_path,
                             message,
                         ) {
                             submodule_commits += n;
                         }
-                    }
                 }
 
                 let include_lifecycle = !lifecycle_paths.is_empty();

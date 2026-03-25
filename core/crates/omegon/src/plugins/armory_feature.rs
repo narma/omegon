@@ -223,14 +223,13 @@ impl ArmoryFeature {
         }
 
         // Mount working directory
-        if tool.mount_cwd {
-            if let Ok(cwd) = std::env::current_dir() {
+        if tool.mount_cwd
+            && let Ok(cwd) = std::env::current_dir() {
                 cmd_args.push("-v".into());
                 cmd_args.push(format!("{}:/workspace:Z", cwd.display()));
                 cmd_args.push("-w".into());
                 cmd_args.push("/workspace".into());
             }
-        }
 
         // Timeout (container-level stop signal)
         cmd_args.push(format!("--stop-timeout={}", tool.timeout_secs));
@@ -405,11 +404,10 @@ fn parse_tool_output(tool_name: &str, output: &std::process::Output) -> anyhow::
 
     // Try JSON { "result": ..., "error": ... } contract
     if let Ok(json) = serde_json::from_str::<Value>(&stdout) {
-        if let Some(error) = json.get("error").and_then(|e| e.as_str()) {
-            if !error.is_empty() {
+        if let Some(error) = json.get("error").and_then(|e| e.as_str())
+            && !error.is_empty() {
                 return Ok(tool_err(error.to_string()));
             }
-        }
         if let Some(result) = json.get("result") {
             return Ok(tool_ok(result.to_string()));
         }

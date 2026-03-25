@@ -53,12 +53,11 @@ pub fn render_bootstrap(status: &HarnessStatus, color: bool) -> String {
     }
 
     // Container — single line, only if present
-    if let Some(ref cr) = status.container_runtime {
-        if cr.available {
+    if let Some(ref cr) = status.container_runtime
+        && cr.available {
             let ver = cr.version.as_deref().unwrap_or("");
             out.push_str(&format!("  {green}✓{reset} {:<12} {dim}{ver}{reset}\n", cr.runtime));
         }
-    }
 
     // MCP — single line summary
     if !status.mcp_servers.is_empty() {

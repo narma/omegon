@@ -226,7 +226,7 @@ pub async fn run_cleave(
             // infer capability tier from scope size and route to best provider+model.
             let model = if let Some(ref inv_lock) = config.inventory {
                 let child_state = &state.children[info.child_idx];
-                if child_state.execute_model.as_deref().map_or(true, |m| m == config.model) {
+                if child_state.execute_model.as_deref().is_none_or(|m| m == config.model) {
                     let inv = inv_lock.read().await;
                     let tier = crate::routing::infer_capability_tier(child_state.scope.len());
                     let req = crate::routing::CapabilityRequest {

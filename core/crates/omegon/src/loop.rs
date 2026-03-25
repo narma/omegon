@@ -691,9 +691,9 @@ async fn dispatch_tools(
 
     for call in tool_calls {
         // ── Tool guard check ────────────────────────────────────────
-        if let Some(sm) = secrets {
-            if let Some(decision) = sm.check_guard(&call.name, &call.arguments) {
-                if decision.is_block() {
+        if let Some(sm) = secrets
+            && let Some(decision) = sm.check_guard(&call.name, &call.arguments)
+                && decision.is_block() {
                     let msg = match &decision {
                         omegon_secrets::GuardDecision::Block { reason, path } =>
                             format!("Blocked: {reason} ({path})"),
@@ -717,8 +717,6 @@ async fn dispatch_tools(
                     });
                     continue;
                 }
-            }
-        }
 
         let _ = events.send(AgentEvent::ToolStart {
             id: call.id.clone(),
@@ -1025,7 +1023,7 @@ pub fn summarize_tool_args(tool_name: &str, args: &Value) -> Option<String> {
         "web_search" => {
             args.get("query").and_then(|v| v.as_str()).map(|q| {
                 if q.len() > 60 {
-                    crate::util::truncate(&q, 60)
+                    crate::util::truncate(q, 60)
                 } else {
                     q.to_string()
                 }
@@ -1037,7 +1035,7 @@ pub fn summarize_tool_args(tool_name: &str, args: &Value) -> Option<String> {
                 .and_then(|v| v.as_str())
                 .map(|s| {
                     if s.len() > 60 {
-                        crate::util::truncate(&s, 60)
+                        crate::util::truncate(s, 60)
                     } else {
                         s.to_string()
                     }

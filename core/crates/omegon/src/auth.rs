@@ -392,8 +392,8 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
     };
     
     for key in env_keys {
-        if let Ok(val) = std::env::var(key) {
-            if !val.is_empty() {
+        if let Ok(val) = std::env::var(key)
+            && !val.is_empty() {
                 let is_oauth = key.contains("OAUTH");
                 return ProviderInfo {
                     name: provider.to_string(),
@@ -402,7 +402,6 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
                     details: Some(format!("env:{}", key)),
                 };
             }
-        }
     }
     
     // Check stored credentials
@@ -480,12 +479,11 @@ pub async fn resolve_with_refresh(provider: &str) -> Option<(String, bool)> {
 
     // Check OAuth token env vars
     for oauth_var in OAUTH_ENV_VARS {
-        if env_vars.contains(oauth_var) {
-            if let Ok(val) = std::env::var(oauth_var)
+        if env_vars.contains(oauth_var)
+            && let Ok(val) = std::env::var(oauth_var)
                 && !val.is_empty() {
                     return Some((val, true));
                 }
-        }
     }
 
     // 2. auth.json — with refresh if expired (canonical key mapping)

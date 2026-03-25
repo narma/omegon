@@ -614,9 +614,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     {
         let model_id = cli.model.split(':').nth(1).unwrap_or(&cli.model);
         let provider = cli.model.split(':').next().unwrap_or("anthropic");
-        if provider == "anthropic" {
-            if let Some(limits) = auth::probe_anthropic_model_limits(model_id).await {
-                if let Ok(mut s) = shared_settings.lock() {
+        if provider == "anthropic"
+            && let Some(limits) = auth::probe_anthropic_model_limits(model_id).await
+                && let Ok(mut s) = shared_settings.lock() {
                     let old = s.context_window;
                     s.context_window = limits.max_input_tokens;
                     s.context_class = settings::ContextClass::from_tokens(limits.max_input_tokens);
@@ -627,8 +627,6 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         );
                     }
                 }
-            }
-        }
     }
 
     let is_oauth = providers::resolve_api_key_sync(
@@ -636,8 +634,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     ).is_some_and(|(_, oauth)| oauth);
 
     // ─── Apply CLI overrides ──────────────────────────────────────────
-    if let Some(ref class_str) = cli.context_class {
-        if let Ok(mut s) = shared_settings.lock() {
+    if let Some(ref class_str) = cli.context_class
+        && let Ok(mut s) = shared_settings.lock() {
             match class_str.to_lowercase().as_str() {
                 "squad" => { s.context_class = settings::ContextClass::Squad; s.context_window = 200_000; }
                 "maniple" => { s.context_class = settings::ContextClass::Maniple; s.context_window = 500_000; }
@@ -648,7 +646,6 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
             s.apply_context_mode();
             tracing::info!(class = %class_str, window = s.context_window, "context class override applied");
         }
-    }
 
     // ─── Launch TUI ─────────────────────────────────────────────────────
     let initial = agent.initial_tui_state();
@@ -911,7 +908,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         }
                         "auth_login" => {
                             // Parse "provider [oauth]" — e.g. "anthropic oauth" or just "anthropic"
-                            let parts: Vec<&str> = args.trim().split_whitespace().collect();
+                            let parts: Vec<&str> = args.split_whitespace().collect();
                             let provider = if parts.is_empty() { "anthropic" } else { parts[0] };
                             let wants_oauth = parts.get(1) == Some(&"oauth");
                             
@@ -1319,7 +1316,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
                         .map(|c| match c {
                             omegon_traits::ContentBlock::Text { text } => {
                                 if text.len() > 200 {
-                                    crate::util::truncate(&text, 200)
+                                    crate::util::truncate(text, 200)
                                 } else {
                                     text.clone()
                                 }

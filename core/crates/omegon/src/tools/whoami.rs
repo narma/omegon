@@ -47,12 +47,11 @@ pub async fn execute() -> anyhow::Result<ToolResult> {
     for r in &results {
         let icon = r.status.icon();
         let mut line = format!("  {icon}  **{}**: {}", r.provider, r.detail);
-        if let Some(ref err) = r.error {
-            if !matches!(r.status, Status::Ok) {
+        if let Some(ref err) = r.error
+            && !matches!(r.status, Status::Ok) {
                 let first_line = err.lines().next().unwrap_or("").chars().take(120).collect::<String>();
                 line.push_str(&format!("\n      Error: {first_line}"));
             }
-        }
         lines.push(line);
 
         checks.push(json!({

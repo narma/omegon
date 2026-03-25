@@ -376,13 +376,12 @@ fn scan_dir(dir: &Path, result: &mut ScanResult) {
         }
 
         // Skip files larger than the size limit
-        if let Ok(meta) = path.metadata() {
-            if meta.len() > MAX_DESIGN_DOC_BYTES {
+        if let Ok(meta) = path.metadata()
+            && meta.len() > MAX_DESIGN_DOC_BYTES {
                 tracing::debug!(path = %path.display(), size = meta.len(),
                     "skipping oversized file (>{MAX_DESIGN_DOC_BYTES} bytes)");
                 continue;
             }
-        }
 
         count += 1;
 

@@ -308,8 +308,7 @@ fn probe_container_runtime() -> Option<ContainerRuntimeStatus> {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .output()
-        {
-            if output.status.success() {
+            && output.status.success() {
                 let version_str = String::from_utf8_lossy(&output.stdout);
                 // Extract version number — typically "podman version 5.3.1" or "Docker version 27.x"
                 let version = version_str
@@ -323,7 +322,6 @@ fn probe_container_runtime() -> Option<ContainerRuntimeStatus> {
                     available: true,
                 });
             }
-        }
     }
     None
 }
@@ -338,8 +336,7 @@ fn probe_inference_backends() -> Vec<InferenceBackendStatus> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .output()
-    {
-        if resp.status.success() {
+        && resp.status.success() {
             let body = String::from_utf8_lossy(&resp.stdout);
             let models: Vec<InferenceModelInfo> = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
@@ -362,7 +359,6 @@ fn probe_inference_backends() -> Vec<InferenceBackendStatus> {
                 models,
             });
         }
-    }
 
     backends
 }

@@ -184,9 +184,9 @@ async fn discover_project_mcp_servers(cwd: &Path) -> Vec<Box<dyn omegon_traits::
 
     // Check .omegon/mcp.toml (native Omegon MCP config)
     let mcp_config_path = cwd.join(".omegon").join("mcp.toml");
-    if mcp_config_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&mcp_config_path) {
-            if let Ok(servers) = toml::from_str::<std::collections::HashMap<String, mcp::McpServerConfig>>(&content) {
+    if mcp_config_path.exists()
+        && let Ok(content) = std::fs::read_to_string(&mcp_config_path)
+            && let Ok(servers) = toml::from_str::<std::collections::HashMap<String, mcp::McpServerConfig>>(&content) {
                 match mcp::McpFeature::connect("project-mcp", &servers).await {
                     Ok(feature) if !feature.tools().is_empty() => {
                         tracing::info!(
@@ -202,8 +202,6 @@ async fn discover_project_mcp_servers(cwd: &Path) -> Vec<Box<dyn omegon_traits::
                     }
                 }
             }
-        }
-    }
 
     features
 }

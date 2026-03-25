@@ -117,8 +117,7 @@ fn init_git_repo(dir: &Path) -> io::Result<()> {
         if status.success() {
             Ok(())
         } else {
-            Err(io::Error::new(
-                io::ErrorKind::Other,
+            Err(io::Error::other(
                 format!("git {} failed", args[0])
             ))
         }

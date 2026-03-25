@@ -399,11 +399,10 @@ impl ArmoryManifest {
             PluginType::Persona => {
                 if self.persona.is_none() {
                     errors.push("persona plugin must have a [persona] section".into());
-                } else if let Some(ref p) = self.persona {
-                    if p.identity.is_none() {
+                } else if let Some(ref p) = self.persona
+                    && p.identity.is_none() {
                         errors.push("persona plugin must have [persona.identity] with a directive".into());
                     }
-                }
             }
             PluginType::Tone => {
                 if self.tone.is_none() {

@@ -216,8 +216,8 @@ impl InstrumentPanel {
         }
 
         // Memory: pluck the string
-        if let Some((mind_idx, direction)) = memory_op {
-            if mind_idx < self.minds.len() {
+        if let Some((mind_idx, direction)) = memory_op
+            && mind_idx < self.minds.len() {
                 if !self.minds[mind_idx].active {
                     self.minds[mind_idx].active = true;
                     self.minds[mind_idx].wave = vec![0.0; 80];
@@ -225,7 +225,6 @@ impl InstrumentPanel {
                 }
                 self.minds[mind_idx].pluck(direction);
             }
-        }
 
         // Update wave physics
         for mind in &mut self.minds {
@@ -397,12 +396,11 @@ impl InstrumentPanel {
             // Vertical trunk on earlier rows
             for prev in 0..row_idx {
                 let py = area.y + prev as u16;
-                if let Some(cell) = buf.cell_mut(Position::new(area.x, py)) {
-                    if cell.symbol() != "├" && cell.symbol() != "└" {
+                if let Some(cell) = buf.cell_mut(Position::new(area.x, py))
+                    && cell.symbol() != "├" && cell.symbol() != "└" {
                         cell.set_char('│');
                         cell.set_fg(Color::Rgb(32, 72, 96));
                     }
-                }
             }
 
             // Mind name + fact count

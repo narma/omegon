@@ -41,7 +41,7 @@ impl AuthFeature {
 
         let now = SystemTime::now();
         let should_refresh = self.last_probe_time
-            .map_or(true, |last| now.duration_since(last).unwrap_or(CACHE_TTL) >= CACHE_TTL);
+            .is_none_or(|last| now.duration_since(last).unwrap_or(CACHE_TTL) >= CACHE_TTL);
 
         if should_refresh {
             let auth_status = crate::auth::probe_all_providers().await;

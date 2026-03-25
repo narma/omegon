@@ -133,8 +133,8 @@ pub fn extract_testing_directives(task_content: &str) -> TestingDirectives {
             continue;
         }
 
-        if let Some(tier) = current_tier {
-            if let Some(item) = trimmed.strip_prefix("- ") {
+        if let Some(tier) = current_tier
+            && let Some(item) = trimmed.strip_prefix("- ") {
                 // Skip checkbox items (task lines like "- [ ] 1.3 Tests for...")
                 if !item.is_empty() && !item.starts_with("[ ]") && !item.starts_with("[x]") && !item.starts_with("[X]") {
                     match tier {
@@ -144,7 +144,6 @@ pub fn extract_testing_directives(task_content: &str) -> TestingDirectives {
                     }
                 }
             }
-        }
     }
 
     directives
@@ -267,8 +266,8 @@ fn extract_dependency_versions(repo_path: &Path, scope: &[String]) -> Vec<String
         while let Some(d) = dir {
             let pkg = d.join("package.json");
             if pkg.exists() {
-                if let Ok(content) = std::fs::read_to_string(&pkg) {
-                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Ok(content) = std::fs::read_to_string(&pkg)
+                    && let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
                         let relative = pkg.strip_prefix(repo_path).unwrap_or(&pkg);
                         let mut parts = vec![format!("# {}", relative.display())];
                         if let Some(deps) = v.get("dependencies").and_then(|d| d.as_object()) {
@@ -287,7 +286,6 @@ fn extract_dependency_versions(repo_path: &Path, scope: &[String]) -> Vec<String
                             snippets.push(parts.join("\n"));
                         }
                     }
-                }
                 break;
             }
             if d == repo_path {
@@ -349,16 +347,14 @@ fn find_test_sample_recursive(src_dir: &Path, root: &Path, depth: usize) -> Opti
         let path = entry.path();
         if path.is_dir() {
             subdirs.push(path);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            if let Ok(content) = std::fs::read_to_string(&path) {
-                if let Some(sample) = extract_first_test(&content) {
+        } else if path.extension().is_some_and(|e| e == "rs")
+            && let Ok(content) = std::fs::read_to_string(&path)
+                && let Some(sample) = extract_first_test(&content) {
                     let relative = path.strip_prefix(root)
                         .unwrap_or(&path)
                         .to_string_lossy();
                     return Some(format!("// From {relative}\n{sample}"));
                 }
-            }
-        }
     }
 
     // Second pass: recurse into subdirectories

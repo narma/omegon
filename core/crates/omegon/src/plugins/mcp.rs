@@ -285,12 +285,11 @@ impl McpFeature {
             }
 
             // Mount cwd if requested
-            if config.mount_cwd {
-                if let Ok(cwd) = std::env::current_dir() {
+            if config.mount_cwd
+                && let Ok(cwd) = std::env::current_dir() {
                     cmd.arg(format!("-v={}:/work", cwd.display()));
                     cmd.args(["-w", "/work"]);
                 }
-            }
 
             // Environment variables — validate key names to prevent injection
             for (key, value) in &config.env {

@@ -205,12 +205,11 @@ impl VersionSwitcher {
         };
 
         // Extract version from path like ~/.omegon/versions/1.2.3/omegon
-        if let Some(parent) = target.parent() {
-            if let Some(version_name) = parent.file_name() {
+        if let Some(parent) = target.parent()
+            && let Some(version_name) = parent.file_name() {
                 let version_str = version_name.to_string_lossy();
                 return Ok(Some(Version::parse(&version_str)?));
             }
-        }
 
         Ok(None)
     }
@@ -461,9 +460,7 @@ impl VersionSwitcher {
             if let Event::Key(KeyEvent { code, .. }) = event::read()? {
                 match code {
                     KeyCode::Up => {
-                        if selected > 0 {
-                            selected -= 1;
-                        }
+                        selected = selected.saturating_sub(1);
                     }
                     KeyCode::Down => {
                         if selected < all_options.len() - 1 {

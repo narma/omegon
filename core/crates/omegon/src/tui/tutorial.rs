@@ -434,11 +434,10 @@ impl Tutorial {
     /// AutoPrompt that was sent, advance to the next step.
     pub fn on_agent_turn_complete(&mut self) {
         if !self.active { return; }
-        if self.auto_prompt_sent {
-            if let Trigger::AutoPrompt(_) = &self.step().trigger {
+        if self.auto_prompt_sent
+            && let Trigger::AutoPrompt(_) = &self.step().trigger {
                 self.advance();
             }
-        }
     }
 
     /// Dismiss the tutorial.
@@ -449,12 +448,11 @@ impl Tutorial {
     /// Check if a slash command matches the current step's trigger.
     pub fn check_command(&mut self, cmd: &str) -> bool {
         if !self.active { return false; }
-        if let Trigger::Command(expected) = &self.step().trigger {
-            if cmd == *expected {
+        if let Trigger::Command(expected) = &self.step().trigger
+            && cmd == *expected {
                 self.advance();
                 return true;
             }
-        }
         false
     }
 
@@ -630,11 +628,10 @@ impl Tutorial {
         }
         if let Some(y) = cta_y {
             for x in inner.x..inner.right() {
-                if let Some(cell) = buf.cell_mut(ratatui::prelude::Position::new(x, y)) {
-                    if cell.symbol() != " " {
+                if let Some(cell) = buf.cell_mut(ratatui::prelude::Position::new(x, y))
+                    && cell.symbol() != " " {
                         cell.set_fg(theme.accent_bright());
                     }
-                }
             }
         }
     }

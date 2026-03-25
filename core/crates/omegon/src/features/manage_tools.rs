@@ -18,6 +18,12 @@ pub struct ManageTools {
     all_tools: Arc<Mutex<Vec<String>>>,
 }
 
+impl Default for ManageTools {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ManageTools {
     pub fn new() -> Self {
         Self {
