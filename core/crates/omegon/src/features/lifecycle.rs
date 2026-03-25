@@ -722,13 +722,13 @@ impl Feature for LifecycleFeature {
     fn commands(&self) -> Vec<CommandDefinition> {
         vec![
             CommandDefinition {
-                name: "focus".into(),
-                description: "Focus on a design node (inject its context)".into(),
+                name: "design-focus".into(),
+                description: "Pin a design node (inject its context) — use via agent tool, not operator command".into(),
                 subcommands: self.provider.lock().unwrap().all_nodes().keys().cloned().collect(),
             },
             CommandDefinition {
-                name: "unfocus".into(),
-                description: "Clear design node focus".into(),
+                name: "design-unfocus".into(),
+                description: "Clear design node pin — use via agent tool, not operator command".into(),
                 subcommands: vec![],
             },
             CommandDefinition {
@@ -741,14 +741,14 @@ impl Feature for LifecycleFeature {
 
     fn handle_command(&mut self, name: &str, args: &str) -> CommandResult {
         match name {
-            "focus" => {
+            "design-focus" => {
                 let id = args.trim();
                 if id.is_empty() {
                     let p = self.provider.lock().unwrap();
                     if let Some(focused) = p.focused_node_id() {
                         return CommandResult::Display(format!("Currently focused on: {focused}"));
                     }
-                    return CommandResult::Display("No node focused. Usage: /focus <node-id>".into());
+                    return CommandResult::Display("No node focused. Usage: design-focus <node-id>".into());
                 }
                 let display = {
                     let p = self.provider.lock().unwrap();
@@ -761,7 +761,7 @@ impl Feature for LifecycleFeature {
                 CommandResult::Display(display)
             }
 
-            "unfocus" => {
+            "design-unfocus" => {
                 self.provider.lock().unwrap().set_focus(None);
                 CommandResult::Display("Design focus cleared".into())
             }
@@ -894,7 +894,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let feature = LifecycleFeature::new(dir.path());
         let commands = feature.commands();
-        assert!(commands.iter().any(|c| c.name == "focus"));
+        assert!(commands.iter().any(|c| c.name == "design-focus"));
         assert!(commands.iter().any(|c| c.name == "design"));
     }
 
@@ -1006,11 +1006,11 @@ mod tests {
         let (_dir, repo) = setup_test_repo();
         let mut feature = LifecycleFeature::new(&repo);
 
-        let result = feature.handle_command("focus", "test-node");
+        let result = feature.handle_command("design-focus", "test-node");
         assert!(matches!(result, CommandResult::Display(ref s) if s.contains("Focused")));
         assert_eq!(feature.provider.lock().unwrap().focused_node_id().map(String::from), Some("test-node".to_string()));
 
-        let result = feature.handle_command("unfocus", "");
+        let result = feature.handle_command("design-unfocus", "");
         assert!(matches!(result, CommandResult::Display(ref s) if s.contains("cleared")));
         assert!(feature.provider.lock().unwrap().focused_node_id().is_none());
     }

@@ -1457,6 +1457,7 @@ impl App {
         ("delegate", "delegate task management",              &["status"]),
         ("status",   "show harness status (providers, MCP, secrets, routing)", &[]),
         ("focus",    "toggle instrument panel focus mode",   &[]),
+        ("tree",     "show design tree summary",             &["list", "frontier", "ready", "blocked"]),
         ("tutorial", "interactive tutorial (replaces /demo)",         &["status", "reset"]),
         ("next",     "advance to next tutorial lesson",              &[]),
         ("prev",     "go back to previous tutorial lesson",          &[]),
@@ -1873,6 +1874,16 @@ impl App {
                 self.focus_mode = !self.focus_mode;
                 let status = if self.focus_mode { "enabled" } else { "disabled" };
                 SlashResult::Display(format!("Instrument panel focus mode → {status}"))
+            }
+
+            "tree" => {
+                // Route to the design bus command
+                let sub = if args.is_empty() { "list" } else { args };
+                let _ = tx.try_send(TuiCommand::BusCommand {
+                    name: "design".to_string(),
+                    args: sub.to_string(),
+                });
+                SlashResult::Handled
             }
 
             "milestone" => {
