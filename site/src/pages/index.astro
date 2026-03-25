@@ -33,6 +33,7 @@ import "../styles/global.css";
       </p>
 
       <pre class="hero-install"><code>curl -fsSL https://omegon.styrene.dev/install.sh | sh</code></pre>
+      <p class="hero-alt-install">or <code>brew tap styrene-lab/tap && brew install omegon</code></p>
 
       <div class="hero-cta">
         <a href="/docs/quickstart" class="btn btn-primary">Quick Start →</a>
@@ -176,6 +177,17 @@ import "../styles/global.css";
     border: none;
     padding: 0;
     color: inherit;
+  }
+
+  .hero-alt-install {
+    font-size: 13px;
+    color: var(--dim);
+    margin-top: -16px;
+    margin-bottom: 24px;
+  }
+  .hero-alt-install code {
+    font-size: 12px;
+    color: var(--muted);
   }
 
   .hero-cta {

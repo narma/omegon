@@ -226,10 +226,36 @@ sign:
         "$BINARY"
 
     echo ""
-    echo "Verifying..."
+    echo "Verifying signature..."
     codesign -dvvv "$BINARY" 2>&1 | grep -E "Authority|Team|Signature|Identifier"
-    echo ""
-    echo "✓ Signed."
+
+    # Notarize if API key is available
+    if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ] && [ -f "${APPLE_API_KEY:-}" ]; then
+        echo ""
+        echo "Notarizing with Apple..."
+        # Create a zip for notarization (notary service requires zip/dmg/pkg)
+        NOTARY_ZIP="${BINARY}.zip"
+        ditto -c -k --keepParent "$BINARY" "$NOTARY_ZIP"
+
+        "$HOME/.cargo/bin/rcodesign" notary-submit \
+            --api-key-path "$APPLE_API_KEY" \
+            --api-issuer "$APPLE_API_ISSUER" \
+            --staple \
+            "$NOTARY_ZIP"
+
+        # Extract the stapled binary back
+        rm -f "$NOTARY_ZIP"
+
+        echo ""
+        echo "Verifying notarization..."
+        spctl --assess -vv "$BINARY" 2>&1 || true
+        echo ""
+        echo "✓ Signed and notarized."
+    else
+        echo ""
+        echo "✓ Signed (notarization skipped — set APPLE_API_KEY and APPLE_API_ISSUER to enable)."
+        echo "  Setup: https://appstoreconnect.apple.com/access/integrations/api"
+    fi
 
 # One-time setup: create a self-signed code signing certificate.
 # Prevents macOS keychain permission prompts on every RC build.
@@ -391,6 +417,58 @@ publish:
     echo "  Release:  github.com/styrene-lab/omegon/releases/tag/$TAG"
     echo ""
     echo "  Monitor CI: gh run list --limit 3"
+
+# One-time setup: store App Store Connect API credentials for notarization.
+setup-notarize:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Apple Notarization Setup"
+    echo "========================"
+    echo ""
+    echo "1. Go to https://appstoreconnect.apple.com/access/integrations/api"
+    echo "2. Generate a new API key (Developer role is sufficient)"
+    echo "3. Download the .p8 file"
+    echo ""
+    read -p "Path to .p8 key file: " KEY_PATH
+    read -p "Key ID (from App Store Connect): " KEY_ID
+    read -p "Issuer ID (from App Store Connect): " ISSUER_ID
+    echo ""
+    echo "Add these to your shell profile:"
+    echo "  export APPLE_API_KEY=\"$KEY_PATH\""
+    echo "  export APPLE_API_KEY_ID=\"$KEY_ID\""
+    echo "  export APPLE_API_ISSUER=\"$ISSUER_ID\""
+    echo ""
+    echo "Then run 'just sign' — notarization will be automatic."
+
+# Create/update the Homebrew tap repo
+brew-tap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! gh repo view styrene-lab/homebrew-tap &>/dev/null 2>&1; then
+        echo "Creating styrene-lab/homebrew-tap..."
+        gh repo create styrene-lab/homebrew-tap --public \
+            --description "Homebrew tap for Omegon — terminal-native AI agent harness"
+    fi
+    TMPDIR=$(mktemp -d)
+    trap "rm -rf $TMPDIR" EXIT
+    gh repo clone styrene-lab/homebrew-tap "$TMPDIR/tap" 2>/dev/null || {
+        mkdir -p "$TMPDIR/tap"
+        cd "$TMPDIR/tap"
+        git init
+        git remote add origin "https://github.com/styrene-lab/homebrew-tap.git"
+    }
+    mkdir -p "$TMPDIR/tap/Formula"
+    cp homebrew/Formula/omegon.rb "$TMPDIR/tap/Formula/"
+    cd "$TMPDIR/tap"
+    git add -A
+    git diff --cached --quiet || {
+        git commit -m "formula: omegon $(grep 'version ' Formula/omegon.rb | head -1 | sed 's/.*\"\(.*\)\".*/\1/')"
+        git push origin HEAD:main 2>/dev/null || git push -u origin main
+    }
+    echo ""
+    echo "✓ Tap updated. Install with:"
+    echo "  brew tap styrene-lab/tap"
+    echo "  brew install omegon"
 
 # ─── TypeScript (omegon-pi) ─────────────────────────────────
 

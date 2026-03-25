@@ -22,6 +22,14 @@ VERSION=0.15.2 curl -fsSL https://omegon.styrene.dev/install.sh | sh
 # Non-interactive (CI)
 curl -fsSL https://omegon.styrene.dev/install.sh | sh -s -- --no-confirm</code></pre>
 
+  <h2>Homebrew (macOS / Linux)</h2>
+  <pre><code>brew tap styrene-lab/tap
+brew install omegon</code></pre>
+  <p>
+    The Homebrew formula downloads the latest release from GitHub, verifies the checksum,
+    and installs to your Homebrew prefix. Updates via <code>brew upgrade omegon</code>.
+  </p>
+
   <h2>GitHub Releases</h2>
   <p>
     Download release artifacts directly from
