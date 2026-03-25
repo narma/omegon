@@ -51,7 +51,7 @@ use omegon_traits::AgentEvent;
 
 use self::conversation::ConversationView;
 use self::dashboard::DashboardState;
-use self::segments::Segment;
+use self::segments::SegmentContent;
 use self::footer::FooterData;
 use self::editor::Editor;
 use self::instruments::InstrumentPanel;
@@ -1124,7 +1124,7 @@ impl App {
                 conv_state.visible_image_areas(segments, conv_area)
                     .into_iter()
                     .filter_map(|(idx, area)| {
-                        if let Segment::Image { ref path, .. } = segments[idx] {
+                        if let SegmentContent::Image { ref path, .. } = segments[idx].content {
                             Some((idx, area, path.clone()))
                         } else {
                             None

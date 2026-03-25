@@ -29,12 +29,50 @@ fn syntax_cache() -> &'static SyntaxCache {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Segment enum — the typed conversation model
+// Segment — rich metadata wrapper + typed content
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// A segment in the conversation — each renders as its own widget.
+/// Metadata captured at segment creation time. Every segment carries this
+/// regardless of type. Fields are Optional — populated when available,
+/// never blocking construction.
+#[derive(Debug, Clone, Default)]
+pub struct SegmentMeta {
+    /// Wall-clock time this segment was created.
+    pub timestamp: Option<std::time::Instant>,
+    /// Provider that generated this content (e.g. "anthropic", "ollama").
+    pub provider: Option<String>,
+    /// Model ID at generation time (e.g. "claude-sonnet-4-20250514").
+    pub model_id: Option<String>,
+    /// Capability tier at generation time (e.g. "frontier").
+    pub tier: Option<String>,
+    /// Thinking level active at generation time (e.g. "medium", "high").
+    pub thinking_level: Option<String>,
+    /// Turn number within the session (1-indexed).
+    pub turn: Option<u32>,
+    /// Estimated token cost of this segment (input + output).
+    pub est_tokens: Option<u32>,
+    /// Context window fill percentage at time of generation.
+    pub context_percent: Option<f32>,
+    /// Active persona ID, if any.
+    pub persona: Option<String>,
+    /// Git branch at time of generation.
+    pub branch: Option<String>,
+    /// Duration of the operation (for tool calls: execution time).
+    pub duration_ms: Option<u64>,
+}
+
+/// A segment in the conversation — metadata wrapper + typed content.
 #[derive(Debug, Clone)]
-pub enum Segment {
+pub struct Segment {
+    /// Rich metadata captured at creation time.
+    pub meta: SegmentMeta,
+    /// The typed content of this segment.
+    pub content: SegmentContent,
+}
+
+/// The typed content of a conversation segment.
+#[derive(Debug, Clone)]
+pub enum SegmentContent {
     /// User's input prompt.
     UserPrompt { text: String },
 
@@ -76,6 +114,39 @@ pub enum Segment {
     TurnSeparator,
 }
 
+/// Convenience constructors — build Segment with default (empty) metadata.
+/// Call sites that have model info should set meta fields after construction.
+impl Segment {
+    pub fn user_prompt(text: impl Into<String>) -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::UserPrompt { text: text.into() } }
+    }
+    pub fn assistant_text() -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::AssistantText {
+            text: String::new(), thinking: String::new(), complete: false,
+        }}
+    }
+    pub fn tool_card(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
+            id: id.into(), name: name.into(),
+            args_summary: None, detail_args: None,
+            result_summary: None, detail_result: None,
+            is_error: false, complete: false, expanded: false,
+        }}
+    }
+    pub fn system(text: impl Into<String>) -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::SystemNotification { text: text.into() } }
+    }
+    pub fn lifecycle(icon: impl Into<String>, text: impl Into<String>) -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::LifecycleEvent { icon: icon.into(), text: text.into() } }
+    }
+    pub fn image(path: std::path::PathBuf, alt: impl Into<String>) -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::Image { path, alt: alt.into() } }
+    }
+    pub fn separator() -> Self {
+        Self { meta: SegmentMeta::default(), content: SegmentContent::TurnSeparator }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Rendering — each segment type knows how to render into a Rect
 // ═══════════════════════════════════════════════════════════════════════════
@@ -83,21 +154,22 @@ pub enum Segment {
 impl Segment {
     /// Render this segment into the given area of the buffer.
     pub fn render(&self, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
-        match self {
-            Self::UserPrompt { text } => render_user_prompt(text, area, buf, t),
-            Self::AssistantText { text, thinking, complete } => {
+        use SegmentContent::*;
+        match &self.content {
+            UserPrompt { text } => render_user_prompt(text, area, buf, t),
+            AssistantText { text, thinking, complete } => {
                 render_assistant_text(text, thinking, *complete, area, buf, t);
             }
-            Self::ToolCard {
+            ToolCard {
                 name, detail_args, detail_result, is_error, complete, expanded, ..
             } => {
                 render_tool_card(name, detail_args.as_deref(), detail_result.as_deref(),
                     *is_error, *complete, *expanded, area, buf, t);
             }
-            Self::SystemNotification { text } => render_system(text, area, buf, t),
-            Self::LifecycleEvent { icon, text } => render_lifecycle(icon, text, area, buf, t),
-            Self::Image { path, alt } => render_image_placeholder(path, alt, area, buf, t),
-            Self::TurnSeparator => render_separator(area, buf, t),
+            SystemNotification { text } => render_system(text, area, buf, t),
+            LifecycleEvent { icon, text } => render_lifecycle(icon, text, area, buf, t),
+            Image { path, alt } => render_image_placeholder(path, alt, area, buf, t),
+            TurnSeparator => render_separator(area, buf, t),
         }
     }
 
@@ -106,29 +178,30 @@ impl Segment {
     /// Paragraph's word-aware wrapping precisely.
     pub fn height(&self, width: u16, t: &dyn Theme) -> u16 {
         if width == 0 { return 1; }
+        use SegmentContent::*;
 
         // Quick paths for fixed-height types
-        match self {
-            Self::TurnSeparator => return 1,
-            Self::LifecycleEvent { .. } => return 1,
-            Self::Image { .. } => return 14, // Fixed: 12 rows image + 1 caption + 1 spacing
+        match &self.content {
+            TurnSeparator => return 1,
+            LifecycleEvent { .. } => return 1,
+            Image { .. } => return 14, // Fixed: 12 rows image + 1 caption + 1 spacing
             _ => {}
         }
 
         // Estimate max height for the temp buffer
-        let estimate = match self {
-            Self::UserPrompt { text } => (text.len() / width.max(1) as usize) as u16 + 4,
-            Self::AssistantText { text, thinking, .. } => {
+        let estimate = match &self.content {
+            UserPrompt { text } => (text.len() / width.max(1) as usize) as u16 + 4,
+            AssistantText { text, thinking, .. } => {
                 (text.lines().count() + thinking.lines().count()) as u16 + 6
             }
-            Self::ToolCard { detail_args, detail_result, expanded, .. } => {
+            ToolCard { detail_args, detail_result, expanded, .. } => {
                 let max_r = if *expanded { 200 } else { 12 };
                 let a = detail_args.as_ref().map(|a| a.lines().count()).unwrap_or(0);
                 let r = detail_result.as_ref().map(|r| r.lines().count().min(max_r)).unwrap_or(0);
                 // 3 = border top + title + border bottom. Compact cards.
                 (a + r + 3) as u16
             }
-            Self::SystemNotification { text } => text.lines().count() as u16 + 3,
+            SystemNotification { text } => text.lines().count() as u16 + 3,
             _ => 4,
         };
 
@@ -809,7 +882,7 @@ mod tests {
 
     #[test]
     fn user_prompt_renders() {
-        let seg = Segment::UserPrompt { text: "hello world".into() };
+        let seg = Segment::user_prompt("hello world");
         let (area, mut buf) = make_buf(40, 5);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -819,14 +892,14 @@ mod tests {
 
     #[test]
     fn tool_card_has_borders() {
-        let seg = Segment::ToolCard {
+        let seg = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "1".into(), name: "bash".into(),
             args_summary: Some("ls -la".into()),
             detail_args: Some("ls -la".into()),
             result_summary: Some("total 42".into()),
             detail_result: Some("total 42\ndrwxr-xr-x  5 user staff".into()),
             is_error: false, complete: true, expanded: false,
-        };
+        }};
         let (area, mut buf) = make_buf(60, 10);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -838,12 +911,12 @@ mod tests {
 
     #[test]
     fn tool_card_error_styling() {
-        let seg = Segment::ToolCard {
+        let seg = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "1".into(), name: "write".into(),
             args_summary: None, detail_args: Some("/tmp/test".into()),
             result_summary: None, detail_result: Some("permission denied".into()),
             is_error: true, complete: true, expanded: false,
-        };
+        }};
         let (area, mut buf) = make_buf(60, 8);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -852,11 +925,11 @@ mod tests {
 
     #[test]
     fn assistant_text_with_code_fence() {
-        let seg = Segment::AssistantText {
+        let seg = Segment { meta: SegmentMeta::default(), content: SegmentContent::AssistantText {
             text: "Here's code:\n```rust\nfn main() {}\n```\nDone.".into(),
             thinking: String::new(),
             complete: true,
-        };
+        }};
         let (area, mut buf) = make_buf(60, 10);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -866,26 +939,26 @@ mod tests {
     #[test]
     fn height_calculation() {
         let t = Alpharius;
-        let sep = Segment::TurnSeparator;
+        let sep = Segment::separator();
         assert_eq!(sep.height(80, &t), 1);
 
-        let user = Segment::UserPrompt { text: "short".into() };
+        let user = Segment::user_prompt("short");
         let h = user.height(80, &t);
         assert!(h >= 2 && h <= 5, "user prompt height: {h}");
 
-        let tool = Segment::ToolCard {
+        let tool = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "1".into(), name: "bash".into(),
             args_summary: None, detail_args: Some("echo hello".into()),
             result_summary: None, detail_result: Some("hello".into()),
             is_error: false, complete: true, expanded: false,
-        };
+        }};
         let h = tool.height(80, &t);
         assert!(h >= 4, "tool card height should be >= 4, got {h}");
     }
 
     #[test]
     fn system_notification_renders() {
-        let seg = Segment::SystemNotification { text: "Tool display → detailed".into() };
+        let seg = Segment::system("Tool display → detailed");
         let (area, mut buf) = make_buf(60, 3);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -930,18 +1003,18 @@ mod tests {
     #[test]
     fn expanded_tool_card_shows_more() {
         let long_result = (0..30).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
-        let seg_collapsed = Segment::ToolCard {
+        let seg_collapsed = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "1".into(), name: "read".into(),
             args_summary: None, detail_args: Some("file.rs".into()),
             result_summary: None, detail_result: Some(long_result.clone()),
             is_error: false, complete: true, expanded: false,
-        };
-        let seg_expanded = Segment::ToolCard {
+        }};
+        let seg_expanded = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "1".into(), name: "read".into(),
             args_summary: None, detail_args: Some("file.rs".into()),
             result_summary: None, detail_result: Some(long_result),
             is_error: false, complete: true, expanded: true,
-        };
+        }};
 
         let h_collapsed = seg_collapsed.height(80, &Alpharius);
         let h_expanded = seg_expanded.height(80, &Alpharius);
@@ -953,7 +1026,7 @@ mod tests {
     fn ansi_colored_tool_output_preserves_colors() {
         // Simulate cargo output with ANSI red error
         let ansi_result = "\x1b[31merror\x1b[0m: expected `;`\n  --> src/main.rs:5:10";
-        let seg = Segment::ToolCard {
+        let seg = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "t1".into(),
             name: "bash".into(),
             args_summary: Some("cargo check".into()),
@@ -963,7 +1036,7 @@ mod tests {
             is_error: false,
             complete: true,
             expanded: false,
-        };
+        }};
         let (area, mut buf) = make_buf(80, 12);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
@@ -976,7 +1049,7 @@ mod tests {
     #[test]
     fn non_ansi_tool_output_renders_plain() {
         let plain_result = "hello world\nline 2";
-        let seg = Segment::ToolCard {
+        let seg = Segment { meta: SegmentMeta::default(), content: SegmentContent::ToolCard {
             id: "t1".into(),
             name: "bash".into(),
             args_summary: Some("echo hi".into()),
@@ -986,7 +1059,7 @@ mod tests {
             is_error: false,
             complete: true,
             expanded: false,
-        };
+        }};
         let (area, mut buf) = make_buf(80, 10);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);

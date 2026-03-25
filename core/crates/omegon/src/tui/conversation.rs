@@ -4,7 +4,7 @@
 //! `conv_widget::ConversationWidget`.
 
 use super::image::ImageCache;
-use super::segments::Segment;
+use super::segments::{Segment, SegmentContent};
 use super::conv_widget::ConvState;
 
 /// Conversation view state — segment list + scroll.
@@ -43,51 +43,42 @@ impl ConversationView {
     // ─── Push methods ───────────────────────────────────────────
 
     pub fn push_user(&mut self, text: &str) {
-        // Turn separator before user messages (except first)
         if !self.segments.is_empty() {
-            self.segments.push(Segment::TurnSeparator);
+            self.segments.push(Segment::separator());
         }
-        self.segments.push(Segment::UserPrompt { text: text.to_string() });
+        self.segments.push(Segment::user_prompt(text));
         self.conv_state.invalidate();
         self.conv_state.force_scroll_to_bottom();
     }
 
     pub fn push_system(&mut self, text: &str) {
-        self.segments.push(Segment::SystemNotification { text: text.to_string() });
+        self.segments.push(Segment::system(text));
         self.conv_state.invalidate();
         self.conv_state.force_scroll_to_bottom();
     }
 
     pub fn push_image(&mut self, path: std::path::PathBuf, alt: &str) {
-        self.segments.push(Segment::Image {
-            path,
-            alt: alt.to_string(),
-        });
+        self.segments.push(Segment::image(path, alt));
         self.conv_state.invalidate();
         self.conv_state.auto_scroll_to_bottom();
     }
 
     pub fn push_lifecycle(&mut self, icon: &str, text: &str) {
-        self.segments.push(Segment::LifecycleEvent {
-            icon: icon.to_string(),
-            text: text.to_string(),
-        });
+        self.segments.push(Segment::lifecycle(icon, text));
         self.conv_state.invalidate();
         self.conv_state.auto_scroll_to_bottom();
     }
 
     pub fn append_streaming(&mut self, delta: &str) {
         if !self.streaming {
-            self.segments.push(Segment::AssistantText {
-                text: String::new(),
-                thinking: String::new(),
-                complete: false,
-            });
+            self.segments.push(Segment::assistant_text());
             self.streaming = true;
         }
 
-        if let Some(Segment::AssistantText { text, .. }) = self.segments.last_mut() {
-            text.push_str(delta);
+        if let Some(seg) = self.segments.last_mut() {
+            if let SegmentContent::AssistantText { text, .. } = &mut seg.content {
+                text.push_str(delta);
+            }
         }
         self.conv_state.invalidate();
         self.conv_state.auto_scroll_to_bottom();
@@ -95,47 +86,42 @@ impl ConversationView {
 
     pub fn append_thinking(&mut self, delta: &str) {
         if !self.streaming {
-            self.segments.push(Segment::AssistantText {
-                text: String::new(),
-                thinking: String::new(),
-                complete: false,
-            });
+            self.segments.push(Segment::assistant_text());
             self.streaming = true;
         }
 
-        if let Some(Segment::AssistantText { thinking, .. }) = self.segments.last_mut() {
-            thinking.push_str(delta);
+        if let Some(seg) = self.segments.last_mut() {
+            if let SegmentContent::AssistantText { thinking, .. } = &mut seg.content {
+                thinking.push_str(delta);
+            }
         }
         self.conv_state.invalidate();
         self.conv_state.auto_scroll_to_bottom();
     }
 
     pub fn push_tool_start(&mut self, id: &str, name: &str, args_summary: Option<&str>, detail_args: Option<&str>) {
-        self.segments.push(Segment::ToolCard {
-            id: id.to_string(),
-            name: name.to_string(),
-            args_summary: args_summary.map(|s| s.to_string()),
-            detail_args: detail_args.map(|s| s.to_string()),
-            result_summary: None,
-            detail_result: None,
-            is_error: false,
-            complete: false,
-            expanded: false,
-        });
+        let mut seg = Segment::tool_card(id, name);
+        if let SegmentContent::ToolCard {
+            args_summary: ref mut a, detail_args: ref mut d, ..
+        } = seg.content {
+            *a = args_summary.map(|s| s.to_string());
+            *d = detail_args.map(|s| s.to_string());
+        }
+        self.segments.push(seg);
         self.conv_state.invalidate();
         self.conv_state.auto_scroll_to_bottom();
     }
 
     pub fn push_tool_end(&mut self, id: &str, is_error: bool, result_text: Option<&str>) {
         for seg in self.segments.iter_mut().rev() {
-            if let Segment::ToolCard {
+            if let SegmentContent::ToolCard {
                 id: tool_id,
                 complete: c,
                 is_error: e,
                 result_summary: r,
                 detail_result: dr,
                 ..
-            } = seg
+            } = &mut seg.content
                 && tool_id == id && !*c
             {
                 *c = true;
@@ -161,8 +147,10 @@ impl ConversationView {
     }
 
     pub fn finalize_message(&mut self) {
-        if let Some(Segment::AssistantText { complete, .. }) = self.segments.last_mut() {
-            *complete = true;
+        if let Some(seg) = self.segments.last_mut() {
+            if let SegmentContent::AssistantText { complete, .. } = &mut seg.content {
+                *complete = true;
+            }
         }
         self.streaming = false;
         self.conv_state.invalidate();
@@ -182,9 +170,11 @@ impl ConversationView {
 
     /// Toggle expansion state of a tool card at the given segment index.
     pub fn toggle_expand(&mut self, segment_idx: usize) {
-        if let Some(Segment::ToolCard { expanded, .. }) = self.segments.get_mut(segment_idx) {
-            *expanded = !*expanded;
-            self.conv_state.invalidate();
+        if let Some(seg) = self.segments.get_mut(segment_idx) {
+            if let SegmentContent::ToolCard { expanded, .. } = &mut seg.content {
+                *expanded = !*expanded;
+                self.conv_state.invalidate();
+            }
         }
     }
 
@@ -194,26 +184,23 @@ impl ConversationView {
         let offset = self.conv_state.scroll_offset;
         let heights = &self.conv_state.heights;
         if heights.len() != self.segments.len() {
-            // Heights not computed yet — fall back to last tool card
-            return self.segments.iter().rposition(|s| matches!(s, Segment::ToolCard { .. }));
+            return self.segments.iter().rposition(|s| matches!(s.content, SegmentContent::ToolCard { .. }));
         }
 
         let total: u16 = heights.iter().sum();
-        // Convert bottom-based offset to top-based
         let viewport_top = total.saturating_sub(offset);
 
         let mut y: u16 = 0;
         for (i, seg) in self.segments.iter().enumerate() {
             y += heights[i];
 
-            if matches!(seg, Segment::ToolCard { .. })
+            if matches!(seg.content, SegmentContent::ToolCard { .. })
                 && y > viewport_top.saturating_sub(total / 2)
             {
                 return Some(i);
             }
         }
-        // Fall back to last tool card
-        self.segments.iter().rposition(|s| matches!(s, Segment::ToolCard { .. }))
+        self.segments.iter().rposition(|s| matches!(s.content, SegmentContent::ToolCard { .. }))
     }
 
     /// Clear all segments (for /clear command).
@@ -237,7 +224,7 @@ mod tests {
         cv.push_user("hello");
         // First user message: just the prompt (no separator)
         assert_eq!(cv.segments.len(), 1);
-        assert!(matches!(&cv.segments[0], Segment::UserPrompt { text } if text == "hello"));
+        assert!(matches!(&cv.segments[0], Segment { content: SegmentContent::UserPrompt { text }, .. } if text == "hello"));
     }
 
     #[test]
@@ -247,7 +234,7 @@ mod tests {
         cv.push_user("second");
         // separator + prompt
         assert_eq!(cv.segments.len(), 3);
-        assert!(matches!(&cv.segments[1], Segment::TurnSeparator));
+        assert!(matches!(&cv.segments[1], Segment { content: SegmentContent::TurnSeparator, .. }));
     }
 
     #[test]
@@ -256,7 +243,7 @@ mod tests {
         cv.append_streaming("Hello ");
         cv.append_streaming("world");
         assert_eq!(cv.segments.len(), 1);
-        if let Segment::AssistantText { text, complete, .. } = &cv.segments[0] {
+        if let SegmentContent::AssistantText { text, complete, .. } = &cv.segments[0].content {
             assert_eq!(text, "Hello world");
             assert!(!complete);
         } else {
@@ -269,7 +256,7 @@ mod tests {
         let mut cv = ConversationView::new();
         cv.append_streaming("Done");
         cv.finalize_message();
-        if let Segment::AssistantText { complete, .. } = &cv.segments[0] {
+        if let SegmentContent::AssistantText { complete, .. } = &cv.segments[0].content {
             assert!(complete);
         }
     }
@@ -279,7 +266,7 @@ mod tests {
         let mut cv = ConversationView::new();
         cv.push_tool_start("tc1", "read", Some("src/main.rs"), Some("src/main.rs"));
         cv.push_tool_end("tc1", false, Some("fn main() {}\n// 245 lines"));
-        if let Segment::ToolCard { complete, is_error, detail_result, .. } = &cv.segments[0] {
+        if let SegmentContent::ToolCard { complete, is_error, detail_result, .. } = &cv.segments[0].content {
             assert!(complete);
             assert!(!is_error);
             assert!(detail_result.is_some());
@@ -347,19 +334,19 @@ mod tests {
         cv.push_tool_end("t1", false, Some("line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15"));
 
         // Default is collapsed
-        if let Segment::ToolCard { expanded, .. } = &cv.segments[0] {
+        if let SegmentContent::ToolCard { expanded, .. } = &cv.segments[0].content {
             assert!(!expanded, "should start collapsed");
         }
 
         // Toggle to expanded
         cv.toggle_expand(0);
-        if let Segment::ToolCard { expanded, .. } = &cv.segments[0] {
+        if let SegmentContent::ToolCard { expanded, .. } = &cv.segments[0].content {
             assert!(expanded, "should be expanded after toggle");
         }
 
         // Toggle back to collapsed
         cv.toggle_expand(0);
-        if let Segment::ToolCard { expanded, .. } = &cv.segments[0] {
+        if let SegmentContent::ToolCard { expanded, .. } = &cv.segments[0].content {
             assert!(!expanded, "should be collapsed after second toggle");
         }
     }
@@ -399,7 +386,7 @@ mod tests {
         let result = cv.focused_tool_card();
         assert!(result.is_some(), "should find a tool card");
         let idx = result.unwrap();
-        assert!(matches!(&cv.segments[idx], Segment::ToolCard { .. }));
+        assert!(matches!(&cv.segments[idx].content, SegmentContent::ToolCard { .. }));
     }
 
     #[test]
@@ -409,7 +396,7 @@ mod tests {
         cv.push_tool_start("t1", "read", Some("file.rs"), Some("file.rs"));
         cv.push_tool_end("t1", false, Some(&long_result));
 
-        if let Segment::ToolCard { detail_result, .. } = &cv.segments[0] {
+        if let SegmentContent::ToolCard { detail_result, .. } = &cv.segments[0].content {
             let dr = detail_result.as_ref().unwrap();
             assert_eq!(dr.lines().count(), 50, "full result should be stored, not truncated");
         }

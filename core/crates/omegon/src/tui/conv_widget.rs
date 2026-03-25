@@ -7,7 +7,7 @@
 
 use ratatui::prelude::*;
 
-use super::segments::Segment;
+use super::segments::{Segment, SegmentContent};
 use super::theme::Theme;
 
 /// Scroll state for the conversation widget.
@@ -132,7 +132,7 @@ impl ConvState {
             if seg_bottom <= top_offset { continue; }
             if seg_top >= top_offset + viewport_height { break; }
 
-            if matches!(segment, Segment::Image { .. }) && seg_top >= top_offset {
+            if matches!(segment.content, SegmentContent::Image { .. }) && seg_top >= top_offset {
                 let render_y = viewport.y + (seg_top - top_offset);
                 let available_height = viewport.bottom().saturating_sub(render_y);
                 if available_height > 2 {
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn single_segment_renders() {
         let segments = vec![
-            Segment::UserPrompt { text: "hello".into() },
+            Segment::user_prompt("hello"),
         ];
         let widget = ConversationWidget::new(&segments, &Alpharius);
         let area = Rect::new(0, 0, 80, 24);
@@ -342,9 +342,9 @@ mod tests {
     #[test]
     fn height_cache_works() {
         let segments = vec![
-            Segment::TurnSeparator,
-            Segment::UserPrompt { text: "test".into() },
-            Segment::TurnSeparator,
+            Segment::separator(),
+            Segment::user_prompt("test"),
+            Segment::separator(),
         ];
         let mut state = ConvState::new();
         state.ensure_heights(&segments, 80, &Alpharius);
@@ -356,14 +356,14 @@ mod tests {
     #[test]
     fn multiple_segments_render() {
         let segments = vec![
-            Segment::UserPrompt { text: "first".into() },
-            Segment::AssistantText { text: "response".into(), thinking: String::new(), complete: true },
-            Segment::ToolCard {
+            Segment::user_prompt("first"),
+            Segment { meta: Default::default(), content: SegmentContent::AssistantText { text: "response".into(), thinking: String::new(), complete: true }},
+            Segment { meta: Default::default(), content: SegmentContent::ToolCard {
                 id: "1".into(), name: "bash".into(),
                 args_summary: None, detail_args: Some("echo hi".into()),
                 result_summary: None, detail_result: Some("hi".into()),
                 is_error: false, complete: true, expanded: false,
-            },
+            }},
         ];
         let widget = ConversationWidget::new(&segments, &Alpharius);
         let area = Rect::new(0, 0, 80, 40);
