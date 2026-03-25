@@ -58,15 +58,8 @@ import Docs from "../../layouts/Docs.astro";
 # Or trigger explicitly:
 /cleave
 
-# The agent produces a plan like:
-# {
-#   "children": [
-#     { "label": "routing-engine", "scope": ["routing.rs"], "depends_on": [] },
-#     { "label": "ollama-manager", "scope": ["ollama.rs"], "depends_on": [] },
-#     { "label": "cleave-config", "scope": ["cleave/state.rs"], "depends_on": ["routing-engine"] }
-#   ]
-# }
-# You review, then it executes.</code></pre>
+# The agent produces a plan with children, scopes, and dependencies.
+# You review the plan, then it executes in parallel.</code></pre>
 
   <h2>With OpenSpec</h2>
   <p>
