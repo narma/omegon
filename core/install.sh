@@ -107,15 +107,22 @@ case "$OS" in
 esac
 
 case "$ARCH" in
-  arm64|aarch64) ARCH_NAME="arm64" ;;
-  x86_64|amd64)  ARCH_NAME="x64" ;;
+  arm64|aarch64) ARCH_NAME="aarch64" ;;
+  x86_64|amd64)  ARCH_NAME="x86_64" ;;
   *)
     die "unsupported architecture: $ARCH"
     ;;
 esac
 
-PLATFORM="${OS_NAME}-${ARCH_NAME}"
-ARCHIVE="${BINARY}-${PLATFORM}.tar.gz"
+# Build Rust target triple to match release asset names
+# Assets are: omegon-{VERSION}-{TARGET}.tar.gz
+# e.g. omegon-0.15.2-aarch64-apple-darwin.tar.gz
+case "$OS_NAME" in
+  darwin) TARGET="${ARCH_NAME}-apple-darwin" ;;
+  linux)  TARGET="${ARCH_NAME}-unknown-linux-gnu" ;;
+esac
+
+PLATFORM="${TARGET}"
 CHECKSUMS="checksums.sha256"
 
 # ── Banner ────────────────────────────────────────────────────
@@ -138,6 +145,12 @@ if [ -z "$VERSION" ]; then
     die "could not determine latest release. Check: https://github.com/${REPO}/releases"
   fi
 fi
+
+# Strip 'v' prefix from version for asset names (tags are v0.15.2, assets are omegon-0.15.2-...)
+VERSION_NUM=$(echo "$VERSION" | sed 's/^v//')
+
+# Construct the archive name to match release assets
+ARCHIVE="${BINARY}-${VERSION_NUM}-${PLATFORM}.tar.gz"
 
 # ── Installation plan ─────────────────────────────────────────
 
@@ -198,7 +211,7 @@ HTTP_CODE=$(curl -fSL -w '%{http_code}' -o "${TMP}/${ARCHIVE}" "$ARCHIVE_URL" 2>
 if [ ! -f "${TMP}/${ARCHIVE}" ] || [ "$HTTP_CODE" = "404" ]; then
   die "release artifact not found: ${ARCHIVE_URL}
 
-  Available platforms: darwin-arm64, darwin-x64, linux-x64, linux-arm64
+  Available targets: aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
   Check releases: https://github.com/${REPO}/releases/tag/${VERSION}"
 fi
 
