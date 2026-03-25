@@ -218,43 +218,56 @@ sign:
     fi
 
     echo "Signing with Apple Developer ID (YubiKey)..."
-    echo "⚡ Enter PIN when prompted, then touch YubiKey when it blinks"
-    echo ""
-    "$HOME/.cargo/bin/rcodesign" sign \
-        --smartcard-slot 9c \
-        --code-signature-flags runtime \
-        "$BINARY"
+    if [ -n "${SMARTCARD_PIN:-}" ]; then
+        echo "Using SMARTCARD_PIN from environment"
+        echo "⚡ Touch YubiKey when it blinks"
+        "$HOME/.cargo/bin/rcodesign" sign \
+            --smartcard-slot 9c \
+            --smartcard-pin-env SMARTCARD_PIN \
+            --code-signature-flags runtime \
+            "$BINARY"
+    else
+        echo "⚡ Enter PIN when prompted, then touch YubiKey when it blinks"
+        echo ""
+        "$HOME/.cargo/bin/rcodesign" sign \
+            --smartcard-slot 9c \
+            --code-signature-flags runtime \
+            "$BINARY"
+    fi
 
     echo ""
     echo "Verifying signature..."
     codesign -dvvv "$BINARY" 2>&1 | grep -E "Authority|Team|Signature|Identifier"
 
-    # Notarize if API key is available
-    if [ -n "${APPLE_API_KEY:-}" ] && [ -n "${APPLE_API_ISSUER:-}" ] && [ -f "${APPLE_API_KEY:-}" ]; then
+    # Notarize if keychain profile exists
+    if xcrun notarytool info --keychain-profile "omegon" 2>/dev/null | head -1 | grep -q "." 2>/dev/null || \
+       xcrun notarytool store-credentials --help >/dev/null 2>&1; then
         echo ""
         echo "Notarizing with Apple..."
-        # Create a zip for notarization (notary service requires zip/dmg/pkg)
+        # Notary service requires zip/dmg/pkg — not bare Mach-O
         NOTARY_ZIP="${BINARY}.zip"
         ditto -c -k --keepParent "$BINARY" "$NOTARY_ZIP"
 
-        "$HOME/.cargo/bin/rcodesign" notary-submit \
-            --api-key-path "$APPLE_API_KEY" \
-            --api-issuer "$APPLE_API_ISSUER" \
-            --staple \
-            "$NOTARY_ZIP"
+        xcrun notarytool submit "$NOTARY_ZIP" \
+            --keychain-profile "omegon" \
+            --wait
 
-        # Extract the stapled binary back
+        echo ""
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "$BINARY" 2>/dev/null || {
+            echo "  (staple requires a .app/.pkg — binary will pass Gatekeeper via online check)"
+        }
+
         rm -f "$NOTARY_ZIP"
 
         echo ""
-        echo "Verifying notarization..."
+        echo "Verifying..."
         spctl --assess -vv "$BINARY" 2>&1 || true
         echo ""
         echo "✓ Signed and notarized."
     else
         echo ""
-        echo "✓ Signed (notarization skipped — set APPLE_API_KEY and APPLE_API_ISSUER to enable)."
-        echo "  Setup: https://appstoreconnect.apple.com/access/integrations/api"
+        echo "✓ Signed (notarization skipped — run 'just setup-notarize' to enable)."
     fi
 
 # One-time setup: create a self-signed code signing certificate.
