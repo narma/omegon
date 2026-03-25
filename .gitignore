@@ -28,3 +28,4 @@ sessions/
 .jj/
 .omegon/history
 test-project/
+dist/
