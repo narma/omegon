@@ -484,16 +484,16 @@ impl InstrumentPanel {
             let ind_color = if tool.is_error { Color::Rgb(224, 72, 72) }
                 else if age < 2.0 { Color::Rgb(42, 180, 200) }
                 else { Color::Rgb(20, 40, 55) };
-            // Tool colors: clean teal→amber gradient (not the CIE L* ramp which
-            // produces olive/muddy teal at mid-range that looks wrong for bars)
+            // Tool colors: dim teal → bright teal/cyan (alpharius palette)
             let tool_color = |r: f64| -> Color {
-                if r < 0.01 { return Color::Rgb(20, 30, 40); }
+                if r < 0.01 { return Color::Rgb(12, 24, 32); }
                 let r = r.clamp(0.0, 1.0);
-                // Dim teal at low recency, bright amber at high
+                // Dark teal at low recency, bright alpharius teal at high
+                // Matches primary (#2ab4c8) at full intensity
                 Color::Rgb(
-                    (10.0 + r * 70.0) as u8,   // 10 → 80
-                    (30.0 + r * 20.0) as u8,    // 30 → 50
-                    (40.0 - r * 30.0) as u8,    // 40 → 10
+                    (12.0 + r * 30.0) as u8,    // 12 → 42
+                    (24.0 + r * 156.0) as u8,   // 24 → 180
+                    (32.0 + r * 168.0) as u8,    // 32 → 200
                 )
             };
             let name_color = if tool.is_error { Color::Rgb(224, 72, 72) }
