@@ -29,6 +29,8 @@ pub struct CleaveConfig {
     pub timeout_secs: u64,
     pub idle_timeout_secs: u64,
     pub max_turns: u32,
+    /// Provider inventory for per-child routing. If None, all children use `model`.
+    pub inventory: Option<std::sync::Arc<tokio::sync::RwLock<crate::routing::ProviderInventory>>>,
 }
 
 /// Result of a cleave run.
@@ -216,10 +218,36 @@ pub async fn run_cleave(
             let agent_binary = config.agent_binary.clone();
             let bridge_path = config.bridge_path.clone();
             let node = config.node.clone();
-            let model = config.model.clone();
             let max_turns = config.max_turns;
             let timeout_secs = config.timeout_secs;
             let idle_timeout_secs = config.idle_timeout_secs;
+
+            // Route per-child model: if inventory is available and child has no explicit model,
+            // infer capability tier from scope size and route to best provider+model.
+            let model = if let Some(ref inv_lock) = config.inventory {
+                let child_state = &state.children[info.child_idx];
+                if child_state.execute_model.as_deref().map_or(true, |m| m == config.model) {
+                    let inv = inv_lock.read().await;
+                    let tier = crate::routing::infer_capability_tier(child_state.scope.len());
+                    let req = crate::routing::CapabilityRequest {
+                        tier,
+                        prefer_local: false,
+                        avoid_providers: vec![],
+                    };
+                    let candidates = crate::routing::route(&req, &inv);
+                    if let Some(best) = candidates.first() {
+                        let routed = format!("{}:{}", best.provider_id, best.model_id);
+                        tracing::info!(child = %info.label, tier = %tier, routed = %routed, "per-child routing");
+                        routed
+                    } else {
+                        config.model.clone()
+                    }
+                } else {
+                    child_state.execute_model.clone().unwrap_or_else(|| config.model.clone())
+                }
+            } else {
+                config.model.clone()
+            };
 
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
@@ -863,6 +891,7 @@ mod tests {
             timeout_secs: 900,
             idle_timeout_secs: 300, // custom: 5 minutes
             max_turns: 50,
+            inventory: None,
         };
         assert_eq!(config.idle_timeout_secs, 300);
         assert_eq!(config.timeout_secs, 900);
@@ -878,7 +907,7 @@ mod tests {
                 status: crate::cleave::state::ChildStatus::Pending,
                 error: None, branch: Some("cleave/0-alpha".into()),
                 worktree_path: None, backend: "native".into(),
-                execute_model: None, duration_secs: None,
+                execute_model: None, provider_id: None, duration_secs: None,
             },
             crate::cleave::state::ChildState {
                 child_id: 1, label: "beta".into(), description: "Do beta work".into(),
@@ -886,7 +915,7 @@ mod tests {
                 status: crate::cleave::state::ChildStatus::Pending,
                 error: None, branch: Some("cleave/1-beta".into()),
                 worktree_path: None, backend: "native".into(),
-                execute_model: None, duration_secs: None,
+                execute_model: None, provider_id: None, duration_secs: None,
             },
         ];
         let guardrails = "## Project Guardrails\n\n1. **typecheck**: `tsc`\n";
@@ -925,7 +954,7 @@ mod tests {
             scope: vec!["crates/omegon/".into()], depends_on: vec![],
             status: crate::cleave::state::ChildStatus::Pending,
             error: None, branch: None, worktree_path: None,
-            backend: "native".into(), execute_model: None, duration_secs: None,
+            backend: "native".into(), execute_model: None, provider_id: None, duration_secs: None,
         }];
         let task = build_task_file(0, "rust-child", "Fix Rust code", &["crates/omegon/".into()], "Fix", &siblings, "", Path::new("/tmp/nonexistent"));
         assert!(task.contains("#[test]"), "Rust scope should get #[test] convention, got: {}", task.lines().find(|l| l.contains("test")).unwrap_or("none"));

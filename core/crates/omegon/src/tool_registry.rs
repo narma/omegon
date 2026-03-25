@@ -129,6 +129,9 @@ pub mod persona {
 ///
 /// **Maintenance rule**: every `pub const` above MUST appear here.
 /// The `registry_count_is_current` test will catch omissions.
+/// Number of statically registered tools (for splash screen display).
+pub const TOOL_COUNT: usize = 48;
+
 pub fn all_static_names() -> Vec<&'static str> {
     vec![
         // core (12)
@@ -208,12 +211,12 @@ mod tests {
 
     #[test]
     fn registry_count_is_current() {
-        // Update this count when adding tools. Forces awareness of registry size.
+        // Update TOOL_COUNT when adding tools. Forces awareness of registry size.
         let names = all_static_names();
         assert_eq!(
             names.len(),
-            48,
-            "Tool registry count changed — update this test. Current tools: {:?}",
+            TOOL_COUNT,
+            "Tool registry count changed — update TOOL_COUNT (currently {TOOL_COUNT}). Current tools: {:?}",
             names
         );
     }

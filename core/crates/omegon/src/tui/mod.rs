@@ -152,6 +152,8 @@ pub struct App {
     tutorial_highlight: Option<tutorial::Highlight>,
     /// Legacy tutorial state — lesson-file based (for sandbox projects).
     tutorial: Option<TutorialState>,
+    /// Provider inventory for routing — populated after splash probes.
+    provider_inventory: Option<std::sync::Arc<tokio::sync::RwLock<crate::routing::ProviderInventory>>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -237,6 +239,7 @@ impl App {
             tutorial_overlay: None,
             tutorial_highlight: None,
             tutorial: None,
+            provider_inventory: None,
         }
     }
 
@@ -2653,6 +2656,11 @@ pub async fn run_tui(
             }
         }
     }
+
+    // Build provider inventory from credential checks (fast — env var probing only)
+    app.provider_inventory = Some(std::sync::Arc::new(
+        tokio::sync::RwLock::new(crate::routing::ProviderInventory::probe()),
+    ));
 
     // Queue startup reveal effects (footer sweep-in, conversation fade)
     {

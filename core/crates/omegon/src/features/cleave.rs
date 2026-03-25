@@ -143,6 +143,8 @@ pub struct CleaveFeature {
     /// Shared progress state — updated by the spawned orchestrator task,
     /// read by the dashboard renderer.
     progress: Arc<Mutex<CleaveProgress>>,
+    /// Provider inventory for per-child routing.
+    pub inventory: Option<std::sync::Arc<tokio::sync::RwLock<crate::routing::ProviderInventory>>>,
 }
 
 impl CleaveFeature {
@@ -150,6 +152,7 @@ impl CleaveFeature {
         Self {
             repo_path: repo_path.to_path_buf(),
             progress: Arc::new(Mutex::new(CleaveProgress::default())),
+            inventory: None,
         }
     }
 
@@ -220,6 +223,12 @@ impl CleaveFeature {
             timeout_secs: 900,
             idle_timeout_secs: 180,
             max_turns: 50,
+            inventory: self.inventory.clone().or_else(|| {
+                // Probe on demand if no inventory was injected at startup
+                Some(std::sync::Arc::new(tokio::sync::RwLock::new(
+                    crate::routing::ProviderInventory::probe(),
+                )))
+            }),
         };
 
         let result = cleave::run_cleave(

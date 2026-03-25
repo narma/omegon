@@ -8,6 +8,7 @@
 
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::layer::SubscriberExt;
@@ -29,10 +30,13 @@ mod conversation;
 mod lifecycle;
 mod r#loop;
 mod prompt;
+mod ollama;
 mod providers;
+pub mod routing;
 mod session;
 pub mod settings;
 mod setup;
+mod startup;
 mod plugin_cli;
 mod plugins;
 pub mod status;
@@ -57,7 +61,9 @@ const fn build_version() -> &'static str {
     )
 }
 
-/// Long version for `--version` verbose: includes git describe for RC distance.
+/// Long version for `--version`: includes git describe only when tag doesn't match.
+/// build.rs sets OMEGON_GIT_DESCRIBE to "" when tag matches Cargo version,
+/// or "\ngit: v0.14.1-rc.15-125-gad5428c" when they diverge.
 const fn build_long_version() -> &'static str {
     concat!(
         env!("CARGO_PKG_VERSION"),
@@ -65,7 +71,7 @@ const fn build_long_version() -> &'static str {
         env!("OMEGON_GIT_SHA"),
         " ",
         env!("OMEGON_BUILD_DATE"),
-        ")\ngit: ",
+        ")",
         env!("OMEGON_GIT_DESCRIBE"),
     )
 }
@@ -460,6 +466,7 @@ async fn run_cleave_command(
         timeout_secs: timeout,
         idle_timeout_secs: idle_timeout,
         max_turns,
+        inventory: None,
     };
 
     let cancel = CancellationToken::new();
@@ -541,6 +548,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
     // ─── LLM provider ──────────────────────────────────────────────────
     // Native Rust clients by default. --bridge flag forces the Node.js subprocess.
+    let mut provider_connected = true;
     let bridge: Box<dyn LlmBridge> = if let Some(ref bridge_path) = cli.bridge {
         tracing::info!(bridge = %bridge_path.display(), "using Node.js LLM bridge");
         Box::new(SubprocessBridge::spawn(bridge_path, &cli.node).await?)
@@ -551,13 +559,27 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 native
             }
             None => {
-                // Fall back to subprocess bridge
+                // No native provider available — try Node.js bridge as last resort
                 let bridge_path = SubprocessBridge::default_bridge_path();
-                tracing::info!(bridge = %bridge_path.display(), "no native provider — falling back to Node.js bridge");
-                Box::new(SubprocessBridge::spawn(&bridge_path, &cli.node).await?)
+                if bridge_path.exists() {
+                    tracing::info!(bridge = %bridge_path.display(), "no native provider — falling back to Node.js bridge");
+                    Box::new(SubprocessBridge::spawn(&bridge_path, &cli.node).await?)
+                } else {
+                    // No provider, no bridge — start TUI anyway with a null bridge
+                    // so the user can /login from within the session
+                    tracing::warn!("no LLM provider available — TUI will start but messages will fail until /login");
+                    provider_connected = false;
+                    Box::new(bridge::NullBridge)
+                }
             }
         }
     };
+    // Update settings with provider status before TUI reads it
+    if let Ok(mut s) = shared_settings.lock() {
+        s.provider_connected = provider_connected;
+    }
+    let bridge: Arc<tokio::sync::RwLock<Box<dyn LlmBridge>>> =
+        Arc::new(tokio::sync::RwLock::new(bridge));
 
     // ─── Event channel ──────────────────────────────────────────────────
     let (events_tx, events_rx) = broadcast::channel::<AgentEvent>(256);
@@ -686,13 +708,48 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::SetModel(model) => {
                 tracing::info!(model = %model, "model switched via /model command");
+
+                // Detect provider change — swap bridge if needed
+                let old_provider = shared_settings.lock().ok()
+                    .map(|s| s.model.split(':').next().unwrap_or("anthropic").to_string())
+                    .unwrap_or_default();
+                let new_provider = model.split(':').next().unwrap_or("anthropic");
+
                 if let Ok(mut s) = shared_settings.lock() {
-                    s.model = model;
+                    s.model = model.clone();
                     s.context_window = settings::Settings::new(&s.model).context_window;
                     // Persist to project profile
                     let mut profile = settings::Profile::load(&agent.cwd);
                     profile.capture_from(&s);
                     let _ = profile.save(&agent.cwd);
+                }
+
+                // If provider changed, re-detect and hot-swap the bridge
+                if old_provider != new_provider {
+                    tracing::info!(
+                        old = %old_provider, new = %new_provider,
+                        "provider changed — re-detecting bridge"
+                    );
+                    let bridge_clone = bridge.clone();
+                    let model_clone = model.clone();
+                    let events_clone = events_tx.clone();
+                    let settings_clone = shared_settings.clone();
+                    tokio::spawn(async move {
+                        if let Some(new_bridge) = providers::auto_detect_bridge(&model_clone).await {
+                            let mut guard = bridge_clone.write().await;
+                            *guard = new_bridge;
+                            if let Ok(mut s) = settings_clone.lock() { s.provider_connected = true; }
+                            tracing::info!("bridge hot-swapped for provider {}", model_clone.split(':').next().unwrap_or("?"));
+                            let _ = events_clone.send(AgentEvent::SystemNotification {
+                                message: format!("Provider switched to {}.", model_clone.split(':').next().unwrap_or("?")),
+                            });
+                        } else {
+                            if let Ok(mut s) = settings_clone.lock() { s.provider_connected = false; }
+                            let _ = events_clone.send(AgentEvent::SystemNotification {
+                                message: format!("⚠ No credentials for {}. Use /login to authenticate.", model_clone.split(':').next().unwrap_or("?")),
+                            });
+                        }
+                    });
                 }
             }
 
@@ -765,7 +822,87 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::BusCommand { name, args } => {
                 // Handle special auth commands directly
-                if name.starts_with("auth_") {
+                if name == "secrets" {
+                    let parts: Vec<&str> = args.splitn(3, ' ').collect();
+                    let message = match parts.first().copied().unwrap_or("") {
+                        "list" | "" => {
+                            let names = agent.secrets.list_recipes();
+                            let mut out = String::new();
+                            if names.is_empty() {
+                                out.push_str("No secrets stored.\n");
+                            } else {
+                                out.push_str(&format!("🔐 Secrets ({})\n\n", names.len()));
+                                for (name, recipe) in &names {
+                                    out.push_str(&format!("  {name:<24} {recipe}\n"));
+                                }
+                                out.push('\n');
+                            }
+                            out.push_str("Common secrets:\n");
+                            out.push_str("  /secrets set GITHUB_TOKEN cmd:gh auth token    always fresh from CLI\n");
+                            out.push_str("  /secrets set NPM_TOKEN cmd:npm token get       always fresh from CLI\n");
+                            out.push_str("  /secrets set AWS_SECRET env:AWS_SECRET_ACCESS_KEY  from environment\n\n");
+                            out.push_str("API keys (no CLI available — store directly):\n");
+                            out.push_str("  /secrets set OPENROUTER_KEY sk-or-...          free cloud AI\n");
+                            out.push_str("  /secrets set ANTHROPIC_API_KEY sk-ant-...      Anthropic API\n\n");
+                            out.push_str("Retrieve or remove:\n");
+                            out.push_str("  /secrets get GITHUB_TOKEN\n");
+                            out.push_str("  /secrets delete GITHUB_TOKEN");
+                            out
+                        }
+                        "set" => {
+                            if parts.len() < 3 {
+                                "Usage: /secrets set NAME VALUE\n\n\
+                                 Dynamic (preferred — always fresh):\n\
+                                 \x20 /secrets set GITHUB_TOKEN cmd:gh auth token\n\
+                                 \x20 /secrets set NPM_TOKEN cmd:npm token get\n\
+                                 \x20 /secrets set K8S_TOKEN cmd:kubectl get secret...\n\n\
+                                 From environment:\n\
+                                 \x20 /secrets set AWS_SECRET env:AWS_SECRET_ACCESS_KEY\n\n\
+                                 Direct value (only when no CLI exists):\n\
+                                 \x20 /secrets set OPENROUTER_KEY sk-or-v1-abc...".into()
+                            } else {
+                                let secret_name = parts[1];
+                                let secret_value = parts[2];
+                                let result = if secret_value.contains(':') && 
+                                    ["env:", "cmd:", "vault:", "keyring:", "file:"].iter()
+                                        .any(|p| secret_value.starts_with(p)) 
+                                {
+                                    agent.secrets.set_recipe(secret_name, secret_value)
+                                } else {
+                                    agent.secrets.set_keyring_secret(secret_name, secret_value)
+                                };
+                                match result {
+                                    Ok(()) => format!("✓ Secret '{secret_name}' stored (encrypted in OS keyring).\n  The agent will redact this value from all output."),
+                                    Err(e) => format!("Error storing secret: {e}"),
+                                }
+                            }
+                        }
+                        "get" => {
+                            if parts.len() < 2 {
+                                "Usage: /secrets get NAME".into()
+                            } else {
+                                let secret_name = parts[1];
+                                match agent.secrets.resolve(secret_name) {
+                                    Some(val) => format!("🔓 {secret_name} = {val}"),
+                                    None => format!("Secret '{secret_name}' not found.\n  Use /secrets to see stored secrets."),
+                                }
+                            }
+                        }
+                        "delete" => {
+                            if parts.len() < 2 {
+                                "Usage: /secrets delete NAME".into()
+                            } else {
+                                let secret_name = parts[1];
+                                match agent.secrets.delete_recipe(secret_name) {
+                                    Ok(()) => format!("✓ Secret '{secret_name}' deleted."),
+                                    Err(e) => format!("Error: {e}"),
+                                }
+                            }
+                        }
+                        sub => format!("Unknown: /secrets {sub}\n\nType /secrets to see usage."),
+                    };
+                    let _ = events_tx.send(AgentEvent::SystemNotification { message });
+                } else if name.starts_with("auth_") {
                     match name.as_str() {
                         "auth_status" => {
                             let status = auth::probe_all_providers().await;
@@ -773,15 +910,35 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             let _ = events_tx.send(AgentEvent::SystemNotification { message });
                         }
                         "auth_login" => {
-                            let provider = args.trim();
-                            let provider = if provider.is_empty() { "anthropic" } else { provider };
+                            // Parse "provider [oauth]" — e.g. "anthropic oauth" or just "anthropic"
+                            let parts: Vec<&str> = args.trim().split_whitespace().collect();
+                            let provider = if parts.is_empty() { "anthropic" } else { parts[0] };
+                            let wants_oauth = parts.get(1) == Some(&"oauth");
                             
-                            // Run the login in a background task. Progress updates go
-                            // through SystemNotification instead of eprintln (which
-                            // would corrupt the ratatui display).
+                            // OAuth is only supported for Anthropic right now.
+                            // OpenAI OAuth gives Codex JWT tokens that the native client can't use.
+                            if wants_oauth && provider != "anthropic" {
+                                let _ = events_tx.send(AgentEvent::SystemNotification {
+                                    message: format!("⚠ OAuth login not yet supported for {}. Use API key instead.", provider),
+                                });
+                                continue;
+                            }
+
+                            // Non-OAuth /login <provider> via the bus is only for OAuth flows.
+                            // API key entry goes through the TUI secret input mode, not here.
+                            if !wants_oauth && !matches!(provider, "anthropic" | "claude") {
+                                let _ = events_tx.send(AgentEvent::SystemNotification {
+                                    message: format!("Use the /login selector to enter an API key for {}.", provider),
+                                });
+                                continue;
+                            }
+
                             let events_tx_clone = events_tx.clone();
                             let progress_tx = events_tx.clone();
                             let provider_clone = provider.to_string();
+                            let bridge_clone = bridge.clone();
+                            let model_for_redetect = cli.model.clone();
+                            let settings_for_login = shared_settings.clone();
                             tokio::spawn(async move {
                                 let progress: auth::LoginProgress = Box::new(move |msg| {
                                     let _ = progress_tx.send(AgentEvent::SystemNotification {
@@ -792,16 +949,40 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                     "anthropic" | "claude" => {
                                         auth::login_anthropic_with_progress(progress).await
                                     }
-                                    "openai" | "chatgpt" => {
-                                        auth::login_openai_with_progress(progress).await
-                                    }
-                                    _ => Err(anyhow::anyhow!("Unknown provider: {}. Use: anthropic, openai", provider_clone)),
+                                    _ => Err(anyhow::anyhow!("OAuth not supported for {}.", provider_clone)),
                                 };
-                                let message = match result {
+                                let message = match &result {
                                     Ok(_) => format!("✓ Successfully logged in to {}", provider_clone),
                                     Err(e) => format!("❌ Login failed: {}", e),
                                 };
                                 let _ = events_tx_clone.send(AgentEvent::SystemNotification { message });
+
+                                // Hot-swap the bridge after successful login
+                                if result.is_ok() {
+                                    // Re-detect with the provider that just logged in, not the
+                                    // configured model (which might be anthropic while we just
+                                    // logged into openai)
+                                    let detect_model = format!("{}:auto", provider_clone);
+                                    if let Some(new_bridge) = providers::auto_detect_bridge(&detect_model).await {
+                                        let mut guard = bridge_clone.write().await;
+                                        *guard = new_bridge;
+                                        if let Ok(mut s) = settings_for_login.lock() { s.provider_connected = true; }
+                                        tracing::info!("bridge hot-swapped after successful login to {}", provider_clone);
+                                        let _ = events_tx_clone.send(AgentEvent::SystemNotification {
+                                            message: "Provider connected — you can send messages now.".to_string(),
+                                        });
+                                    } else {
+                                        // Login succeeded but we can't use the token (e.g. Codex OAuth JWT)
+                                        let _ = events_tx_clone.send(AgentEvent::SystemNotification {
+                                            message: format!(
+                                                "⚠ {} login saved, but this token type isn't supported yet by the native client.\n\
+                                                 ChatGPT OAuth tokens use the Codex Responses API (not yet implemented).\n\
+                                                 Use /login anthropic or /login openrouter instead.",
+                                                provider_clone
+                                            ),
+                                        });
+                                    }
+                                }
                             });
                         }
                         "auth_logout" => {
@@ -928,8 +1109,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     *guard = Some(cancel.clone());
                 }
 
+                let bridge_guard = bridge.read().await;
                 if let Err(e) = r#loop::run(
-                    bridge.as_ref(),
+                    bridge_guard.as_ref(),
                     &mut agent.bus,
                     &mut agent.context_manager,
                     &mut agent.conversation,
@@ -937,6 +1119,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     cancel,
                     &loop_config,
                 ).await {
+                    drop(bridge_guard); // release before error handling
                     let user_msg = format_agent_error(&e);
                     tracing::error!("Agent loop error: {e}");
                     let _ = events_tx.send(AgentEvent::SystemNotification {
@@ -976,8 +1159,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     *guard = Some(cancel.clone());
                 }
 
+                let bridge_guard = bridge.read().await;
                 if let Err(e) = r#loop::run(
-                    bridge.as_ref(),
+                    bridge_guard.as_ref(),
                     &mut agent.bus,
                     &mut agent.context_manager,
                     &mut agent.conversation,
@@ -985,6 +1169,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     cancel,
                     &loop_config,
                 ).await {
+                    drop(bridge_guard);
                     // Surface a concise error to the user, not the raw JSON blob
                     let user_msg = format_agent_error(&e);
                     tracing::error!("Agent loop error: {e}");
@@ -1015,7 +1200,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
         let _ = profile.save(&agent.cwd);
     }
 
-    bridge.shutdown().await;
+    bridge.read().await.shutdown().await;
     tui_handle.abort();
     Ok(())
 }
@@ -1241,12 +1426,53 @@ async fn run_auth_command(action: &AuthAction) -> anyhow::Result<()> {
     }
 }
 
+/// Direct API key login — for providers without OAuth (OpenRouter, etc.)
+/// Prompts for the key on stdin, stores in auth.json.
+async fn login_api_key(provider: &str, env_var: &str, keys_url: &str) -> anyhow::Result<auth::OAuthCredentials> {
+    eprintln!("Login to {provider}:");
+    eprintln!("  1. Open {keys_url}");
+    eprintln!("  2. Create or copy your API key");
+    eprintln!("  3. Paste it below (input is hidden)");
+    eprintln!();
+    eprint!("API key: ");
+
+    // Read key without echo (rpassword hides input on TTYs)
+    let key = rpassword::read_password()
+        .unwrap_or_else(|_| {
+            // Fallback for non-TTY (piped input, CI)
+            let mut buf = String::new();
+            std::io::stdin().read_line(&mut buf).unwrap_or(0);
+            buf.trim().to_string()
+        });
+
+    if key.is_empty() {
+        anyhow::bail!("No API key provided");
+    }
+
+    let creds = auth::OAuthCredentials {
+        cred_type: "api-key".into(),
+        access: key,
+        refresh: String::new(),
+        expires: u64::MAX, // API keys don't expire
+    };
+    auth::write_credentials(provider, &creds)?;
+
+    // Also set the env var for the current session so the provider resolves immediately
+    // SAFETY: single-threaded at this point in startup — no other threads reading env vars
+    unsafe { std::env::set_var(env_var, &creds.access); }
+
+    eprintln!("✓ {provider} API key stored. Active for this session and future sessions.");
+    Ok(creds)
+}
+
 async fn run_auth_login(provider: &str) -> anyhow::Result<()> {
     let result = match provider {
         "anthropic" | "claude" => auth::login_anthropic().await,
         "openai" | "chatgpt" => auth::login_openai().await,
+        "openrouter" => login_api_key("openrouter", "OPENROUTER_API_KEY",
+            "https://openrouter.ai/keys").await,
         _ => {
-            eprintln!("Unknown provider: {provider}. Use: anthropic, openai");
+            eprintln!("Unknown provider: {provider}. Use: anthropic, openai, openrouter");
             std::process::exit(1);
         }
     };
