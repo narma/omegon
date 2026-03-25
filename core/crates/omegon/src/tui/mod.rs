@@ -1134,12 +1134,16 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
+        // Editor height: 3 rows default, grows up to 8 for multiline input
+        let editor_lines = self.editor.line_count();
+        let editor_height = (editor_lines as u16 + 2).clamp(3, 8); // +2 for border + padding
+
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(3),     // [0] conversation (all remaining space)
-                Constraint::Length(3),  // [1] editor (input box)
-                Constraint::Length(12), // [2] instrument panel (CIC telemetry)
+                Constraint::Min(3),                    // [0] conversation
+                Constraint::Length(editor_height),      // [1] editor (dynamic)
+                Constraint::Length(12),                 // [2] instrument panel
             ])
             .split(main_area);
 
@@ -1291,14 +1295,31 @@ impl App {
                 String::new(),
             )
         } else {
-            (Span::styled(" ▸ ", t.style_accent()), String::new())
+            // Show model shortname in prompt: " sonnet ▸ "
+            let model_short = self.footer_data.model_id
+                .split(':').last().unwrap_or(&self.footer_data.model_id)
+                .split('-').take(2).collect::<Vec<_>>().join("-");
+            let prompt = format!(" {model_short} ▸ ");
+            (Span::styled(prompt, t.style_accent()), String::new())
+        };
+
+        // Right-aligned hint in the editor border
+        let hint_text = if self.agent_active {
+            String::new()
+        } else if self.editor.is_empty() {
+            "Shift+Enter: newline  Ctrl+D: tree  /: commands ".into()
+        } else {
+            "Enter: send  Shift+Enter: newline ".into()
         };
 
         let editor_block = Block::default()
             .borders(Borders::TOP)
             .border_type(ratatui::widgets::BorderType::Rounded)
             .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
-            .title(editor_title);
+            .title(editor_title)
+            .title_bottom(Line::from(
+                Span::styled(hint_text, Style::default().fg(t.border_dim()))
+            ).right_aligned());
 
         let is_secret_mode = matches!(self.editor.mode(), editor::EditorMode::SecretInput { .. });
         if is_secret_mode || !editor_content.is_empty() {

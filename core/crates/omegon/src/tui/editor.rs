@@ -45,6 +45,8 @@ impl Editor {
         let mut ta = TextArea::default();
         ta.set_cursor_line_style(Style::default());
         ta.set_cursor_style(Style::default().add_modifier(Modifier::REVERSED));
+        ta.set_placeholder_text("Ask anything, or type / for commands");
+        ta.set_placeholder_style(Style::default().fg(Color::from_u32(0x00405870)));
         Self {
             textarea: ta,
             mode: EditorMode::Normal,
@@ -57,6 +59,12 @@ impl Editor {
         self.textarea.set_style(Style::default().fg(t.fg()).bg(t.surface_bg()));
         self.textarea.set_cursor_line_style(Style::default().bg(t.surface_bg()));
         self.textarea.set_cursor_style(Style::default().fg(t.bg()).bg(t.fg()));
+        self.textarea.set_placeholder_style(Style::default().fg(t.dim()));
+    }
+
+    /// Number of content lines in the editor (for dynamic height).
+    pub fn line_count(&self) -> usize {
+        self.textarea.lines().len().max(1)
     }
 
     pub fn mode(&self) -> &EditorMode {
