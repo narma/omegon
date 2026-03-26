@@ -74,6 +74,31 @@ pub struct Segment {
     pub content: SegmentContent,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SegmentRole {
+    Operator,
+    Assistant,
+    Tool,
+    System,
+    Lifecycle,
+    Media,
+    Separator,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SegmentEmphasis {
+    Strong,
+    Normal,
+    Muted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SegmentPresentation {
+    pub role: SegmentRole,
+    pub sigil: &'static str,
+    pub emphasis: SegmentEmphasis,
+}
+
 /// The typed content of a conversation segment.
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
@@ -190,17 +215,70 @@ impl Segment {
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl Segment {
+    pub fn role(&self) -> SegmentRole {
+        match self.content {
+            SegmentContent::UserPrompt { .. } => SegmentRole::Operator,
+            SegmentContent::AssistantText { .. } => SegmentRole::Assistant,
+            SegmentContent::ToolCard { .. } => SegmentRole::Tool,
+            SegmentContent::SystemNotification { .. } => SegmentRole::System,
+            SegmentContent::LifecycleEvent { .. } => SegmentRole::Lifecycle,
+            SegmentContent::Image { .. } => SegmentRole::Media,
+            SegmentContent::TurnSeparator => SegmentRole::Separator,
+        }
+    }
+
+    pub fn presentation(&self) -> SegmentPresentation {
+        match self.role() {
+            SegmentRole::Operator => SegmentPresentation {
+                role: SegmentRole::Operator,
+                sigil: "OP",
+                emphasis: SegmentEmphasis::Strong,
+            },
+            SegmentRole::Assistant => SegmentPresentation {
+                role: SegmentRole::Assistant,
+                sigil: "Ω",
+                emphasis: SegmentEmphasis::Normal,
+            },
+            SegmentRole::Tool => SegmentPresentation {
+                role: SegmentRole::Tool,
+                sigil: "⚙",
+                emphasis: SegmentEmphasis::Normal,
+            },
+            SegmentRole::System => SegmentPresentation {
+                role: SegmentRole::System,
+                sigil: "ℹ",
+                emphasis: SegmentEmphasis::Muted,
+            },
+            SegmentRole::Lifecycle => SegmentPresentation {
+                role: SegmentRole::Lifecycle,
+                sigil: "⚡",
+                emphasis: SegmentEmphasis::Muted,
+            },
+            SegmentRole::Media => SegmentPresentation {
+                role: SegmentRole::Media,
+                sigil: "◈",
+                emphasis: SegmentEmphasis::Normal,
+            },
+            SegmentRole::Separator => SegmentPresentation {
+                role: SegmentRole::Separator,
+                sigil: "",
+                emphasis: SegmentEmphasis::Muted,
+            },
+        }
+    }
+
     /// Render this segment into the given area of the buffer.
     pub fn render(&self, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
         use SegmentContent::*;
+        let presentation = self.presentation();
         match &self.content {
-            UserPrompt { text } => render_user_prompt(text, area, buf, t),
+            UserPrompt { text } => render_user_prompt(text, &presentation, area, buf, t),
             AssistantText {
                 text,
                 thinking,
                 complete,
             } => {
-                render_assistant_text(text, thinking, *complete, &self.meta, area, buf, t);
+                render_assistant_text(text, thinking, *complete, &self.meta, &presentation, area, buf, t);
             }
             ToolCard {
                 name,
@@ -337,7 +415,13 @@ fn wrapped_rows(text: &str, width: u16) -> u16 {
         .max(1)
 }
 
-fn render_user_prompt(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
+fn render_user_prompt(
+    text: &str,
+    presentation: &SegmentPresentation,
+    area: Rect,
+    buf: &mut Buffer,
+    t: &dyn Theme,
+) {
     if area.width < 3 || area.height == 0 {
         return;
     }
@@ -359,7 +443,7 @@ fn render_user_prompt(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
 
     let content = vec![Line::from(vec![
         Span::styled(
-            "YOU ",
+            format!("{} ", presentation.sigil),
             Style::default()
                 .fg(t.accent())
                 .bg(bg)
@@ -410,6 +494,7 @@ fn render_assistant_text(
     thinking: &str,
     complete: bool,
     meta: &SegmentMeta,
+    presentation: &SegmentPresentation,
     area: Rect,
     buf: &mut Buffer,
     t: &dyn Theme,
@@ -436,6 +521,11 @@ fn render_assistant_text(
     };
 
     let mut lines: Vec<Line<'_>> = Vec::new();
+
+    lines.push(Line::from(Span::styled(
+        format!("{}", presentation.sigil),
+        Style::default().fg(t.success()).add_modifier(Modifier::BOLD),
+    )));
 
     // Meta tag line: model / provider / tier — dim right-aligned header
     let meta_tag = build_meta_tag(meta);
@@ -1154,8 +1244,18 @@ mod tests {
         let (area, mut buf) = make_buf(40, 5);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
+        assert_eq!(seg.role(), SegmentRole::Operator);
+        assert_eq!(seg.presentation().sigil, "OP");
         assert!(text.contains("hello world"), "should have text");
         assert!(text.contains("╭") || text.contains("╰") || text.contains("│"), "should render as a bordered card: {text}");
+    }
+
+    #[test]
+    fn assistant_segment_has_explicit_presentation_role() {
+        let seg = Segment::assistant_text();
+        assert_eq!(seg.role(), SegmentRole::Assistant);
+        assert_eq!(seg.presentation().sigil, "Ω");
+        assert_eq!(seg.presentation().emphasis, SegmentEmphasis::Normal);
     }
 
     #[test]
