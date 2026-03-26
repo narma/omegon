@@ -33,7 +33,7 @@ build:
 
 # Link the newest built binary onto $PATH so it can be run as `omegon` system-wide.
 # Prefers release over dev-release (just rc builds release; just update builds dev-release).
-# Resolution order: /opt/homebrew/bin (macOS+Homebrew) → /usr/local/bin → ~/.local/bin
+# Resolution order: /usr/local/bin → ~/.local/bin
 link:
     #!/usr/bin/env bash
     set -e
@@ -51,9 +51,7 @@ link:
         exit 1
     fi
     # Pick first writable candidate in PATH-order
-    if [ -d "/opt/homebrew/bin" ] && [ -w "/opt/homebrew/bin" ]; then
-        DEST="/opt/homebrew/bin/omegon"
-    elif [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
+    if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
         DEST="/usr/local/bin/omegon"
     else
         mkdir -p "$HOME/.local/bin"
