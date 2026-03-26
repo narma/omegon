@@ -97,6 +97,18 @@ pub struct SegmentPresentation {
     pub role: SegmentRole,
     pub sigil: &'static str,
     pub emphasis: SegmentEmphasis,
+    pub tool_visual: Option<ToolVisualKind>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolVisualKind {
+    CommandExec,
+    FileRead,
+    FileMutation,
+    DesignTree,
+    Memory,
+    Search,
+    Generic,
 }
 
 /// The typed content of a conversation segment.
@@ -215,6 +227,23 @@ impl Segment {
 // ═══════════════════════════════════════════════════════════════════════════
 
 impl Segment {
+    fn tool_visual_kind(&self) -> Option<ToolVisualKind> {
+        match &self.content {
+            SegmentContent::ToolCard { name, .. } => Some(match name.as_str() {
+                "bash" => ToolVisualKind::CommandExec,
+                "read" | "view" => ToolVisualKind::FileRead,
+                "write" | "edit" | "change" => ToolVisualKind::FileMutation,
+                "design_tree" | "design_tree_update" | "openspec_manage" | "lifecycle_doctor" => {
+                    ToolVisualKind::DesignTree
+                }
+                name if name.starts_with("memory_") => ToolVisualKind::Memory,
+                "web_search" => ToolVisualKind::Search,
+                _ => ToolVisualKind::Generic,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn role(&self) -> SegmentRole {
         match self.content {
             SegmentContent::UserPrompt { .. } => SegmentRole::Operator,
@@ -233,36 +262,43 @@ impl Segment {
                 role: SegmentRole::Operator,
                 sigil: "OP",
                 emphasis: SegmentEmphasis::Strong,
+                tool_visual: None,
             },
             SegmentRole::Assistant => SegmentPresentation {
                 role: SegmentRole::Assistant,
                 sigil: "Ω",
                 emphasis: SegmentEmphasis::Normal,
+                tool_visual: None,
             },
             SegmentRole::Tool => SegmentPresentation {
                 role: SegmentRole::Tool,
                 sigil: "⚙",
                 emphasis: SegmentEmphasis::Normal,
+                tool_visual: self.tool_visual_kind(),
             },
             SegmentRole::System => SegmentPresentation {
                 role: SegmentRole::System,
                 sigil: "ℹ",
                 emphasis: SegmentEmphasis::Muted,
+                tool_visual: None,
             },
             SegmentRole::Lifecycle => SegmentPresentation {
                 role: SegmentRole::Lifecycle,
                 sigil: "⚡",
                 emphasis: SegmentEmphasis::Muted,
+                tool_visual: None,
             },
             SegmentRole::Media => SegmentPresentation {
                 role: SegmentRole::Media,
                 sigil: "◈",
                 emphasis: SegmentEmphasis::Normal,
+                tool_visual: None,
             },
             SegmentRole::Separator => SegmentPresentation {
                 role: SegmentRole::Separator,
                 sigil: "",
                 emphasis: SegmentEmphasis::Muted,
+                tool_visual: None,
             },
         }
     }
@@ -1274,6 +1310,22 @@ mod tests {
         assert_eq!(seg.role(), SegmentRole::Assistant);
         assert_eq!(seg.presentation().sigil, "Ω");
         assert_eq!(seg.presentation().emphasis, SegmentEmphasis::Normal);
+        assert_eq!(seg.presentation().tool_visual, None);
+    }
+
+    #[test]
+    fn tool_visual_kinds_are_classified() {
+        let cases = [
+            (Segment::tool_card("1", "read"), ToolVisualKind::FileRead),
+            (Segment::tool_card("1", "bash"), ToolVisualKind::CommandExec),
+            (Segment::tool_card("1", "design_tree"), ToolVisualKind::DesignTree),
+            (Segment::tool_card("1", "memory_query"), ToolVisualKind::Memory),
+            (Segment::tool_card("1", "web_search"), ToolVisualKind::Search),
+            (Segment::tool_card("1", "write"), ToolVisualKind::FileMutation),
+        ];
+        for (seg, expected) in cases {
+            assert_eq!(seg.presentation().tool_visual, Some(expected));
+        }
     }
 
     #[test]
