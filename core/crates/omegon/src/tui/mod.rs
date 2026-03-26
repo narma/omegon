@@ -1302,11 +1302,11 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
-        // Editor height: 3 rows default, grows with visual rows, not just
-        // logical newline count. Otherwise long wrapped lines can still force
-        // the textarea to scroll vertically and hide earlier content.
-        let editor_content_width = main_area.width.saturating_sub(2);
-        let editor_lines = self.editor.visual_line_count(editor_content_width);
+        // Editor height: use logical lines when the widget owns rendering and
+        // cursor/viewport behavior. If we need paragraph-style soft wrapping,
+        // we should prove the widget cannot do it before reintroducing custom
+        // wrapped render math.
+        let editor_lines = self.editor.line_count();
         let max_editor = (main_area.height * 40 / 100).max(5).min(20);
         let editor_height = (editor_lines as u16 + 2).clamp(3, max_editor); // +2 for border
 
@@ -1444,94 +1444,96 @@ impl App {
         self.editor.apply_theme(t.as_ref());
 
         // Editor — shows reverse search prompt, secret input, or normal mode
-        let (editor_title, editor_content) =
-            if let Some((label, masked)) = self.editor.secret_display() {
-                (
-                    Span::styled(
-                        format!(" 🔒 {label} "),
-                        Style::default()
-                            .fg(t.warning())
-                            .bg(t.surface_bg())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    masked,
-                )
-            } else if let editor::EditorMode::ReverseSearch {
-                ref query,
-                ref match_idx,
-            } = *self.editor.mode()
-            {
-                let match_text = match_idx
-                    .and_then(|i| self.history.get(i))
-                    .map(|s| s.as_str())
-                    .unwrap_or("");
-                (
-                    Span::styled(format!(" (reverse-i-search)`{query}': "), t.style_warning()),
-                    match_text.to_string(),
-                )
-            } else if self.agent_active {
-                (
-                    Span::styled(format!(" ⟳ {}... ", self.working_verb), t.style_warning()),
-                    String::new(),
-                )
-            } else {
-                // Show model shortname in prompt: " sonnet ▸ "
-                let model_short = self
-                    .footer_data
-                    .model_id
-                    .split(':')
-                    .last()
-                    .unwrap_or(&self.footer_data.model_id)
-                    .split('-')
-                    .take(2)
-                    .collect::<Vec<_>>()
-                    .join("-");
-                let prompt = format!(" {model_short} ▸ ");
-                (Span::styled(prompt, t.style_accent()), String::new())
-            };
-
-        // Right-aligned hint in the editor border
-        let hint_text = if self.agent_active {
-            String::new()
-        } else if self.editor.is_empty() {
-            "⏎ send  ⇧⏎/⌥⏎ newline  ^D tree  / commands ".into()
-        } else {
-            "⏎ send  ⇧⏎/⌥⏎ newline ".into()
-        };
-
-        let editor_block = Block::default()
-            .borders(Borders::TOP)
-            .border_type(ratatui::widgets::BorderType::Rounded)
-            .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
-            .title(editor_title)
-            .title_bottom(
-                Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
-                    .right_aligned(),
+        if let Some((label, masked)) = self.editor.secret_display() {
+            let editor_title = Span::styled(
+                format!(" 🔒 {label} "),
+                Style::default()
+                    .fg(t.warning())
+                    .bg(t.surface_bg())
+                    .add_modifier(Modifier::BOLD),
             );
-
-        let is_secret_mode = matches!(self.editor.mode(), editor::EditorMode::SecretInput { .. });
-        let show_cursor = !is_secret_mode && !self.agent_active;
-        let editor_rect = chunks[1];
-        let content_style = if is_secret_mode {
-            Style::default().fg(t.accent_muted()).bg(t.surface_bg())
+            let hint_text = if self.agent_active {
+                String::new()
+            } else {
+                "⏎ confirm  Esc cancel ".into()
+            };
+            let editor_block = Block::default()
+                .borders(Borders::TOP)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+                .title(editor_title)
+                .title_bottom(
+                    Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
+                        .right_aligned(),
+                );
+            let editor_widget = Paragraph::new(masked)
+                .style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+                .block(editor_block)
+                .wrap(ratatui::widgets::Wrap { trim: false });
+            frame.render_widget(editor_widget, chunks[1]);
+        } else if let editor::EditorMode::ReverseSearch {
+            ref query,
+            ref match_idx,
+        } = *self.editor.mode()
+        {
+            let match_text = match_idx
+                .and_then(|i| self.history.get(i))
+                .map(|s| s.as_str())
+                .unwrap_or("");
+            let editor_title = Span::styled(
+                format!(" (reverse-i-search)`{query}': "),
+                t.style_warning(),
+            );
+            let editor_block = Block::default()
+                .borders(Borders::TOP)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+                .title(editor_title);
+            let editor_widget = Paragraph::new(match_text.to_string())
+                .style(Style::default().fg(t.fg()).bg(t.surface_bg()))
+                .block(editor_block)
+                .wrap(ratatui::widgets::Wrap { trim: false });
+            frame.render_widget(editor_widget, chunks[1]);
         } else {
-            Style::default().fg(t.fg()).bg(t.surface_bg())
-        };
-        let editor_text = if is_secret_mode || !editor_content.is_empty() {
-            editor_content
-        } else {
-            self.editor.wrapped_text()
-        };
-        let editor_widget = Paragraph::new(editor_text)
-            .style(content_style)
-            .block(editor_block)
-            .wrap(ratatui::widgets::Wrap { trim: false });
-        frame.render_widget(editor_widget, editor_rect);
+            let hint_text = if self.agent_active {
+                String::new()
+            } else if self.editor.is_empty() {
+                "⏎ send  ⇧⏎/⌥⏎ newline  ^D tree  / commands ".into()
+            } else {
+                "⏎ send  ⇧⏎/⌥⏎ newline ".into()
+            };
+            let model_short = self
+                .footer_data
+                .model_id
+                .split(':')
+                .last()
+                .unwrap_or(&self.footer_data.model_id)
+                .split('-')
+                .take(2)
+                .collect::<Vec<_>>()
+                .join("-");
+            let prompt = if self.agent_active {
+                format!(" ⟳ {}... ", self.working_verb)
+            } else {
+                format!(" {model_short} ▸ ")
+            };
+            let editor_title = if self.agent_active {
+                Span::styled(prompt, t.style_warning())
+            } else {
+                Span::styled(prompt, t.style_accent())
+            };
+            let editor_block = Block::default()
+                .borders(Borders::TOP)
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+                .title(editor_title)
+                .title_bottom(
+                    Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
+                        .right_aligned(),
+                );
 
-        // Show the terminal's blinking cursor at the editor cursor position.
-        if show_cursor {
-            let (cx, cy) = self.editor.cursor_screen_position(editor_rect);
-            frame.set_cursor_position(ratatui::layout::Position { x: cx, y: cy });
+            self.editor.textarea.set_block(editor_block);
+            frame.render_widget(&self.editor.textarea, chunks[1]);
         }
 
         // Command palette popup (above editor when typing /)

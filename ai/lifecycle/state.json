@@ -75,6 +75,21 @@
       "bound_change": null,
       "created_at": "2026-03-26T14:44:10Z",
       "updated_at": "2026-03-26T14:44:10Z"
+    },
+    {
+      "id": "macos-local-auth-keychain-ux",
+      "title": "macOS local auth refinements for keychain secret UX",
+      "state": "seed",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-03-26T15:29:32Z",
+      "updated_at": "2026-03-26T15:29:32Z"
     }
   ],
   "changes": [],
@@ -232,6 +247,15 @@
       "to_state": "exploring",
       "reason": "initial status on create",
       "forced": true
+    },
+    {
+      "timestamp": "2026-03-26T15:29:32Z",
+      "entity_type": "node",
+      "entity_id": "macos-local-auth-keychain-ux",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
     }
   ]
 }
