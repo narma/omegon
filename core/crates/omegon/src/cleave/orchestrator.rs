@@ -31,6 +31,8 @@ pub struct CleaveConfig {
     pub max_turns: u32,
     /// Provider inventory for per-child routing. If None, all children use `model`.
     pub inventory: Option<std::sync::Arc<tokio::sync::RwLock<crate::routing::ProviderInventory>>>,
+    /// Startup-approved secret env inherited from the parent process.
+    pub inherited_env: Vec<(String, String)>,
 }
 
 /// Result of a cleave run.
@@ -273,6 +275,7 @@ pub async fn run_cleave(
                 config.model.clone()
             };
 
+            let inherited_env = config.inherited_env.clone();
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
                 let dispatch_config = ChildDispatchConfig {
@@ -283,6 +286,7 @@ pub async fn run_cleave(
                     max_turns,
                     timeout_secs,
                     idle_timeout_secs,
+                    inherited_env: &inherited_env,
                 };
                 let result = dispatch_child(
                     &dispatch_config,
@@ -494,6 +498,7 @@ struct ChildDispatchConfig<'a> {
     max_turns: u32,
     timeout_secs: u64,
     idle_timeout_secs: u64,
+    inherited_env: &'a [(String, String)],
 }
 
 /// Dispatch a single omegon-agent child process.
@@ -541,12 +546,17 @@ async fn dispatch_child(
     }
     tracing::info!(child = %label, args = ?args, "spawn args");
 
-    let mut child = Command::new(config.agent_binary)
+    let mut child = Command::new(config.agent_binary);
+    child
         .args(&args)
         .env("OMEGON_CHILD", "1") // Signal child mode — read-only memory, no session save
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
+        .kill_on_drop(true);
+    for (key, value) in config.inherited_env {
+        child.env(key, value);
+    }
+    let mut child = child
         .spawn()
         .context(format!("Failed to spawn omegon-agent for child '{label}'"))?;
 
@@ -959,6 +969,7 @@ mod tests {
             idle_timeout_secs: 300, // custom: 5 minutes
             max_turns: 50,
             inventory: None,
+            inherited_env: vec![],
         };
         assert_eq!(config.idle_timeout_secs, 300);
         assert_eq!(config.timeout_secs, 900);

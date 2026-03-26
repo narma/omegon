@@ -481,6 +481,7 @@ async fn run_cleave_command(
 
     // Resolve self binary path for spawning children
     let agent_binary = std::env::current_exe()?;
+    let agent_setup = setup::AgentSetup::new(&repo_path, None, None).await?;
 
     let config = cleave::orchestrator::CleaveConfig {
         agent_binary,
@@ -492,6 +493,7 @@ async fn run_cleave_command(
         idle_timeout_secs: idle_timeout,
         max_turns,
         inventory: None,
+        inherited_env: agent_setup.session_secret_env.clone(),
     };
 
     let cancel = CancellationToken::new();

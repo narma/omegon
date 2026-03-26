@@ -214,6 +214,18 @@ impl SecretsManager {
         self.hydrate_process_env();
     }
 
+    /// Export resolved session secrets as environment-variable pairs for child
+    /// processes. Intended for headless/cleave children so they inherit the
+    /// startup-approved secret set instead of touching keychain/UI mid-run.
+    pub fn session_env(&self) -> Vec<(String, String)> {
+        self.session_cache
+            .read()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| (name.clone(), value.expose_secret().to_string()))
+            .collect()
+    }
+
     /// Resolve a secret by name. Checks the session cache first, then the
     /// redaction cache, then falls back to recipe resolution.
     ///

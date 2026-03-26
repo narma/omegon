@@ -372,6 +372,7 @@ impl CleaveFeature {
                     crate::routing::ProviderInventory::probe(),
                 )))
             }),
+            inherited_env: vec![],
         };
 
         let result = cleave::run_cleave(

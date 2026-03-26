@@ -36,6 +36,8 @@ pub struct AgentSetup {
     pub cwd: PathBuf,
     /// Secrets manager — redaction, guards, recipes.
     pub secrets: std::sync::Arc<omegon_secrets::SecretsManager>,
+    /// Resolved startup-approved secret env pairs for child/headless runs.
+    pub session_secret_env: Vec<(String, String)>,
     /// Snapshot of lifecycle + memory state at startup for TUI pre-population.
     pub(crate) startup_snapshot: StartupSnapshot,
     /// Shared handles for live dashboard updates.
@@ -463,7 +465,8 @@ impl AgentSetup {
             context_manager,
             conversation,
             cwd,
-            secrets,
+            secrets: secrets.clone(),
+            session_secret_env: secrets.session_env(),
             resume_info,
             startup_snapshot,
             initial_harness_status,
