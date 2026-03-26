@@ -363,11 +363,7 @@ impl SecretsManager {
     /// Store a raw value in the OS keyring and create a keyring: recipe for it.
     pub fn set_keyring_secret(&self, name: &str, value: &str) -> anyhow::Result<()> {
         // Store in keyring
-        let entry = keyring::Entry::new("omegon", name)
-            .map_err(|e| anyhow::anyhow!("keyring error: {e}"))?;
-        entry
-            .set_password(value)
-            .map_err(|e| anyhow::anyhow!("keyring store failed: {e}"))?;
+        store_in_keyring(name, value)?;
         // Create recipe pointing to keyring
         self.set_recipe(name, &format!("keyring:{name}"))?;
         self.hydrate_process_env();
@@ -377,9 +373,7 @@ impl SecretsManager {
     /// Delete a secret recipe (and try to remove from keyring if applicable).
     pub fn delete_recipe(&self, name: &str) -> anyhow::Result<()> {
         // Try to remove from keyring
-        if let Ok(entry) = keyring::Entry::new("omegon", name) {
-            let _ = entry.delete_credential(); // best-effort
-        }
+        let _ = delete_from_keyring(name); // best-effort
         self.recipes.write().unwrap().remove(name).map(|_| ())?;
         self.refresh_redaction_set();
         if resolve::WELL_KNOWN_SECRET_ENVS.contains(&name) {

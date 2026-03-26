@@ -9,6 +9,15 @@ use crate::vault::VaultClient;
 use secrecy::{ExposeSecret, SecretString};
 use std::process::Command;
 
+#[cfg(test)]
+use std::collections::HashMap;
+#[cfg(test)]
+use std::sync::{LazyLock, Mutex};
+
+#[cfg(test)]
+static TEST_KEYRING: LazyLock<Mutex<HashMap<(String, String), String>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
 /// Well-known environment variables that commonly contain secrets.
 pub const WELL_KNOWN_SECRET_ENVS: &[&str] = &[
     "ANTHROPIC_API_KEY",
@@ -30,6 +39,56 @@ pub const WELL_KNOWN_SECRET_ENVS: &[&str] = &[
 
 /// Omegon's keyring service name — used for cross-platform credential storage.
 const KEYRING_SERVICE: &str = "omegon";
+
+#[cfg(not(test))]
+fn keyring_get(service: &str, name: &str) -> Result<Option<String>, keyring::Error> {
+    let entry = keyring::Entry::new(service, name)?;
+    match entry.get_password() {
+        Ok(val) if !val.is_empty() => Ok(Some(val)),
+        Ok(_) => Ok(None),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+fn keyring_get(service: &str, name: &str) -> Result<Option<String>, keyring::Error> {
+    Ok(TEST_KEYRING
+        .lock()
+        .unwrap()
+        .get(&(service.to_string(), name.to_string()))
+        .cloned())
+}
+
+#[cfg(not(test))]
+fn keyring_set(service: &str, name: &str, value: &str) -> Result<(), keyring::Error> {
+    let entry = keyring::Entry::new(service, name)?;
+    entry.set_password(value)
+}
+
+#[cfg(test)]
+fn keyring_set(service: &str, name: &str, value: &str) -> Result<(), keyring::Error> {
+    TEST_KEYRING.lock().unwrap().insert(
+        (service.to_string(), name.to_string()),
+        value.to_string(),
+    );
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn keyring_delete(service: &str, name: &str) -> Result<(), keyring::Error> {
+    let entry = keyring::Entry::new(service, name)?;
+    entry.delete_credential()
+}
+
+#[cfg(test)]
+fn keyring_delete(service: &str, name: &str) -> Result<(), keyring::Error> {
+    TEST_KEYRING
+        .lock()
+        .unwrap()
+        .remove(&(service.to_string(), name.to_string()));
+    Ok(())
+}
 
 /// Resolve a secret by name. Priority: env var > recipe (including vault:).
 /// Returns a SecretString that auto-zeroizes on drop.
@@ -137,21 +196,14 @@ pub fn execute_string_recipe(name: &str, recipe: &str) -> Option<SecretString> {
         }
 
         // Cross-platform keyring via the `keyring` crate
-        "keyring" | "keychain" => match keyring::Entry::new(KEYRING_SERVICE, payload) {
-            Ok(entry) => match entry.get_password() {
-                Ok(val) if !val.is_empty() => Some(SecretString::from(val)),
-                Ok(_) => None,
-                Err(keyring::Error::NoEntry) => {
-                    tracing::debug!(name = name, "no keyring entry found");
-                    None
-                }
-                Err(e) => {
-                    tracing::warn!(name = name, error = %e, "keyring access failed");
-                    None
-                }
-            },
+        "keyring" | "keychain" => match keyring_get(KEYRING_SERVICE, payload) {
+            Ok(Some(val)) => Some(SecretString::from(val)),
+            Ok(None) => {
+                tracing::debug!(name = name, "no keyring entry found");
+                None
+            }
             Err(e) => {
-                tracing::warn!(name = name, error = %e, "keyring entry creation failed");
+                tracing::warn!(name = name, error = %e, "keyring access failed");
                 None
             }
         },
@@ -250,16 +302,14 @@ pub async fn resolve_vault_secret(
 
 /// Store a secret value in the cross-platform keyring.
 pub fn store_in_keyring(name: &str, value: &str) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, name)?;
-    entry.set_password(value)?;
+    keyring_set(KEYRING_SERVICE, name, value)?;
     tracing::info!(name = name, "stored secret in keyring");
     Ok(())
 }
 
 /// Delete a secret from the cross-platform keyring.
 pub fn delete_from_keyring(name: &str) -> anyhow::Result<()> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, name)?;
-    entry.delete_credential()?;
+    keyring_delete(KEYRING_SERVICE, name)?;
     Ok(())
 }
 
