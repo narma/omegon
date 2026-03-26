@@ -53,16 +53,24 @@ link:
     # Pick first writable candidate in PATH-order
     if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
         DEST="/usr/local/bin/omegon"
+        ALT="$HOME/.local/bin/omegon"
     else
         mkdir -p "$HOME/.local/bin"
         DEST="$HOME/.local/bin/omegon"
+        ALT="/usr/local/bin/omegon"
         if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
             echo "⚠  ~/.local/bin is not in \$PATH — add it to your shell profile:"
             echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
         fi
     fi
+    # Remove stale install at the other location to prevent bash hash table confusion
+    if [ -e "$ALT" ] || [ -L "$ALT" ]; then
+        rm -f "$ALT"
+        echo "  removed stale install at $ALT"
+    fi
     ln -sf "$BINARY" "$DEST"
     echo "✓ omegon → $DEST"
+    echo "  run 'hash -d omegon 2>/dev/null || true' if your shell cached the old path"
     "$DEST" --version
 
 # Pull latest and build (handles Cargo.lock conflicts from version bumps)
