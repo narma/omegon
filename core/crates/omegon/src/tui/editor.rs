@@ -41,6 +41,7 @@ pub struct Editor {
     /// Tracked scroll offset for cursor positioning. Updated each frame
     /// to match the textarea's internal viewport (which is pub(crate)).
     scroll_row: u16,
+    scroll_col: u16,
 }
 
 impl Editor {
@@ -55,6 +56,7 @@ impl Editor {
             mode: EditorMode::Normal,
             kill_ring: None,
             scroll_row: 0,
+            scroll_col: 0,
         }
     }
 
@@ -357,20 +359,34 @@ impl Editor {
         // The block has Borders::TOP only, so inner area is 1 row shorter at top.
         let inner_y = editor_area.y + 1;
         let inner_height = editor_area.height.saturating_sub(1);
+        let inner_width = editor_area.width;
 
-        // Mirror ratatui-textarea's scroll logic:
+        // Mirror ratatui-textarea's scroll logic for both axes:
         // keep cursor visible within the viewport.
-        if inner_height == 0 {
-            return (editor_area.x + ccol, inner_y);
+        if inner_height == 0 || inner_width == 0 {
+            return (editor_area.x, inner_y);
         }
+
+        // Vertical scroll
         if crow < self.scroll_row {
             self.scroll_row = crow;
         } else if crow >= self.scroll_row + inner_height {
             self.scroll_row = crow + 1 - inner_height;
         }
 
+        // Horizontal scroll
+        if ccol < self.scroll_col {
+            self.scroll_col = ccol;
+        } else if ccol >= self.scroll_col + inner_width {
+            self.scroll_col = ccol + 1 - inner_width;
+        }
+
         let screen_y = inner_y + (crow - self.scroll_row);
-        let screen_x = editor_area.x + ccol;
+        let screen_x = editor_area.x + (ccol - self.scroll_col);
+
+        // Clamp to editor area as a safety net
+        let screen_x = screen_x.min(editor_area.x + inner_width.saturating_sub(1));
+        let screen_y = screen_y.min(editor_area.y + editor_area.height.saturating_sub(1));
         (screen_x, screen_y)
     }
 
