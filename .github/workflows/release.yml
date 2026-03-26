@@ -211,6 +211,14 @@ jobs:
           subject-path: artifacts/omegon-*.tar.gz
 
       # ─── GitHub Release ────────────────────────────────────────
+      - name: Preflight release token
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/${{ github.repository }} >/dev/null
+          gh api repos/${{ github.repository }}/releases >/dev/null
+
       - name: Create nightly GitHub Release
         if: ${{ contains(github.ref_name, '-nightly.') }}
         uses: softprops/action-gh-release@v2
