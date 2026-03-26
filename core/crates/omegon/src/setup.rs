@@ -144,16 +144,6 @@ impl AgentSetup {
                     .map(|s| (*s).to_string()),
             );
         }
-        let recipes = secrets.list_recipes();
-        for provider in ["brave", "tavily", "serper"] {
-            let env_names = crate::auth::provider_env_vars(provider);
-            if env_names
-                .iter()
-                .any(|name| recipes.iter().any(|(n, _)| n == name))
-            {
-                preflight.extend(env_names.iter().map(|s| (*s).to_string()));
-            }
-        }
         tracing::info!(
             requested = preflight.len(),
             names = ?preflight,

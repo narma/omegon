@@ -1473,8 +1473,18 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
     };
 
     // ─── Shared setup ───────────────────────────────────────────────────
+    let shared_settings = settings::shared(&cli.model);
+    let profile = settings::Profile::load(&cli.cwd);
+    if let Ok(mut s) = shared_settings.lock() {
+        profile.apply_to(&mut s);
+        if cli.max_turns != 50 {
+            s.max_turns = cli.max_turns;
+        }
+    }
+
     let resume = cli.resume.as_ref().map(|r| r.as_deref());
-    let mut agent = setup::AgentSetup::new(&cli.cwd, resume, None).await?;
+    let mut agent =
+        setup::AgentSetup::new(&cli.cwd, resume, Some(shared_settings.clone())).await?;
     agent.conversation.push_user(prompt_text.clone());
 
     // ─── Build loop config ──────────────────────────────────────────────
@@ -1490,7 +1500,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
         model: cli.model.clone(),
         cwd: agent.cwd.clone(),
         extended_context: false, // headless uses standard context
-        settings: None,          // headless doesn't have shared settings
+        settings: Some(shared_settings.clone()),
         secrets: Some(agent.secrets.clone()),
     };
 

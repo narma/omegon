@@ -105,6 +105,21 @@
       "bound_change": null,
       "created_at": "2026-03-26T16:00:36Z",
       "updated_at": "2026-03-26T16:00:36Z"
+    },
+    {
+      "id": "harness-diagnostics",
+      "title": "Harness diagnostics — structured runtime observability and queryable failure introspection",
+      "state": "exploring",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-03-26T16:37:31Z",
+      "updated_at": "2026-03-26T16:37:31Z"
     }
   ],
   "changes": [],
@@ -285,6 +300,24 @@
       "timestamp": "2026-03-26T16:00:36Z",
       "entity_type": "node",
       "entity_id": "session-secret-cache-preflight",
+      "from_state": "seed",
+      "to_state": "exploring",
+      "reason": "initial status on create",
+      "forced": true
+    },
+    {
+      "timestamp": "2026-03-26T16:37:31Z",
+      "entity_type": "node",
+      "entity_id": "harness-diagnostics",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-03-26T16:37:31Z",
+      "entity_type": "node",
+      "entity_id": "harness-diagnostics",
       "from_state": "seed",
       "to_state": "exploring",
       "reason": "initial status on create",
