@@ -8,7 +8,7 @@
 
 use crate::status::ProviderStatus;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
@@ -51,21 +51,24 @@ pub struct ProviderCredential {
 /// All known providers. This is the ONLY place provider→key mappings should exist.
 pub static PROVIDERS: &[ProviderCredential] = &[
     ProviderCredential {
-        id: "anthropic", auth_key: "anthropic",
+        id: "anthropic",
+        auth_key: "anthropic",
         display_name: "Anthropic (Claude)",
         env_vars: &["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"],
         auth_method: AuthMethod::OAuth,
         description: "OAuth — Claude Pro/Max subscription",
     },
     ProviderCredential {
-        id: "openai", auth_key: "openai-codex",
+        id: "openai",
+        auth_key: "openai-codex",
         display_name: "OpenAI (ChatGPT)",
         env_vars: &["OPENAI_API_KEY"],
         auth_method: AuthMethod::OAuth,
         description: "OAuth — ChatGPT Plus/Pro subscription",
     },
     ProviderCredential {
-        id: "openai-codex", auth_key: "openai-codex",
+        id: "openai-codex",
+        auth_key: "openai-codex",
         display_name: "OpenAI Codex (ChatGPT)",
         env_vars: &["CHATGPT_OAUTH_TOKEN"],
         auth_method: AuthMethod::OAuth,
@@ -73,42 +76,48 @@ pub static PROVIDERS: &[ProviderCredential] = &[
     },
     // ── OpenAI-compatible inference providers ───────────────────────
     ProviderCredential {
-        id: "openrouter", auth_key: "openrouter",
+        id: "openrouter",
+        auth_key: "openrouter",
         display_name: "OpenRouter",
         env_vars: &["OPENROUTER_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — 200+ models, free tier",
     },
     ProviderCredential {
-        id: "groq", auth_key: "groq",
+        id: "groq",
+        auth_key: "groq",
         display_name: "Groq",
         env_vars: &["GROQ_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — ultra-fast inference",
     },
     ProviderCredential {
-        id: "xai", auth_key: "xai",
+        id: "xai",
+        auth_key: "xai",
         display_name: "xAI (Grok)",
         env_vars: &["XAI_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — Grok models",
     },
     ProviderCredential {
-        id: "mistral", auth_key: "mistral",
+        id: "mistral",
+        auth_key: "mistral",
         display_name: "Mistral AI",
         env_vars: &["MISTRAL_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — Mistral/Codestral models",
     },
     ProviderCredential {
-        id: "cerebras", auth_key: "cerebras",
+        id: "cerebras",
+        auth_key: "cerebras",
         display_name: "Cerebras",
         env_vars: &["CEREBRAS_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — hardware-accelerated inference",
     },
     ProviderCredential {
-        id: "ollama", auth_key: "ollama",
+        id: "ollama",
+        auth_key: "ollama",
         display_name: "Ollama (Local)",
         env_vars: &["OLLAMA_HOST"],
         auth_method: AuthMethod::ApiKey,
@@ -116,42 +125,48 @@ pub static PROVIDERS: &[ProviderCredential] = &[
     },
     // ── Non-inference services ──────────────────────────────────────
     ProviderCredential {
-        id: "brave", auth_key: "brave",
+        id: "brave",
+        auth_key: "brave",
         display_name: "Brave Search",
         env_vars: &["BRAVE_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — web search",
     },
     ProviderCredential {
-        id: "tavily", auth_key: "tavily",
+        id: "tavily",
+        auth_key: "tavily",
         display_name: "Tavily Search",
         env_vars: &["TAVILY_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — AI-optimized search",
     },
     ProviderCredential {
-        id: "serper", auth_key: "serper",
+        id: "serper",
+        auth_key: "serper",
         display_name: "Serper (Google Search)",
         env_vars: &["SERPER_API_KEY"],
         auth_method: AuthMethod::ApiKey,
         description: "API key — Google results",
     },
     ProviderCredential {
-        id: "github", auth_key: "github",
+        id: "github",
+        auth_key: "github",
         display_name: "GitHub",
         env_vars: &["GITHUB_TOKEN", "GH_TOKEN"],
         auth_method: AuthMethod::Dynamic,
         description: "Dynamic — uses gh CLI",
     },
     ProviderCredential {
-        id: "gitlab", auth_key: "gitlab",
+        id: "gitlab",
+        auth_key: "gitlab",
         display_name: "GitLab",
         env_vars: &["GITLAB_TOKEN"],
         auth_method: AuthMethod::ApiKey,
         description: "Token — git operations, API",
     },
     ProviderCredential {
-        id: "huggingface", auth_key: "huggingface",
+        id: "huggingface",
+        auth_key: "huggingface",
         display_name: "Hugging Face",
         env_vars: &["HF_TOKEN", "HUGGING_FACE_TOKEN"],
         auth_method: AuthMethod::ApiKey,
@@ -281,7 +296,8 @@ pub fn read_credential_extra(provider: &str, field: &str) -> Option<String> {
 /// Write credentials for a provider to auth.json.
 /// Sets file permissions to 0600 (owner-only read/write) on Unix.
 pub fn write_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let path =
+        auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     let _ = std::fs::create_dir_all(path.parent().unwrap());
 
     let mut auth: Value = if path.exists() {
@@ -308,11 +324,11 @@ pub fn write_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Re
 /// Probe all authentication providers to get current status.
 pub async fn probe_all_providers() -> AuthStatus {
     let mut providers = Vec::new();
-    
+
     // Probe Anthropic
     let anthropic_info = probe_provider("anthropic").await;
     providers.push(anthropic_info);
-    
+
     // Probe OpenAI
     let openai_info = probe_provider("openai").await;
     providers.push(openai_info);
@@ -322,16 +338,16 @@ pub async fn probe_all_providers() -> AuthStatus {
     if openrouter_info.status == ProviderAuthStatus::Authenticated {
         providers.push(openrouter_info);
     }
-    
+
     // TODO: Probe Vault
     let vault = Vec::new(); // probe_vault().await
-    
+
     // TODO: Probe secrets stores
     let secrets = Vec::new(); // probe_secrets().await
-    
+
     // TODO: Probe MCP servers
     let mcp = Vec::new(); // probe_mcp().await
-    
+
     AuthStatus {
         providers,
         vault,
@@ -349,7 +365,7 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
         "openrouter" => &["OPENROUTER_API_KEY"],
         _ => &[],
     };
-    
+
     for key in env_keys {
         if let Ok(val) = std::env::var(key) {
             if !val.is_empty() {
@@ -363,7 +379,7 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
             }
         }
     }
-    
+
     // Check stored credentials
     let auth_key = auth_json_key(provider);
     if let Some(creds) = read_credentials(auth_key) {
@@ -372,7 +388,7 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
         } else {
             ProviderAuthStatus::Authenticated
         };
-        
+
         return ProviderInfo {
             name: provider.to_string(),
             status,
@@ -380,7 +396,7 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
             details: Some("stored".to_string()),
         };
     }
-    
+
     // No credentials found
     ProviderInfo {
         name: provider.to_string(),
@@ -392,26 +408,27 @@ async fn probe_provider(provider: &str) -> ProviderInfo {
 
 /// Remove stored credentials for a provider.
 pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-    
+    let path =
+        auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+
     if !path.exists() {
         return Err(anyhow::anyhow!("No credentials found for {provider}"));
     }
-    
+
     let content = std::fs::read_to_string(&path)?;
     let mut auth: Value = serde_json::from_str(&content)?;
-    
+
     let auth_key = auth_json_key(provider);
-    
+
     if auth.get(auth_key).is_none() {
         return Err(anyhow::anyhow!("No credentials found for {provider}"));
     }
-    
+
     // Remove the provider's entry
     if let Some(obj) = auth.as_object_mut() {
         obj.remove(auth_key);
     }
-    
+
     // Write back
     std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
     Ok(())
@@ -425,19 +442,23 @@ pub async fn resolve_with_refresh(provider: &str) -> Option<(String, bool)> {
 
     // 1. Env vars first (not OAuth)
     for key in env_vars {
-        if *key == "ANTHROPIC_OAUTH_TOKEN" { continue; } // handled separately
+        if *key == "ANTHROPIC_OAUTH_TOKEN" {
+            continue;
+        } // handled separately
         if let Ok(val) = std::env::var(key)
-            && !val.is_empty() {
-                return Some((val, false));
-            }
+            && !val.is_empty()
+        {
+            return Some((val, false));
+        }
     }
 
     // Check OAuth token env vars (e.g. ANTHROPIC_OAUTH_TOKEN)
     if env_vars.contains(&"ANTHROPIC_OAUTH_TOKEN") {
         if let Ok(val) = std::env::var("ANTHROPIC_OAUTH_TOKEN")
-            && !val.is_empty() {
-                return Some((val, true));
-            }
+            && !val.is_empty()
+        {
+            return Some((val, true));
+        }
     }
 
     // 2. auth.json — with refresh if expired (canonical key mapping)
@@ -467,7 +488,9 @@ pub async fn resolve_with_refresh(provider: &str) -> Option<(String, bool)> {
 
 /// Refresh an OAuth token.
 pub async fn refresh_token(provider: &str, refresh: &str) -> anyhow::Result<OAuthCredentials> {
-    if provider == "openai-codex" { return refresh_openai_token(refresh).await }
+    if provider == "openai-codex" {
+        return refresh_openai_token(refresh).await;
+    }
     let url = match provider {
         "anthropic" => TOKEN_URL,
         _ => anyhow::bail!("OAuth refresh not supported for provider: {provider}"),
@@ -507,10 +530,12 @@ pub async fn refresh_token(provider: &str, refresh: &str) -> anyhow::Result<OAut
 // ─── PKCE ───────────────────────────────────────────────────────────────────
 
 fn base64url_encode(bytes: &[u8]) -> String {
-    
     // Manual base64url encoding — no external crate needed
     let b64 = crate::tools::view::base64_encode_bytes(bytes);
-    b64.replace('+', "-").replace('/', "_").trim_end_matches('=').to_string()
+    b64.replace('+', "-")
+        .replace('/', "_")
+        .trim_end_matches('=')
+        .to_string()
 }
 
 fn generate_pkce() -> (String, String) {
@@ -659,8 +684,12 @@ pub async fn login_openai_with_progress(
         urlencoding_encode(OPENAI_SCOPE),
     );
 
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{OPENAI_CALLBACK_PORT}")).await?;
-    tracing::debug!(port = OPENAI_CALLBACK_PORT, "OpenAI OAuth callback server listening");
+    let listener =
+        tokio::net::TcpListener::bind(format!("127.0.0.1:{OPENAI_CALLBACK_PORT}")).await?;
+    tracing::debug!(
+        port = OPENAI_CALLBACK_PORT,
+        "OpenAI OAuth callback server listening"
+    );
 
     progress("Opening browser for OpenAI login…");
     let browser_ok = open::that(&auth_url).is_ok();
@@ -712,7 +741,8 @@ pub async fn login_openai_with_progress(
     let access = data["access_token"].as_str().unwrap_or("").to_string();
 
     // Extract accountId from JWT
-    let account_id = extract_jwt_claim(&access, "https://api.openai.com/auth", "chatgpt_account_id");
+    let account_id =
+        extract_jwt_claim(&access, "https://api.openai.com/auth", "chatgpt_account_id");
 
     let creds = OAuthCredentials {
         cred_type: "oauth".into(),
@@ -763,7 +793,9 @@ pub async fn refresh_openai_token(refresh: &str) -> anyhow::Result<OAuthCredenti
 /// Extract a claim from a JWT payload (simple base64 decode, no verification).
 pub fn extract_jwt_claim(token: &str, claim_path: &str, field: &str) -> Option<String> {
     let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 3 { return None; }
+    if parts.len() != 3 {
+        return None;
+    }
     // Add padding for base64
     let payload = parts[1];
     let padded = match payload.len() % 4 {
@@ -791,20 +823,33 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
                 b'0'..=b'9' => c - b'0' + 52,
                 b'+' => 62,
                 b'/' => 63,
-                b'=' => { continue; }
+                b'=' => {
+                    continue;
+                }
                 _ => return None,
             };
             valid = i + 1;
         }
-        if valid >= 2 { result.push((buf[0] << 2) | (buf[1] >> 4)); }
-        if valid >= 3 { result.push((buf[1] << 4) | (buf[2] >> 2)); }
-        if valid >= 4 { result.push((buf[2] << 6) | buf[3]); }
+        if valid >= 2 {
+            result.push((buf[0] << 2) | (buf[1] >> 4));
+        }
+        if valid >= 3 {
+            result.push((buf[1] << 4) | (buf[2] >> 2));
+        }
+        if valid >= 4 {
+            result.push((buf[2] << 6) | buf[3]);
+        }
     }
     Some(result)
 }
 
-fn write_credentials_with_extra(provider: &str, creds: &OAuthCredentials, account_id: Option<&str>) -> anyhow::Result<()> {
-    let path = auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+fn write_credentials_with_extra(
+    provider: &str,
+    creds: &OAuthCredentials,
+    account_id: Option<&str>,
+) -> anyhow::Result<()> {
+    let path =
+        auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     let _ = std::fs::create_dir_all(path.parent().unwrap());
     let mut auth: Value = if path.exists() {
         let content = std::fs::read_to_string(&path)?;
@@ -850,11 +895,13 @@ fn parse_callback_at_path(request: &str, _expected_path: &str) -> anyhow::Result
         .ok_or_else(|| anyhow::anyhow!("Invalid callback request"))?;
 
     let url = reqwest::Url::parse(&format!("http://localhost{path}"))?;
-    let code = url.query_pairs()
+    let code = url
+        .query_pairs()
         .find(|(k, _)| k == "code")
         .map(|(_, v)| v.to_string())
         .ok_or_else(|| anyhow::anyhow!("Missing authorization code in callback"))?;
-    let state = url.query_pairs()
+    let state = url
+        .query_pairs()
         .find(|(k, _)| k == "state")
         .map(|(_, v)| v.to_string())
         .ok_or_else(|| anyhow::anyhow!("Missing state in callback"))?;
@@ -863,12 +910,14 @@ fn parse_callback_at_path(request: &str, _expected_path: &str) -> anyhow::Result
 }
 
 fn urlencoding_encode(s: &str) -> String {
-    s.bytes().map(|b| match b {
-        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-            String::from(b as char)
-        }
-        _ => format!("%{b:02X}"),
-    }).collect()
+    s.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                String::from(b as char)
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 /// Model limits returned by the provider's models endpoint.
@@ -884,8 +933,8 @@ pub struct ModelLimits {
 pub async fn probe_anthropic_model_limits(model_id: &str) -> Option<ModelLimits> {
     let (api_key, is_oauth) = resolve_with_refresh("anthropic").await?;
     let client = reqwest::Client::new();
-    let base_url = std::env::var("ANTHROPIC_BASE_URL")
-        .unwrap_or_else(|_| "https://api.anthropic.com".into());
+    let base_url =
+        std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| "https://api.anthropic.com".into());
 
     let mut req = client
         .get(format!("{base_url}/v1/models"))
@@ -900,10 +949,7 @@ pub async fn probe_anthropic_model_limits(model_id: &str) -> Option<ModelLimits>
         req = req.header("x-api-key", &api_key);
     }
 
-    let resp = match tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        req.send(),
-    ).await {
+    let resp = match tokio::time::timeout(std::time::Duration::from_secs(5), req.send()).await {
         Ok(Ok(r)) if r.status().is_success() => r,
         Ok(Ok(r)) => {
             tracing::debug!(status = %r.status(), "models endpoint returned error");
@@ -923,15 +969,17 @@ pub async fn probe_anthropic_model_limits(model_id: &str) -> Option<ModelLimits>
     let models = body.get("data")?.as_array()?;
 
     // Match the requested model — try exact match first, then prefix
-    let entry = models.iter().find(|m| {
-        m.get("id").and_then(|v| v.as_str()) == Some(model_id)
-    }).or_else(|| {
-        // Prefix match for versioned model IDs (e.g. "claude-sonnet-4-6" matches "claude-sonnet-4-6-20260217")
-        models.iter().find(|m| {
-            m.get("id").and_then(|v| v.as_str())
-                .is_some_and(|id| id.starts_with(model_id) || model_id.starts_with(id))
-        })
-    })?;
+    let entry = models
+        .iter()
+        .find(|m| m.get("id").and_then(|v| v.as_str()) == Some(model_id))
+        .or_else(|| {
+            // Prefix match for versioned model IDs (e.g. "claude-sonnet-4-6" matches "claude-sonnet-4-6-20260217")
+            models.iter().find(|m| {
+                m.get("id")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|id| id.starts_with(model_id) || model_id.starts_with(id))
+            })
+        })?;
 
     let max_input = entry.get("max_input_tokens")?.as_u64()? as usize;
     let max_output = entry.get("max_tokens")?.as_u64()? as usize;
@@ -953,15 +1001,17 @@ pub async fn probe_anthropic_model_limits(model_id: &str) -> Option<ModelLimits>
 
 /// Convert AuthStatus to Vec<ProviderStatus> for HarnessStatus compatibility.
 pub fn auth_status_to_provider_statuses(status: &AuthStatus) -> Vec<ProviderStatus> {
-    status.providers.iter().map(|p| ProviderStatus {
-        name: p.name.clone(),
-        authenticated: p.status == ProviderAuthStatus::Authenticated,
-        auth_method: p.details.clone(),
-        model: None,
-    }).collect()
+    status
+        .providers
+        .iter()
+        .map(|p| ProviderStatus {
+            name: p.name.clone(),
+            authenticated: p.status == ProviderAuthStatus::Authenticated,
+            auth_method: p.details.clone(),
+            model: None,
+        })
+        .collect()
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -1022,8 +1072,14 @@ mod tests {
         let status = probe_all_providers().await;
         // Should always have at least anthropic and openai entries
         assert!(!status.providers.is_empty(), "should have provider entries");
-        assert!(status.providers.iter().any(|p| p.name == "anthropic"), "should probe anthropic");
-        assert!(status.providers.iter().any(|p| p.name == "openai"), "should probe openai");
+        assert!(
+            status.providers.iter().any(|p| p.name == "anthropic"),
+            "should probe anthropic"
+        );
+        assert!(
+            status.providers.iter().any(|p| p.name == "openai"),
+            "should probe openai"
+        );
     }
 
     #[test]
@@ -1088,7 +1144,10 @@ mod tests {
             refresh: "refresh-token".into(),
             expires: now_ms + 3600_000,
         };
-        assert!(!creds.is_expired(), "token 1 hour in the future should not be expired");
+        assert!(
+            !creds.is_expired(),
+            "token 1 hour in the future should not be expired"
+        );
     }
 
     #[test]
@@ -1106,7 +1165,10 @@ mod tests {
             expires: now_ms,
         };
         // is_expired checks now_ms >= self.expires, so exactly now IS expired
-        assert!(creds.is_expired(), "token at exact expiry should be expired");
+        assert!(
+            creds.is_expired(),
+            "token at exact expiry should be expired"
+        );
     }
 
     #[test]
@@ -1144,17 +1206,25 @@ mod tests {
 
         // Write directly to the temp path
         let mut auth_data = serde_json::Map::new();
-        auth_data.insert("test-provider".into(), json!({
-            "credType": creds.cred_type,
-            "access": creds.access,
-            "refresh": creds.refresh,
-            "expires": creds.expires,
-        }));
-        std::fs::write(&auth_path, serde_json::to_string_pretty(&auth_data).unwrap()).unwrap();
+        auth_data.insert(
+            "test-provider".into(),
+            json!({
+                "credType": creds.cred_type,
+                "access": creds.access,
+                "refresh": creds.refresh,
+                "expires": creds.expires,
+            }),
+        );
+        std::fs::write(
+            &auth_path,
+            serde_json::to_string_pretty(&auth_data).unwrap(),
+        )
+        .unwrap();
 
         // read_credentials reads from ~/.config/omegon/auth.json which won't
         // find our temp dir, so we just verify the JSON format is correct
-        let contents: Value = serde_json::from_str(&std::fs::read_to_string(&auth_path).unwrap()).unwrap();
+        let contents: Value =
+            serde_json::from_str(&std::fs::read_to_string(&auth_path).unwrap()).unwrap();
         assert_eq!(contents["test-provider"]["access"], "test-access-token");
         assert_eq!(contents["test-provider"]["refresh"], "test-refresh-token");
     }

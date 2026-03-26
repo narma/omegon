@@ -11,39 +11,39 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
+use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
 
 mod auth;
 mod bridge;
 pub mod bus;
 mod cleave;
-pub mod features;
 mod context;
+pub mod features;
 mod migrate;
 mod smoke;
-mod update;
 mod switch;
+mod update;
 
 mod conversation;
 mod lifecycle;
 mod r#loop;
-mod prompt;
 mod ollama;
+mod plugin_cli;
+mod plugins;
+mod prompt;
 mod providers;
 pub mod routing;
 mod session;
 pub mod settings;
 mod setup;
 mod startup;
-mod plugin_cli;
-mod plugins;
 pub mod status;
 pub mod tool_registry;
-pub mod util;
 mod tools;
 mod tui;
+pub mod util;
 mod web;
 
 use bridge::LlmBridge;
@@ -92,11 +92,15 @@ struct Cli {
     cwd: PathBuf,
 
     /// Model identifier (provider:model format)
-    #[arg(short, long, default_value = "anthropic:claude-sonnet-4-6", global = true)]
+    #[arg(
+        short,
+        long,
+        default_value = "anthropic:claude-sonnet-4-6",
+        global = true
+    )]
     model: String,
 
     // ── Agent mode args (used when no subcommand) ───────────────────────
-
     /// Prompt to execute (headless mode)
     #[arg(short, long)]
     prompt: Option<String>,
@@ -301,8 +305,8 @@ async fn main() -> anyhow::Result<()> {
     let is_interactive = matches!(cli.command, Some(Commands::Interactive) | None)
         && cli.prompt.is_none()
         && cli.prompt_file.is_none();
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level));
 
     // Interactive mode: tracing MUST NOT go to stderr (ratatui owns it).
     // Logs go to --log-file or ~/.config/omegon/omegon.log as default.
@@ -318,7 +322,11 @@ async fn main() -> anyhow::Result<()> {
             dir.join("omegon.log")
         });
         let dir = log_path.parent().unwrap_or(Path::new("."));
-        let name = log_path.file_name().unwrap_or_default().to_str().unwrap_or("omegon.log");
+        let name = log_path
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or("omegon.log");
         let file_appender = tracing_appender::rolling::never(dir, name);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
         _guard = Some(guard);
@@ -335,7 +343,11 @@ async fn main() -> anyhow::Result<()> {
             .init();
     } else if let Some(ref log_path) = cli.log_file {
         let dir = log_path.parent().unwrap_or(Path::new("."));
-        let name = log_path.file_name().unwrap_or_default().to_str().unwrap_or("omegon.log");
+        let name = log_path
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or("omegon.log");
         let file_appender = tracing_appender::rolling::never(dir, name);
         let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
         _guard = Some(guard);
@@ -382,9 +394,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", report.summary());
             Ok(())
         }
-        Some(Commands::Auth { ref action }) => {
-            run_auth_command(action).await
-        }
+        Some(Commands::Auth { ref action }) => run_auth_command(action).await,
         Some(Commands::Login { ref provider }) => {
             // Backward compatibility - redirect to new auth login command
             eprintln!("Warning: 'login' command is deprecated. Use 'omegon auth login' instead.");
@@ -400,11 +410,23 @@ async fn main() -> anyhow::Result<()> {
             max_turns,
         }) => {
             run_cleave_command(
-                &cli, Path::new(plan), directive, Path::new(workspace), max_parallel, timeout, idle_timeout, max_turns,
+                &cli,
+                Path::new(plan),
+                directive,
+                Path::new(workspace),
+                max_parallel,
+                timeout,
+                idle_timeout,
+                max_turns,
             )
             .await
         }
-        Some(Commands::Switch { version, list, latest, latest_rc }) => {
+        Some(Commands::Switch {
+            version,
+            list,
+            latest,
+            latest_rc,
+        }) => {
             if list {
                 switch::list_versions().await
             } else if latest {
@@ -475,16 +497,32 @@ async fn run_cleave_command(
         cancel_clone.cancel();
     });
 
-    let result = cleave::run_cleave(&plan, directive, &repo_path, workspace, &config, cancel).await?;
+    let result =
+        cleave::run_cleave(&plan, directive, &repo_path, workspace, &config, cancel).await?;
 
     // Print report
     eprintln!("\n## Cleave Report: {}", result.state.run_id);
     eprintln!("**Duration:** {:.0}s", result.duration_secs);
     eprintln!();
 
-    let completed = result.state.children.iter().filter(|c| c.status == cleave::state::ChildStatus::Completed).count();
-    let failed = result.state.children.iter().filter(|c| c.status == cleave::state::ChildStatus::Failed).count();
-    eprintln!("**Children:** {} completed, {} failed of {}", completed, failed, result.state.children.len());
+    let completed = result
+        .state
+        .children
+        .iter()
+        .filter(|c| c.status == cleave::state::ChildStatus::Completed)
+        .count();
+    let failed = result
+        .state
+        .children
+        .iter()
+        .filter(|c| c.status == cleave::state::ChildStatus::Failed)
+        .count();
+    eprintln!(
+        "**Children:** {} completed, {} failed of {}",
+        completed,
+        failed,
+        result.state.children.len()
+    );
     eprintln!();
 
     for child in &result.state.children {
@@ -494,7 +532,10 @@ async fn run_cleave_command(
             cleave::state::ChildStatus::Running => "⏳",
             cleave::state::ChildStatus::Pending => "○",
         };
-        let dur = child.duration_secs.map(|d| format!(" ({:.0}s)", d)).unwrap_or_default();
+        let dur = child
+            .duration_secs
+            .map(|d| format!(" ({:.0}s)", d))
+            .unwrap_or_default();
         eprintln!("  {} **{}**{}: {:?}", icon, child.label, dur, child.status);
         if let Some(err) = &child.error {
             eprintln!("    Error: {}", err);
@@ -505,14 +546,23 @@ async fn run_cleave_command(
     for (label, outcome) in &result.merge_results {
         match outcome {
             cleave::orchestrator::MergeOutcome::Success => eprintln!("  ✓ {} merged", label),
-            cleave::orchestrator::MergeOutcome::Conflict(d) => eprintln!("  ✗ {} CONFLICT: {}", label, d.lines().next().unwrap_or("")),
-            cleave::orchestrator::MergeOutcome::Failed(d) => eprintln!("  ✗ {} FAILED: {}", label, d.lines().next().unwrap_or("")),
-            cleave::orchestrator::MergeOutcome::Skipped(reason) => eprintln!("  ○ {} skipped ({})", label, reason),
+            cleave::orchestrator::MergeOutcome::Conflict(d) => {
+                eprintln!("  ✗ {} CONFLICT: {}", label, d.lines().next().unwrap_or(""))
+            }
+            cleave::orchestrator::MergeOutcome::Failed(d) => {
+                eprintln!("  ✗ {} FAILED: {}", label, d.lines().next().unwrap_or(""))
+            }
+            cleave::orchestrator::MergeOutcome::Skipped(reason) => {
+                eprintln!("  ○ {} skipped ({})", label, reason)
+            }
         }
     }
 
     // Post-merge guardrails (CLI only — TS wrapper runs its own)
-    let all_merged = result.merge_results.iter().all(|(_, o)| matches!(o, cleave::orchestrator::MergeOutcome::Success));
+    let all_merged = result
+        .merge_results
+        .iter()
+        .all(|(_, o)| matches!(o, cleave::orchestrator::MergeOutcome::Success));
     if all_merged && failed == 0 {
         let checks = cleave::guardrails::discover_guardrails(&repo_path);
         if !checks.is_empty() {
@@ -527,7 +577,6 @@ async fn run_cleave_command(
     }
     Ok(())
 }
-
 
 async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     tracing::info!(model = %cli.model, "omegon interactive starting");
@@ -561,7 +610,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
             native
         }
         None => {
-            tracing::warn!("no LLM provider available — TUI will start but messages will fail until /login");
+            tracing::warn!(
+                "no LLM provider available — TUI will start but messages will fail until /login"
+            );
             provider_connected = false;
             Box::new(bridge::NullBridge)
         }
@@ -591,7 +642,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     if let Ok(mut s) = shared_settings.lock() {
         profile.apply_to(&mut s);
         // CLI flags override profile
-        if cli.max_turns != 50 { // 50 is the default — only override if explicitly set
+        if cli.max_turns != 50 {
+            // 50 is the default — only override if explicitly set
             s.max_turns = cli.max_turns;
         }
         tracing::info!(
@@ -604,8 +656,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // The route matrix is a static fallback. The /v1/models endpoint
     // returns the real context window for the selected model.
     {
-        let model_id = cli.model.split(':').nth(1).unwrap_or(&cli.model);
-        let provider = cli.model.split(':').next().unwrap_or("anthropic");
+        let model_id = cli
+            .model
+            .split_once(':')
+            .map(|(_, model)| model)
+            .unwrap_or(&cli.model);
+        let provider = crate::providers::infer_provider_id(&cli.model);
         if provider == "anthropic" {
             if let Some(limits) = auth::probe_anthropic_model_limits(model_id).await {
                 if let Ok(mut s) = shared_settings.lock() {
@@ -614,7 +670,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     s.context_class = settings::ContextClass::from_tokens(limits.max_input_tokens);
                     if old != limits.max_input_tokens {
                         tracing::info!(
-                            old, new = limits.max_input_tokens,
+                            old,
+                            new = limits.max_input_tokens,
                             "context window updated from /v1/models"
                         );
                     }
@@ -623,18 +680,30 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
         }
     }
 
-    let is_oauth = providers::resolve_api_key_sync(
-        cli.model.split(':').next().unwrap_or("anthropic")
-    ).is_some_and(|(_, oauth)| oauth);
+    let is_oauth =
+        providers::resolve_api_key_sync(&crate::providers::infer_provider_id(&cli.model))
+            .is_some_and(|(_, oauth)| oauth);
 
     // ─── Apply CLI overrides ──────────────────────────────────────────
     if let Some(ref class_str) = cli.context_class {
         if let Ok(mut s) = shared_settings.lock() {
             match class_str.to_lowercase().as_str() {
-                "squad" => { s.context_class = settings::ContextClass::Squad; s.context_window = 200_000; }
-                "maniple" => { s.context_class = settings::ContextClass::Maniple; s.context_window = 500_000; }
-                "clan" => { s.context_class = settings::ContextClass::Clan; s.context_window = 680_000; }
-                "legion" => { s.context_class = settings::ContextClass::Legion; s.context_window = 1_000_000; }
+                "squad" => {
+                    s.context_class = settings::ContextClass::Squad;
+                    s.context_window = 200_000;
+                }
+                "maniple" => {
+                    s.context_class = settings::ContextClass::Maniple;
+                    s.context_window = 500_000;
+                }
+                "clan" => {
+                    s.context_class = settings::ContextClass::Clan;
+                    s.context_window = 680_000;
+                }
+                "legion" => {
+                    s.context_class = settings::ContextClass::Legion;
+                    s.context_window = 1_000_000;
+                }
                 _ => tracing::warn!("Unknown context class: {class_str}"),
             }
             s.apply_context_mode();
@@ -645,7 +714,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // ─── Launch TUI ─────────────────────────────────────────────────────
     let initial = agent.initial_tui_state();
     // Extract bus command definitions for the TUI command palette
-    let bus_commands: Vec<omegon_traits::CommandDefinition> = agent.bus
+    let bus_commands: Vec<omegon_traits::CommandDefinition> = agent
+        .bus
         .command_definitions()
         .iter()
         .map(|(_, def)| def.clone())
@@ -672,7 +742,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     let tui_cancel = shared_cancel.clone();
     let tui_settings = shared_settings.clone();
     let tui_handle = tokio::spawn(async move {
-        if let Err(e) = tui::run_tui(events_rx, command_tx, tui_config, tui_cancel, tui_settings).await {
+        if let Err(e) =
+            tui::run_tui(events_rx, command_tx, tui_config, tui_cancel, tui_settings).await
+        {
             tracing::error!("TUI error: {e}");
         }
     });
@@ -703,10 +775,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 tracing::info!(model = %model, "model switched via /model command");
 
                 // Detect provider change — swap bridge if needed
-                let old_provider = shared_settings.lock().ok()
-                    .map(|s| s.model.split(':').next().unwrap_or("anthropic").to_string())
+                let old_provider = shared_settings
+                    .lock()
+                    .ok()
+                    .map(|s| crate::providers::infer_provider_id(&s.model))
                     .unwrap_or_default();
-                let new_provider = model.split(':').next().unwrap_or("anthropic");
+                let new_provider = crate::providers::infer_provider_id(&model);
 
                 if let Ok(mut s) = shared_settings.lock() {
                     s.model = model.clone();
@@ -728,18 +802,27 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     let events_clone = events_tx.clone();
                     let settings_clone = shared_settings.clone();
                     tokio::spawn(async move {
-                        if let Some(new_bridge) = providers::auto_detect_bridge(&model_clone).await {
+                        let provider = crate::providers::infer_provider_id(&model_clone);
+                        if let Some(new_bridge) = providers::auto_detect_bridge(&model_clone).await
+                        {
                             let mut guard = bridge_clone.write().await;
                             *guard = new_bridge;
-                            if let Ok(mut s) = settings_clone.lock() { s.provider_connected = true; }
-                            tracing::info!("bridge hot-swapped for provider {}", model_clone.split(':').next().unwrap_or("?"));
+                            if let Ok(mut s) = settings_clone.lock() {
+                                s.provider_connected = true;
+                            }
+                            tracing::info!("bridge hot-swapped for provider {}", provider);
                             let _ = events_clone.send(AgentEvent::SystemNotification {
-                                message: format!("Provider switched to {}.", model_clone.split(':').next().unwrap_or("?")),
+                                message: format!("Provider switched to {}.", provider),
                             });
                         } else {
-                            if let Ok(mut s) = settings_clone.lock() { s.provider_connected = false; }
+                            if let Ok(mut s) = settings_clone.lock() {
+                                s.provider_connected = false;
+                            }
                             let _ = events_clone.send(AgentEvent::SystemNotification {
-                                message: format!("⚠ No credentials for {}. Use /login to authenticate.", model_clone.split(':').next().unwrap_or("?")),
+                                message: format!(
+                                    "⚠ No credentials for {}. Use /login to authenticate.",
+                                    provider
+                                ),
                             });
                         }
                     });
@@ -757,11 +840,19 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 let text = if sessions.is_empty() {
                     "No saved sessions for this directory.".to_string()
                 } else {
-                    let lines: Vec<String> = sessions.iter().take(10).map(|s| {
-                        format!("  {} — {} turns, {} tools — {}",
-                            s.meta.session_id, s.meta.turns, s.meta.tool_calls,
-                            s.meta.last_prompt_snippet)
-                    }).collect();
+                    let lines: Vec<String> = sessions
+                        .iter()
+                        .take(10)
+                        .map(|s| {
+                            format!(
+                                "  {} — {} turns, {} tools — {}",
+                                s.meta.session_id,
+                                s.meta.turns,
+                                s.meta.tool_calls,
+                                s.meta.last_prompt_snippet
+                            )
+                        })
+                        .collect();
                     format!("Recent sessions:\n{}", lines.join("\n"))
                 };
                 // Send back to TUI as a system message
@@ -781,10 +872,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
             }
 
             tui::TuiCommand::StartWebDashboard => {
-                let web_state = web::WebState::new(
-                    agent.dashboard_handles.clone(),
-                    events_tx.clone(),
-                );
+                let web_state =
+                    web::WebState::new(agent.dashboard_handles.clone(), events_tx.clone());
                 let token = web_state.auth_token.to_string();
                 match web::start_server(web_state, 7842).await {
                     Ok((addr, web_cmd_rx)) => {
@@ -800,19 +889,24 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             let mut rx = web_cmd_rx;
                             while let Some(web_cmd) = rx.recv().await {
                                 let tui_cmd = match web_cmd {
-                                    web::WebCommand::UserPrompt(text) => tui::TuiCommand::UserPrompt(text),
+                                    web::WebCommand::UserPrompt(text) => {
+                                        tui::TuiCommand::UserPrompt(text)
+                                    }
                                     web::WebCommand::SlashCommand { name, args } => {
                                         tui::TuiCommand::BusCommand { name, args }
                                     }
                                     web::WebCommand::Cancel => {
                                         if let Ok(guard) = cancel_clone.lock()
-                                            && let Some(ref cancel) = *guard {
-                                                cancel.cancel();
+                                            && let Some(ref cancel) = *guard
+                                        {
+                                            cancel.cancel();
                                         }
                                         continue;
                                     }
                                 };
-                                if cmd_tx_clone.send(tui_cmd).await.is_err() { break; }
+                                if cmd_tx_clone.send(tui_cmd).await.is_err() {
+                                    break;
+                                }
                             }
                         });
                     }
@@ -846,7 +940,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             out.push_str("  /secrets set NPM_TOKEN cmd:npm token get       always fresh from CLI\n");
                             out.push_str("  /secrets set AWS_SECRET env:AWS_SECRET_ACCESS_KEY  from environment\n\n");
                             out.push_str("API keys (no CLI available — store directly):\n");
-                            out.push_str("  /secrets set OPENROUTER_KEY sk-or-...          free cloud AI\n");
+                            out.push_str(
+                                "  /secrets set OPENROUTER_KEY sk-or-...          free cloud AI\n",
+                            );
                             out.push_str("  /secrets set ANTHROPIC_API_KEY sk-ant-...      Anthropic API\n\n");
                             out.push_str("Retrieve or remove:\n");
                             out.push_str("  /secrets get GITHUB_TOKEN\n");
@@ -863,20 +959,24 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                  From environment:\n\
                                  \x20 /secrets set AWS_SECRET env:AWS_SECRET_ACCESS_KEY\n\n\
                                  Direct value (only when no CLI exists):\n\
-                                 \x20 /secrets set OPENROUTER_KEY sk-or-v1-abc...".into()
+                                 \x20 /secrets set OPENROUTER_KEY sk-or-v1-abc..."
+                                    .into()
                             } else {
                                 let secret_name = parts[1];
                                 let secret_value = parts[2];
-                                let result = if secret_value.contains(':') && 
-                                    ["env:", "cmd:", "vault:", "keyring:", "file:"].iter()
-                                        .any(|p| secret_value.starts_with(p)) 
+                                let result = if secret_value.contains(':')
+                                    && ["env:", "cmd:", "vault:", "keyring:", "file:"]
+                                        .iter()
+                                        .any(|p| secret_value.starts_with(p))
                                 {
                                     agent.secrets.set_recipe(secret_name, secret_value)
                                 } else {
                                     agent.secrets.set_keyring_secret(secret_name, secret_value)
                                 };
                                 match result {
-                                    Ok(()) => format!("✓ Secret '{secret_name}' stored (encrypted in OS keyring).\n  The agent will redact this value from all output."),
+                                    Ok(()) => format!(
+                                        "✓ Secret '{secret_name}' stored (encrypted in OS keyring).\n  The agent will redact this value from all output."
+                                    ),
                                     Err(e) => format!("Error storing secret: {e}"),
                                 }
                             }
@@ -888,7 +988,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                 let secret_name = parts[1];
                                 match agent.secrets.resolve(secret_name) {
                                     Some(val) => format!("🔓 {secret_name} = {val}"),
-                                    None => format!("Secret '{secret_name}' not found.\n  Use /secrets to see stored secrets."),
+                                    None => format!(
+                                        "Secret '{secret_name}' not found.\n  Use /secrets to see stored secrets."
+                                    ),
                                 }
                             }
                         }
@@ -915,8 +1017,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         }
                         "auth_login" => {
                             let provider = args.trim();
-                            let provider = if provider.is_empty() { "anthropic" } else { provider };
-                            
+                            let provider = if provider.is_empty() {
+                                "anthropic"
+                            } else {
+                                provider
+                            };
+
                             // Run the login in a background task. Progress updates go
                             // through SystemNotification instead of eprintln (which
                             // would corrupt the ratatui display).
@@ -939,23 +1045,36 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                     "openai" | "chatgpt" => {
                                         auth::login_openai_with_progress(progress).await
                                     }
-                                    _ => Err(anyhow::anyhow!("Unknown provider: {}. Use: anthropic, openai", provider_clone)),
+                                    _ => Err(anyhow::anyhow!(
+                                        "Unknown provider: {}. Use: anthropic, openai",
+                                        provider_clone
+                                    )),
                                 };
                                 let message = match &result {
-                                    Ok(_) => format!("✓ Successfully logged in to {}", provider_clone),
+                                    Ok(_) => {
+                                        format!("✓ Successfully logged in to {}", provider_clone)
+                                    }
                                     Err(e) => format!("❌ Login failed: {}", e),
                                 };
-                                let _ = events_tx_clone.send(AgentEvent::SystemNotification { message });
+                                let _ = events_tx_clone
+                                    .send(AgentEvent::SystemNotification { message });
 
                                 // Hot-swap the bridge if login succeeded and current bridge is NullBridge
                                 if result.is_ok() {
-                                    if let Some(new_bridge) = providers::auto_detect_bridge(&model_for_redetect).await {
+                                    if let Some(new_bridge) =
+                                        providers::auto_detect_bridge(&model_for_redetect).await
+                                    {
                                         let mut guard = bridge_clone.write().await;
                                         *guard = new_bridge;
-                                        if let Ok(mut s) = settings_for_login.lock() { s.provider_connected = true; }
+                                        if let Ok(mut s) = settings_for_login.lock() {
+                                            s.provider_connected = true;
+                                        }
                                         tracing::info!("bridge hot-swapped after successful login");
-                                        let _ = events_tx_clone.send(AgentEvent::SystemNotification {
-                                            message: "Provider connected — you can send messages now.".to_string(),
+                                        let _ = events_tx_clone
+                                            .send(AgentEvent::SystemNotification {
+                                            message:
+                                                "Provider connected — you can send messages now."
+                                                    .to_string(),
                                         });
                                     }
                                 }
@@ -964,8 +1083,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         "auth_logout" => {
                             let provider = args.trim();
                             if provider.is_empty() {
-                                let _ = events_tx.send(AgentEvent::SystemNotification { 
-                                    message: "Error: Provider required for logout".to_string() 
+                                let _ = events_tx.send(AgentEvent::SystemNotification {
+                                    message: "Error: Provider required for logout".to_string(),
                                 });
                             } else {
                                 let message = match auth::logout_provider(provider) {
@@ -976,8 +1095,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             }
                         }
                         "auth_unlock" => {
-                            let _ = events_tx.send(AgentEvent::SystemNotification { 
-                                message: "🔒 Secrets store unlock not yet implemented".to_string() 
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: "🔒 Secrets store unlock not yet implemented".to_string(),
                             });
                         }
                         _ => {
@@ -985,7 +1104,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             let result = agent.bus.dispatch_command(&name, &args);
                             match result {
                                 omegon_traits::CommandResult::Display(msg) => {
-                                    let _ = events_tx.send(AgentEvent::SystemNotification { message: msg });
+                                    let _ = events_tx
+                                        .send(AgentEvent::SystemNotification { message: msg });
                                 }
                                 omegon_traits::CommandResult::Handled => {
                                     tracing::debug!(cmd = %name, "bus command handled silently");
@@ -1028,7 +1148,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             // Re-assemble and broadcast
                             let status = crate::status::HarnessStatus::assemble();
                             if let Ok(json) = serde_json::to_value(&status) {
-                                let _ = events_tx.send(AgentEvent::HarnessStatusChanged { status_json: json });
+                                let _ = events_tx
+                                    .send(AgentEvent::HarnessStatusChanged { status_json: json });
                             }
                         }
                     }
@@ -1094,13 +1215,13 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     &events_tx,
                     cancel,
                     &loop_config,
-                ).await {
+                )
+                .await
+                {
                     drop(bridge_guard); // release before error handling
                     let user_msg = format_agent_error(&e);
                     tracing::error!("Agent loop error: {e}");
-                    let _ = events_tx.send(AgentEvent::SystemNotification {
-                        message: user_msg,
-                    });
+                    let _ = events_tx.send(AgentEvent::SystemNotification { message: user_msg });
                     let _ = events_tx.send(AgentEvent::AgentEnd);
                 }
 
@@ -1144,14 +1265,14 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     &events_tx,
                     cancel,
                     &loop_config,
-                ).await {
+                )
+                .await
+                {
                     drop(bridge_guard);
                     // Surface a concise error to the user, not the raw JSON blob
                     let user_msg = format_agent_error(&e);
                     tracing::error!("Agent loop error: {e}");
-                    let _ = events_tx.send(AgentEvent::SystemNotification {
-                        message: user_msg,
-                    });
+                    let _ = events_tx.send(AgentEvent::SystemNotification { message: user_msg });
                     // The loop emits AgentEnd on success but not on error —
                     // emit it here so the TUI exits the "working" state.
                     let _ = events_tx.send(AgentEvent::AgentEnd);
@@ -1166,9 +1287,14 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
     // Save session + profile
     if !cli.no_session
-        && let Err(e) = session::save_session(&agent.conversation, &agent.cwd, agent.resume_info.as_ref().map(|r| r.session_id.as_str())) {
-            tracing::debug!("Session save failed: {e}");
-        }
+        && let Err(e) = session::save_session(
+            &agent.conversation,
+            &agent.cwd,
+            agent.resume_info.as_ref().map(|r| r.session_id.as_str()),
+        )
+    {
+        tracing::debug!("Session save failed: {e}");
+    }
     // Always persist profile on exit (captures thinking level changes, etc.)
     if let Ok(s) = shared_settings.lock() {
         let mut profile = settings::Profile::load(&agent.cwd);
@@ -1211,7 +1337,9 @@ async fn run_smoke_command(cli: &Cli) -> anyhow::Result<()> {
     let bridge: Box<dyn bridge::LlmBridge> = match providers::auto_detect_bridge(&cli.model).await {
         Some(native) => native,
         None => {
-            anyhow::bail!("No LLM provider available. Set ANTHROPIC_API_KEY or another provider credential.");
+            anyhow::bail!(
+                "No LLM provider available. Set ANTHROPIC_API_KEY or another provider credential."
+            );
         }
     };
     let bridge = std::sync::Arc::new(tokio::sync::RwLock::new(bridge));
@@ -1226,14 +1354,14 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
     // Resolve prompt from --prompt or --prompt-file
     let prompt_text = match (&cli.prompt, &cli.prompt_file) {
         (Some(p), _) => p.clone(),
-        (None, Some(path)) => {
-            std::fs::read_to_string(path)
-                .map_err(|e| anyhow::anyhow!("Failed to read prompt file {}: {}", path.display(), e))?
-        }
+        (None, Some(path)) => std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read prompt file {}: {}", path.display(), e))?,
         (None, None) => {
             eprintln!("Usage: omegon-agent --prompt \"<task>\" [--cwd <path>]");
             eprintln!("       omegon-agent --prompt-file <path> [--cwd <path>]");
-            eprintln!("       omegon-agent cleave --plan <plan.json> --directive \"<task>\" --workspace <dir>");
+            eprintln!(
+                "       omegon-agent cleave --plan <plan.json> --directive \"<task>\" --workspace <dir>"
+            );
             eprintln!();
             eprintln!("Headless coding agent — executes a task and exits.");
             std::process::exit(1);
@@ -1258,7 +1386,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
         model: cli.model.clone(),
         cwd: agent.cwd.clone(),
         extended_context: false, // headless uses standard context
-        settings: None, // headless doesn't have shared settings
+        settings: None,          // headless doesn't have shared settings
         secrets: Some(agent.secrets.clone()),
     };
 
@@ -1269,7 +1397,9 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
             native
         }
         None => {
-            anyhow::bail!("No LLM provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider credential.");
+            anyhow::bail!(
+                "No LLM provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or another provider credential."
+            );
         }
     };
 
@@ -1356,7 +1486,11 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
             }
         } else {
             // Standalone agent: save to ~/.config/omegon/sessions/
-            match session::save_session(&agent.conversation, &agent.cwd, agent.resume_info.as_ref().map(|r| r.session_id.as_str())) {
+            match session::save_session(
+                &agent.conversation,
+                &agent.cwd,
+                agent.resume_info.as_ref().map(|r| r.session_id.as_str()),
+            ) {
                 Ok(path) => tracing::info!(path = %path.display(), "Session saved"),
                 Err(e) => tracing::debug!("Session save failed (non-fatal): {e}"),
             }
@@ -1388,21 +1522,17 @@ async fn run_auth_command(action: &AuthAction) -> anyhow::Result<()> {
             println!("{}", format_auth_status(&status));
             Ok(())
         }
-        AuthAction::Login { provider } => {
-            run_auth_login(provider).await
-        }
-        AuthAction::Logout { provider } => {
-            match auth::logout_provider(provider) {
-                Ok(()) => {
-                    println!("✓ Logged out from {provider}");
-                    Ok(())
-                }
-                Err(e) => {
-                    eprintln!("Logout failed: {e}");
-                    std::process::exit(1);
-                }
+        AuthAction::Login { provider } => run_auth_login(provider).await,
+        AuthAction::Logout { provider } => match auth::logout_provider(provider) {
+            Ok(()) => {
+                println!("✓ Logged out from {provider}");
+                Ok(())
             }
-        }
+            Err(e) => {
+                eprintln!("Logout failed: {e}");
+                std::process::exit(1);
+            }
+        },
         AuthAction::Unlock => {
             // TODO: Implement secrets store unlock
             eprintln!("Secrets store unlock not yet implemented");
@@ -1413,7 +1543,11 @@ async fn run_auth_command(action: &AuthAction) -> anyhow::Result<()> {
 
 /// Direct API key login — for providers without OAuth (OpenRouter, etc.)
 /// Prompts for the key on stdin, stores in auth.json.
-async fn login_api_key(provider: &str, env_var: &str, keys_url: &str) -> anyhow::Result<auth::OAuthCredentials> {
+async fn login_api_key(
+    provider: &str,
+    env_var: &str,
+    keys_url: &str,
+) -> anyhow::Result<auth::OAuthCredentials> {
     eprintln!("Login to {provider}:");
     eprintln!("  1. Open {keys_url}");
     eprintln!("  2. Create or copy your API key");
@@ -1422,13 +1556,12 @@ async fn login_api_key(provider: &str, env_var: &str, keys_url: &str) -> anyhow:
     eprint!("API key: ");
 
     // Read key without echo (rpassword hides input on TTYs)
-    let key = rpassword::read_password()
-        .unwrap_or_else(|_| {
-            // Fallback for non-TTY (piped input, CI)
-            let mut buf = String::new();
-            std::io::stdin().read_line(&mut buf).unwrap_or(0);
-            buf.trim().to_string()
-        });
+    let key = rpassword::read_password().unwrap_or_else(|_| {
+        // Fallback for non-TTY (piped input, CI)
+        let mut buf = String::new();
+        std::io::stdin().read_line(&mut buf).unwrap_or(0);
+        buf.trim().to_string()
+    });
 
     if key.is_empty() {
         anyhow::bail!("No API key provided");
@@ -1444,7 +1577,9 @@ async fn login_api_key(provider: &str, env_var: &str, keys_url: &str) -> anyhow:
 
     // Also set the env var for the current session so the provider resolves immediately
     // SAFETY: single-threaded at this point in startup — no other threads reading env vars
-    unsafe { std::env::set_var(env_var, &creds.access); }
+    unsafe {
+        std::env::set_var(env_var, &creds.access);
+    }
 
     eprintln!("✓ {provider} API key stored. Active for this session and future sessions.");
     Ok(creds)
@@ -1454,8 +1589,14 @@ async fn run_auth_login(provider: &str) -> anyhow::Result<()> {
     let result = match provider {
         "anthropic" | "claude" => auth::login_anthropic().await,
         "openai" | "chatgpt" => auth::login_openai().await,
-        "openrouter" => login_api_key("openrouter", "OPENROUTER_API_KEY",
-            "https://openrouter.ai/keys").await,
+        "openrouter" => {
+            login_api_key(
+                "openrouter",
+                "OPENROUTER_API_KEY",
+                "https://openrouter.ai/keys",
+            )
+            .await
+        }
         _ => {
             eprintln!("Unknown provider: {provider}. Use: anthropic, openai, openrouter");
             std::process::exit(1);
@@ -1472,7 +1613,7 @@ async fn run_auth_login(provider: &str) -> anyhow::Result<()> {
 
 fn format_auth_status(status: &auth::AuthStatus) -> String {
     let mut lines = vec!["Authentication Status:".to_string()];
-    
+
     for provider in &status.providers {
         let icon = match provider.status {
             auth::ProviderAuthStatus::Authenticated => "✓",
@@ -1480,51 +1621,58 @@ fn format_auth_status(status: &auth::AuthStatus) -> String {
             auth::ProviderAuthStatus::Missing => "✗",
             auth::ProviderAuthStatus::Error => "❌",
         };
-        
-        let auth_type = if provider.is_oauth { "oauth" } else { "api-key" };
+
+        let auth_type = if provider.is_oauth {
+            "oauth"
+        } else {
+            "api-key"
+        };
         let mut line = format!("  {icon} {:<12} {auth_type}", provider.name);
-        
+
         if let Some(ref details) = provider.details {
             line.push_str(&format!(" ({details})"));
         }
-        
+
         lines.push(line);
     }
-    
+
     if !status.vault.is_empty() || !status.secrets.is_empty() || !status.mcp.is_empty() {
         lines.push(String::new());
-        
+
         if !status.vault.is_empty() {
             lines.push("Vault:".to_string());
             for vault_info in &status.vault {
-                lines.push(format!("  {} {}", 
-                    if vault_info.accessible { "✓" } else { "✗" }, 
+                lines.push(format!(
+                    "  {} {}",
+                    if vault_info.accessible { "✓" } else { "✗" },
                     vault_info.addr
                 ));
             }
         }
-        
+
         if !status.secrets.is_empty() {
             lines.push("Secrets Store:".to_string());
             for secret_info in &status.secrets {
-                lines.push(format!("  {} {}", 
-                    if secret_info.unlocked { "🔓" } else { "🔒" }, 
+                lines.push(format!(
+                    "  {} {}",
+                    if secret_info.unlocked { "🔓" } else { "🔒" },
                     secret_info.store
                 ));
             }
         }
-        
+
         if !status.mcp.is_empty() {
             lines.push("MCP Servers:".to_string());
             for mcp_info in &status.mcp {
-                lines.push(format!("  {} {}", 
-                    if mcp_info.connected { "✓" } else { "✗" }, 
+                lines.push(format!(
+                    "  {} {}",
+                    if mcp_info.connected { "✓" } else { "✗" },
                     mcp_info.server
                 ));
             }
         }
     }
-    
+
     lines.join("\n")
 }
 
@@ -1537,7 +1685,10 @@ mod tests {
         let raw = r#"Anthropic 400 Bad Request: {"type":"error","error":{"type":"invalid_request_error","message":"Input should be a valid dictionary"}}"#;
         let e = anyhow::anyhow!("{raw}");
         let result = format_agent_error(&e);
-        assert!(result.contains("Input should be a valid dictionary"), "got: {result}");
+        assert!(
+            result.contains("Input should be a valid dictionary"),
+            "got: {result}"
+        );
     }
 
     #[test]
@@ -1545,7 +1696,11 @@ mod tests {
         let long = "x".repeat(500);
         let e = anyhow::anyhow!("{long}");
         let result = format_agent_error(&e);
-        assert!(result.len() < 600, "should truncate, got len {}", result.len());
+        assert!(
+            result.len() < 600,
+            "should truncate, got len {}",
+            result.len()
+        );
     }
 
     #[test]
@@ -1558,54 +1713,54 @@ mod tests {
     #[test]
     fn cli_auth_commands_parse_correctly() {
         // Test the auth status command
-        let cli = Cli::try_parse_from(vec!["omegon", "auth", "status"]).expect("should parse auth status");
+        let cli = Cli::try_parse_from(vec!["omegon", "auth", "status"])
+            .expect("should parse auth status");
         match cli.command.unwrap() {
             Commands::Auth { action } => {
                 match action {
-                    AuthAction::Status => {}, // expected
+                    AuthAction::Status => {} // expected
                     _ => panic!("Expected Status action"),
                 }
-            },
+            }
             _ => panic!("Expected Auth command"),
         }
 
         // Test auth login with provider
-        let cli = Cli::try_parse_from(vec!["omegon", "auth", "login", "anthropic"]).expect("should parse auth login");
+        let cli = Cli::try_parse_from(vec!["omegon", "auth", "login", "anthropic"])
+            .expect("should parse auth login");
         match cli.command.unwrap() {
-            Commands::Auth { action } => {
-                match action {
-                    AuthAction::Login { provider } => {
-                        assert_eq!(provider, "anthropic");
-                    },
-                    _ => panic!("Expected Login action"),
+            Commands::Auth { action } => match action {
+                AuthAction::Login { provider } => {
+                    assert_eq!(provider, "anthropic");
                 }
+                _ => panic!("Expected Login action"),
             },
             _ => panic!("Expected Auth command"),
         }
 
         // Test auth logout
-        let cli = Cli::try_parse_from(vec!["omegon", "auth", "logout", "openai"]).expect("should parse auth logout");
+        let cli = Cli::try_parse_from(vec!["omegon", "auth", "logout", "openai"])
+            .expect("should parse auth logout");
         match cli.command.unwrap() {
-            Commands::Auth { action } => {
-                match action {
-                    AuthAction::Logout { provider } => {
-                        assert_eq!(provider, "openai");
-                    },
-                    _ => panic!("Expected Logout action"),
+            Commands::Auth { action } => match action {
+                AuthAction::Logout { provider } => {
+                    assert_eq!(provider, "openai");
                 }
+                _ => panic!("Expected Logout action"),
             },
             _ => panic!("Expected Auth command"),
         }
 
         // Test auth unlock
-        let cli = Cli::try_parse_from(vec!["omegon", "auth", "unlock"]).expect("should parse auth unlock");
+        let cli = Cli::try_parse_from(vec!["omegon", "auth", "unlock"])
+            .expect("should parse auth unlock");
         match cli.command.unwrap() {
             Commands::Auth { action } => {
                 match action {
-                    AuthAction::Unlock => {}, // expected
+                    AuthAction::Unlock => {} // expected
                     _ => panic!("Expected Unlock action"),
                 }
-            },
+            }
             _ => panic!("Expected Auth command"),
         }
     }
@@ -1613,11 +1768,12 @@ mod tests {
     #[test]
     fn backward_compat_login_command_still_works() {
         // Test that the deprecated login command still parses
-        let cli = Cli::try_parse_from(vec!["omegon", "login", "anthropic"]).expect("should parse legacy login");
+        let cli = Cli::try_parse_from(vec!["omegon", "login", "anthropic"])
+            .expect("should parse legacy login");
         match cli.command.unwrap() {
             Commands::Login { provider } => {
                 assert_eq!(provider, "anthropic");
-            },
+            }
             _ => panic!("Expected Login command"),
         }
     }

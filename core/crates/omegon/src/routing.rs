@@ -224,7 +224,11 @@ pub fn route(req: &CapabilityRequest, inventory: &ProviderInventory) -> Vec<Prov
         })
         .collect();
 
-    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     candidates
 }
 
@@ -345,9 +349,7 @@ mod tests {
 
     #[test]
     fn test_route_leaf_returns_ollama() {
-        let inv = mock_inventory(vec![
-            ("ollama", CapabilityTier::Mid, CostTier::Free),
-        ]);
+        let inv = mock_inventory(vec![("ollama", CapabilityTier::Mid, CostTier::Free)]);
         let req = CapabilityRequest {
             tier: CapabilityTier::Leaf,
             prefer_local: false,

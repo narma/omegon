@@ -8,11 +8,10 @@
 //! Commands: /gloriana, /victory, /retribution, /haiku, /sonnet, /opus
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use omegon_traits::{
-    CommandDefinition, CommandResult, Feature,
-    ToolDefinition, ToolResult, ContentBlock,
+    CommandDefinition, CommandResult, ContentBlock, Feature, ToolDefinition, ToolResult,
 };
 
 use crate::settings::{SharedSettings, ThinkingLevel};
@@ -105,7 +104,8 @@ impl ModelTier {
             (Self::Retribution, "openai") => "gpt-4.1-mini",
             (Self::Local, _) => "local",
             _ => "claude-sonnet-4-6",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
@@ -124,15 +124,29 @@ impl ModelBudget {
 
     fn switch_tier(&self, tier: ModelTier, reason: &str) -> String {
         let mut s = self.settings.lock().unwrap();
-        let provider = s.provider().to_string();
+        let provider = if matches!(tier, ModelTier::Local) {
+            "ollama".to_string()
+        } else {
+            s.provider().to_string()
+        };
         let current = s.model_short().to_string();
-        let model = tier.resolve_model(&provider, &current);
+        let model = if matches!(tier, ModelTier::Local) {
+            if s.provider() == "ollama" && current != "local" {
+                current
+            } else {
+                "qwen3:30b".to_string()
+            }
+        } else {
+            tier.resolve_model(&provider, &current)
+        };
         s.model = format!("{provider}:{model}");
         s.context_window = crate::settings::Settings::new(&s.model).context_window;
         drop(s);
         format!(
             "{} {} → {provider}:{model} ({})\n{reason}",
-            tier.icon(), tier.as_str(), tier.description(),
+            tier.icon(),
+            tier.as_str(),
+            tier.description(),
         )
     }
 
@@ -140,7 +154,9 @@ impl ModelBudget {
         self.settings.lock().unwrap().thinking = level;
         format!(
             "{} Thinking → {} ({})",
-            level.icon(), level.as_str(), reason
+            level.icon(),
+            level.as_str(),
+            reason
         )
     }
 }
@@ -224,7 +240,9 @@ impl Feature for ModelBudget {
     ) -> anyhow::Result<ToolResult> {
         match tool_name {
             crate::tool_registry::model_budget::SET_MODEL_TIER => {
-                let tier_str = args["tier"].as_str().ok_or_else(|| anyhow::anyhow!("tier required"))?;
+                let tier_str = args["tier"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("tier required"))?;
                 let reason = args["reason"].as_str().unwrap_or("No reason given");
                 let tier = ModelTier::parse(tier_str)
                     .ok_or_else(|| anyhow::anyhow!("Invalid tier: {tier_str}"))?;
@@ -235,19 +253,25 @@ impl Feature for ModelBudget {
                 })
             }
             crate::tool_registry::model_budget::SWITCH_TO_OFFLINE_DRIVER => {
-                let reason = args["reason"].as_str().unwrap_or("User requested offline mode");
+                let reason = args["reason"]
+                    .as_str()
+                    .unwrap_or("User requested offline mode");
                 let preferred = args["preferred_model"].as_str();
                 let model = preferred.unwrap_or("auto");
                 let msg = self.switch_tier(ModelTier::Local, reason);
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
-                        text: format!("{msg}\nModel preference: {model}. Local inference via Ollama.")
+                        text: format!(
+                            "{msg}\nModel preference: {model}. Local inference via Ollama."
+                        ),
                     }],
                     details: json!({"tier": "local", "preferred_model": model, "reason": reason}),
                 })
             }
             crate::tool_registry::model_budget::SET_THINKING_LEVEL => {
-                let level_str = args["level"].as_str().ok_or_else(|| anyhow::anyhow!("level required"))?;
+                let level_str = args["level"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("level required"))?;
                 let reason = args["reason"].as_str().unwrap_or("No reason given");
                 let level = ThinkingLevel::parse(level_str)
                     .ok_or_else(|| anyhow::anyhow!("Invalid level: {level_str}"))?;
@@ -317,7 +341,10 @@ mod tests {
     fn tier_parse() {
         assert_eq!(ModelTier::parse("gloriana"), Some(ModelTier::Gloriana));
         assert_eq!(ModelTier::parse("victory"), Some(ModelTier::Victory));
-        assert_eq!(ModelTier::parse("retribution"), Some(ModelTier::Retribution));
+        assert_eq!(
+            ModelTier::parse("retribution"),
+            Some(ModelTier::Retribution)
+        );
         assert_eq!(ModelTier::parse("local"), Some(ModelTier::Local));
         assert_eq!(ModelTier::parse("GLORIANA"), Some(ModelTier::Gloriana));
         assert_eq!(ModelTier::parse("invalid"), None);
@@ -325,15 +352,31 @@ mod tests {
 
     #[test]
     fn tier_resolve_anthropic() {
-        assert!(ModelTier::Gloriana.resolve_model("anthropic", "").contains("opus"));
-        assert!(ModelTier::Victory.resolve_model("anthropic", "").contains("sonnet"));
-        assert!(ModelTier::Retribution.resolve_model("anthropic", "").contains("haiku"));
+        assert!(
+            ModelTier::Gloriana
+                .resolve_model("anthropic", "")
+                .contains("opus")
+        );
+        assert!(
+            ModelTier::Victory
+                .resolve_model("anthropic", "")
+                .contains("sonnet")
+        );
+        assert!(
+            ModelTier::Retribution
+                .resolve_model("anthropic", "")
+                .contains("haiku")
+        );
     }
 
     #[test]
     fn tier_resolve_openai() {
         assert_eq!(ModelTier::Gloriana.resolve_model("openai", ""), "o3");
-        assert!(ModelTier::Victory.resolve_model("openai", "").contains("gpt"));
+        assert!(
+            ModelTier::Victory
+                .resolve_model("openai", "")
+                .contains("gpt")
+        );
     }
 
     #[test]
@@ -342,7 +385,22 @@ mod tests {
         let budget = ModelBudget::new(settings.clone());
         let msg = budget.switch_tier(ModelTier::Gloriana, "test");
         assert!(msg.contains("gloriana"), "should mention tier: {msg}");
-        assert!(settings.lock().unwrap().model.contains("opus"), "should switch to opus");
+        assert!(
+            settings.lock().unwrap().model.contains("opus"),
+            "should switch to opus"
+        );
+    }
+
+    #[test]
+    fn switch_local_tier_moves_to_ollama_instead_of_anthropic() {
+        let settings = crate::settings::shared("anthropic:claude-sonnet-4-6");
+        let budget = ModelBudget::new(settings.clone());
+        let msg = budget.switch_tier(ModelTier::Local, "offline please");
+        assert!(
+            msg.contains("ollama:qwen3:30b"),
+            "unexpected message: {msg}"
+        );
+        assert_eq!(settings.lock().unwrap().model, "ollama:qwen3:30b");
     }
 
     #[test]
