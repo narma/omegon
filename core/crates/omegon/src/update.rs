@@ -5,6 +5,7 @@
 //! The `/update` command triggers download + replace + exec restart.
 
 use std::path::{Path, PathBuf};
+use std::str;
 use std::time::Duration;
 use tokio::sync::watch;
 
@@ -217,26 +218,74 @@ async fn download_to_path(client: &reqwest::Client, url: &str, path: &Path) -> a
 }
 
 fn verify_archive_signature(archive_path: &Path, sig_path: &Path, cert_path: &Path) -> anyhow::Result<()> {
-    let output = std::process::Command::new("cosign")
-        .arg("verify-blob")
-        .arg("--signature")
-        .arg(sig_path)
-        .arg("--certificate")
-        .arg(cert_path)
-        .arg("--certificate-identity-regexp")
-        .arg("^https://github.com/styrene-lab/omegon/.*$")
-        .arg("--certificate-oidc-issuer")
-        .arg("https://token.actions.githubusercontent.com")
-        .arg(archive_path)
-        .output()
-        .map_err(|e| anyhow::anyhow!("cosign not available: {e}"))?;
+    let blob = std::fs::read(archive_path)?;
+    let signature = std::fs::read_to_string(sig_path)?;
+    let cert_pem = std::fs::read_to_string(cert_path)?;
 
-    if !output.status.success() {
-        anyhow::bail!(
-            "cosign verification failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    <sigstore::cosign::Client as sigstore::cosign::CosignCapabilities>::verify_blob(
+        &cert_pem,
+        signature.trim(),
+        &blob,
+    )
+    .map_err(|e| anyhow::anyhow!("blob signature verification failed: {e}"))?;
+
+    verify_certificate_identity(&cert_pem)?;
+    Ok(())
+}
+
+fn verify_certificate_identity(cert_pem: &str) -> anyhow::Result<()> {
+    use x509_parser::extensions::GeneralName;
+    use x509_parser::pem::parse_x509_pem;
+    use x509_parser::prelude::*;
+
+    let (_, pem) = parse_x509_pem(cert_pem.as_bytes())
+        .map_err(|e| anyhow::anyhow!("failed to parse PEM certificate: {e}"))?;
+    let (_, cert) = X509Certificate::from_der(&pem.contents)
+        .map_err(|e| anyhow::anyhow!("failed to parse certificate DER: {e}"))?;
+
+    let mut subject_uri: Option<String> = None;
+    for ext in cert.extensions() {
+        if let ParsedExtension::SubjectAlternativeName(san) = ext.parsed_extension() {
+            for name in &san.general_names {
+                if let GeneralName::URI(uri) = name {
+                    let uri_str = uri.to_string();
+                    if uri_str.starts_with("https://github.com/") {
+                        subject_uri = Some(uri_str);
+                        break;
+                    }
+                }
+            }
+        }
     }
+
+    let subject_uri = subject_uri
+        .ok_or_else(|| anyhow::anyhow!("certificate missing GitHub Actions SAN URI"))?;
+    if !subject_uri.starts_with("https://github.com/styrene-lab/omegon/.github/workflows/release.yml@") {
+        anyhow::bail!("certificate SAN URI does not match release workflow policy: {subject_uri}");
+    }
+
+    let issuer_oid = "1.3.6.1.4.1.57264.1.1";
+    let issuer = cert
+        .extensions()
+        .iter()
+        .find(|ext| ext.oid.to_id_string() == issuer_oid)
+        .map(|ext| String::from_utf8_lossy(ext.value).trim_matches(char::from(0)).to_string())
+        .unwrap_or_default();
+    if issuer != "https://token.actions.githubusercontent.com" {
+        anyhow::bail!("certificate issuer policy failed: {issuer}");
+    }
+
+    let repo_oid = "1.3.6.1.4.1.57264.1.5";
+    let repo = cert
+        .extensions()
+        .iter()
+        .find(|ext| ext.oid.to_id_string() == repo_oid)
+        .map(|ext| String::from_utf8_lossy(ext.value).trim_matches(char::from(0)).to_string())
+        .unwrap_or_default();
+    if repo != "styrene-lab/omegon" {
+        anyhow::bail!("certificate repository policy failed: {repo}");
+    }
+
     Ok(())
 }
 
@@ -393,5 +442,12 @@ mod tests {
             find_asset_url(&assets, "omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz.sig"),
             "https://example.invalid/archive.sig"
         );
+    }
+
+    #[test]
+    fn certificate_identity_requires_repo_workflow_prefix() {
+        let cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----";
+        let err = verify_certificate_identity(cert).expect_err("invalid cert should fail");
+        assert!(err.to_string().contains("parse PEM certificate") || err.to_string().contains("parse certificate DER"));
     }
 }

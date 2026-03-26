@@ -45,6 +45,21 @@
       "bound_change": null,
       "created_at": "2026-03-26T12:27:14Z",
       "updated_at": "2026-03-26T12:27:14Z"
+    },
+    {
+      "id": "rust-native-sigstore-update-verification",
+      "title": "Rust-native Sigstore verification for self-update",
+      "state": "exploring",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-03-26T13:53:26Z",
+      "updated_at": "2026-03-26T13:53:26Z"
     }
   ],
   "changes": [],
@@ -166,6 +181,24 @@
       "to_state": "exploring",
       "reason": null,
       "forced": false
+    },
+    {
+      "timestamp": "2026-03-26T13:53:26Z",
+      "entity_type": "node",
+      "entity_id": "rust-native-sigstore-update-verification",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-03-26T13:53:26Z",
+      "entity_type": "node",
+      "entity_id": "rust-native-sigstore-update-verification",
+      "from_state": "seed",
+      "to_state": "exploring",
+      "reason": "initial status on create",
+      "forced": true
     }
   ]
 }
