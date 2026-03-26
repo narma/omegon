@@ -426,12 +426,16 @@ fn render_user_prompt(
         return;
     }
 
-    // Stronger visual identity for operator prompts.
     let bg = t.user_msg_bg();
+    let border_color = match presentation.emphasis {
+        SegmentEmphasis::Strong => t.accent(),
+        SegmentEmphasis::Normal => t.accent_muted(),
+        SegmentEmphasis::Muted => t.border_dim(),
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(t.accent_muted()).bg(bg))
+        .border_style(Style::default().fg(border_color).bg(bg))
         .padding(Padding::horizontal(1))
         .style(Style::default().bg(bg));
     let inner = block.inner(area);
@@ -445,7 +449,7 @@ fn render_user_prompt(
         Span::styled(
             format!("{} ", presentation.sigil),
             Style::default()
-                .fg(t.accent())
+                .fg(border_color)
                 .bg(bg)
                 .add_modifier(Modifier::BOLD),
         ),
@@ -503,12 +507,15 @@ fn render_assistant_text(
         return;
     }
 
-    // Left gutter — accent-colored bar for the full height of the response
+    let lane_bg = t.surface_bg();
+    Block::default().style(Style::default().bg(lane_bg)).render(area, buf);
+
+    // Left gutter — role-colored lane marker for the full height of the response
     for row in 0..area.height {
         if area.x + 1 < area.right() {
             if let Some(cell) = buf.cell_mut((area.x + 1, area.y + row)) {
                 cell.set_symbol("│");
-                cell.set_style(Style::default().fg(t.success()));
+                cell.set_style(Style::default().fg(t.success()).bg(lane_bg));
             }
         }
     }
@@ -522,10 +529,20 @@ fn render_assistant_text(
 
     let mut lines: Vec<Line<'_>> = Vec::new();
 
-    lines.push(Line::from(Span::styled(
-        format!("{}", presentation.sigil),
-        Style::default().fg(t.success()).add_modifier(Modifier::BOLD),
-    )));
+    // Assistant identity line.
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{} ", presentation.sigil),
+            Style::default()
+                .fg(t.success())
+                .bg(lane_bg)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            if complete { "response" } else { "thinking" },
+            Style::default().fg(t.border_dim()).bg(lane_bg),
+        ),
+    ]));
 
     // Meta tag line: model / provider / tier — dim right-aligned header
     let meta_tag = build_meta_tag(meta);
@@ -618,6 +635,7 @@ fn render_assistant_text(
 
     Paragraph::new(lines)
         .wrap(Wrap { trim: false })
+        .style(Style::default().bg(lane_bg))
         .render(inner, buf);
 }
 
@@ -1256,6 +1274,23 @@ mod tests {
         assert_eq!(seg.role(), SegmentRole::Assistant);
         assert_eq!(seg.presentation().sigil, "Ω");
         assert_eq!(seg.presentation().emphasis, SegmentEmphasis::Normal);
+    }
+
+    #[test]
+    fn assistant_render_includes_identity_header() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::AssistantText {
+                text: "reply text".into(),
+                thinking: String::new(),
+                complete: true,
+            },
+        };
+        let (area, mut buf) = make_buf(40, 6);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("Ω"), "assistant header should include Ω sigil: {text}");
+        assert!(text.contains("response"), "assistant header should describe the segment role: {text}");
     }
 
     #[test]
