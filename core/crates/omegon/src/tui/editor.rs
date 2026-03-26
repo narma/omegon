@@ -323,6 +323,25 @@ impl Editor {
         self.textarea.move_cursor(ratatui_textarea::CursorMove::End);
     }
 
+    pub fn move_up(&mut self) {
+        self.textarea.move_cursor(ratatui_textarea::CursorMove::Up);
+    }
+
+    pub fn move_down(&mut self) {
+        self.textarea.move_cursor(ratatui_textarea::CursorMove::Down);
+    }
+
+    /// Insert a newline at the current cursor position (for Shift+Enter multiline input).
+    pub fn insert_newline(&mut self) {
+        self.textarea.insert_newline();
+    }
+
+    /// Current cursor row (0-based). Used to decide if Up/Down should navigate
+    /// within the editor or fall through to history/scroll.
+    pub fn cursor_row(&self) -> usize {
+        self.textarea.cursor().0
+    }
+
     pub fn move_word_backward(&mut self) {
         self.textarea.move_cursor(ratatui_textarea::CursorMove::WordBack);
     }
@@ -489,5 +508,94 @@ mod tests {
         let e = Editor::new();
         assert!(e.is_empty());
         assert_eq!(e.render_text(), "");
+    }
+
+    #[test]
+    fn insert_newline_creates_multiline() {
+        let mut e = Editor::new();
+        e.insert('a');
+        e.insert('b');
+        e.insert_newline();
+        e.insert('c');
+        e.insert('d');
+        assert_eq!(e.line_count(), 2);
+        assert_eq!(e.render_text(), "ab\ncd");
+    }
+
+    #[test]
+    fn cursor_row_tracks_position() {
+        let mut e = Editor::new();
+        e.insert('a');
+        assert_eq!(e.cursor_row(), 0);
+        e.insert_newline();
+        assert_eq!(e.cursor_row(), 1);
+        e.insert_newline();
+        assert_eq!(e.cursor_row(), 2);
+        e.move_up();
+        assert_eq!(e.cursor_row(), 1);
+        e.move_up();
+        assert_eq!(e.cursor_row(), 0);
+        // At top, move_up stays at row 0 (no panic)
+        e.move_up();
+        assert_eq!(e.cursor_row(), 0);
+    }
+
+    #[test]
+    fn move_down_at_bottom_stays() {
+        let mut e = Editor::new();
+        e.insert('a');
+        e.insert_newline();
+        e.insert('b');
+        assert_eq!(e.cursor_row(), 1);
+        assert_eq!(e.line_count(), 2);
+        // At bottom, move_down stays at last row
+        e.move_down();
+        assert_eq!(e.cursor_row(), 1);
+    }
+
+    #[test]
+    fn take_text_preserves_newlines() {
+        let mut e = Editor::new();
+        e.insert('l');
+        e.insert('1');
+        e.insert_newline();
+        e.insert('l');
+        e.insert('2');
+        e.insert_newline();
+        e.insert('l');
+        e.insert('3');
+        let text = e.take_text();
+        assert_eq!(text, "l1\nl2\nl3");
+        assert!(e.is_empty());
+        assert_eq!(e.line_count(), 1);
+    }
+
+    #[test]
+    fn newline_in_middle_of_text() {
+        let mut e = Editor::new();
+        e.set_text("abcd");
+        // Cursor is at end (col 4). Move back 2 to col 2.
+        e.move_left();
+        e.move_left();
+        e.insert_newline();
+        assert_eq!(e.render_text(), "ab\ncd");
+        assert_eq!(e.cursor_row(), 1);
+        assert_eq!(e.line_count(), 2);
+    }
+
+    #[test]
+    fn multiline_set_text() {
+        let mut e = Editor::new();
+        e.set_text("line1\nline2\nline3");
+        assert_eq!(e.line_count(), 3);
+        assert_eq!(e.render_text(), "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn line_count_single_line() {
+        let mut e = Editor::new();
+        assert_eq!(e.line_count(), 1); // empty = at least 1
+        e.insert('x');
+        assert_eq!(e.line_count(), 1);
     }
 }

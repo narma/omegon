@@ -1136,9 +1136,11 @@ impl App {
         };
 
         // ── Vertical layout in the main area ────────────────────────
-        // Editor height: 3 rows default, grows up to 8 for multiline input
+        // Editor height: 3 rows default, grows proportionally with terminal.
+        // Cap at 40% of available height or 20 rows, whichever is smaller.
         let editor_lines = self.editor.line_count();
-        let editor_height = (editor_lines as u16 + 2).clamp(3, 8); // +2 for border + padding
+        let max_editor = (main_area.height * 40 / 100).max(5).min(20);
+        let editor_height = (editor_lines as u16 + 2).clamp(3, max_editor); // +2 for border
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -3511,6 +3513,13 @@ pub async fn run_tui(
                         }
                     }
 
+                    // Shift+Enter or Alt+Enter: insert newline (multiline input)
+                    (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) || m.contains(KeyModifiers::ALT) => {
+                        if !app.agent_active {
+                            app.editor.insert_newline();
+                        }
+                    }
+
                     // Submit
                     (KeyCode::Enter, _) => {
                         let text = app.editor.take_text();
@@ -3606,17 +3615,27 @@ pub async fn run_tui(
                         app.conversation.scroll_down(20);
                     }
                     (KeyCode::Up, _) => {
-                        if app.agent_active || !app.editor.render_text().is_empty() {
+                        if app.agent_active {
                             app.conversation.scroll_up(3);
-                        } else {
+                        } else if app.editor.line_count() > 1 && app.editor.cursor_row() > 0 {
+                            // Multiline: move cursor up within editor
+                            app.editor.move_up();
+                        } else if app.editor.is_empty() {
                             app.history_up();
+                        } else {
+                            app.conversation.scroll_up(3);
                         }
                     }
                     (KeyCode::Down, _) => {
-                        if app.agent_active || !app.editor.render_text().is_empty() {
+                        if app.agent_active {
                             app.conversation.scroll_down(3);
-                        } else {
+                        } else if app.editor.line_count() > 1 && app.editor.cursor_row() < app.editor.line_count() - 1 {
+                            // Multiline: move cursor down within editor
+                            app.editor.move_down();
+                        } else if app.editor.is_empty() {
                             app.history_down();
+                        } else {
+                            app.conversation.scroll_down(3);
                         }
                     }
                     _ => {}
