@@ -32,15 +32,36 @@ pub use store::{KeyBackend, SecretStore};
 pub use vault::{AuthConfig, VaultClient, VaultConfig};
 
 use secrecy::{ExposeSecret, SecretString};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use tokio::sync::Mutex;
+
+/// Why a secret was preflighted/warmed into the session cache.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SecretUse {
+    LlmProvider,
+    WebSearch,
+    Update,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedSecretMeta {
+    pub source: &'static str,
+    pub warmed: bool,
+    pub required_at_startup: bool,
+    pub used_by: HashSet<SecretUse>,
+}
 
 /// Central secrets manager — owns the redaction set, recipes, guards, and Vault client.
 pub struct SecretsManager {
     /// Resolved secret values for redaction (name → SecretString).
     /// Values are zeroized when dropped.
     redaction_set: Arc<RwLock<HashMap<String, SecretString>>>,
+    /// Session-scoped cache of resolved secrets used after startup so runtime
+    /// tool execution does not trigger surprise Keychain/UI prompts mid-run.
+    session_cache: Arc<RwLock<HashMap<String, SecretString>>>,
+    session_meta: Arc<RwLock<HashMap<String, CachedSecretMeta>>>,
     /// Pre-compiled Aho-Corasick redactor (rebuilt when secrets change).
     redactor: Arc<RwLock<Redactor>>,
     /// Recipe store (persisted to ~/.omegon/secrets.json)
@@ -63,6 +84,8 @@ impl SecretsManager {
         let mgr = Self {
             redaction_set: Arc::new(RwLock::new(HashMap::new())),
             redactor: Arc::new(RwLock::new(Redactor::build(&HashMap::new()))),
+            session_cache: Arc::new(RwLock::new(HashMap::new())),
+            session_meta: Arc::new(RwLock::new(HashMap::new())),
             recipes: RwLock::new(recipes),
             path_guard,
             audit,
@@ -148,14 +171,58 @@ impl SecretsManager {
         }
     }
 
-    /// Resolve a secret by name. Checks the in-memory redaction cache first
-    /// (avoids repeated OS keyring access prompts on macOS), then falls back
-    /// to recipe resolution.
+    /// Warm a specific secret into the session cache. Intended for startup
+    /// preflight so any required Keychain/UI interaction happens at a
+    /// deterministic boundary, not mid-session.
+    pub fn warm_secret(&self, name: &str, use_case: SecretUse, required_at_startup: bool) -> bool {
+        let Some(value) = self.resolve(name) else {
+            return false;
+        };
+        let mut cache = self.session_cache.write().unwrap();
+        cache.insert(name.to_string(), SecretString::from(value));
+        let mut meta = self.session_meta.write().unwrap();
+        meta.entry(name.to_string())
+            .and_modify(|m| {
+                m.warmed = true;
+                m.required_at_startup |= required_at_startup;
+                m.used_by.insert(use_case);
+            })
+            .or_insert_with(|| CachedSecretMeta {
+                source: "resolved",
+                warmed: true,
+                required_at_startup,
+                used_by: HashSet::from([use_case]),
+            });
+        true
+    }
+
+    /// Startup preflight: warm known interactive/runtime secrets once so the
+    /// rest of the session can read them headlessly from memory/env.
+    pub fn preflight_session_cache(&self) {
+        for name in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_OAUTH_TOKEN", "BRAVE_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"] {
+            let use_case = match name {
+                "BRAVE_API_KEY" | "TAVILY_API_KEY" | "SERPER_API_KEY" => SecretUse::WebSearch,
+                _ => SecretUse::LlmProvider,
+            };
+            let _ = self.warm_secret(name, use_case, true);
+        }
+        self.hydrate_process_env();
+    }
+
+    /// Resolve a secret by name. Checks the session cache first, then the
+    /// redaction cache, then falls back to recipe resolution.
     ///
     /// Security: the redaction set already caches all resolved secrets as
     /// `SecretString` (zeroized on drop) for the Aho-Corasick output redactor.
     /// This method reads that existing cache — it doesn't create a new one.
     pub fn resolve(&self, name: &str) -> Option<String> {
+        // Session cache first — deterministic runtime path after startup preflight.
+        {
+            let set = self.session_cache.read().unwrap();
+            if let Some(cached) = set.get(name) {
+                return Some(cached.expose_secret().to_string());
+            }
+        }
         // Check redaction cache first — the value is already in memory
         // for output redaction purposes. Reading it here avoids a second
         // keyring prompt on macOS.
@@ -265,9 +332,10 @@ impl SecretsManager {
     /// so legacy env-based integrations (web search, provider clients) can use
     /// secrets stored in Omegon's keyring/recipe system.
     pub fn hydrate_process_env(&self) {
-        let set = self.redaction_set.read().unwrap();
+        let session = self.session_cache.read().unwrap();
+        let redaction = self.redaction_set.read().unwrap();
         for env_name in resolve::WELL_KNOWN_SECRET_ENVS {
-            if let Some(value) = set.get(*env_name) {
+            if let Some(value) = session.get(*env_name).or_else(|| redaction.get(*env_name)) {
                 // SAFETY: Omegon mutates process env only on the main runtime thread
                 // during setup or in direct response to operator secret changes.
                 // We do not concurrently iterate the environment while doing this.
@@ -365,7 +433,7 @@ mod tests {
         let mgr = SecretsManager::new(dir.path()).unwrap();
         mgr.set_recipe("BRAVE_API_KEY", "env:OMEGON_TEST_BRAVE_KEY")
             .unwrap();
-        mgr.hydrate_process_env();
+        mgr.preflight_session_cache();
         assert_eq!(std::env::var("BRAVE_API_KEY").ok().as_deref(), Some("brave-test-key"));
         // SAFETY: cleanup for isolated test env vars.
         unsafe {
