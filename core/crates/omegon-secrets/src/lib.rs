@@ -198,8 +198,13 @@ impl SecretsManager {
 
     /// Startup preflight: warm known interactive/runtime secrets once so the
     /// rest of the session can read them headlessly from memory/env.
-    pub fn preflight_session_cache(&self) {
-        for name in ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENAI_OAUTH_TOKEN", "BRAVE_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"] {
+    pub fn preflight_session_cache<I, S>(&self, names: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for name in names {
+            let name = name.as_ref();
             let use_case = match name {
                 "BRAVE_API_KEY" | "TAVILY_API_KEY" | "SERPER_API_KEY" => SecretUse::WebSearch,
                 _ => SecretUse::LlmProvider,
@@ -433,7 +438,7 @@ mod tests {
         let mgr = SecretsManager::new(dir.path()).unwrap();
         mgr.set_recipe("BRAVE_API_KEY", "env:OMEGON_TEST_BRAVE_KEY")
             .unwrap();
-        mgr.preflight_session_cache();
+        mgr.preflight_session_cache(["BRAVE_API_KEY"]);
         assert_eq!(std::env::var("BRAVE_API_KEY").ok().as_deref(), Some("brave-test-key"));
         // SAFETY: cleanup for isolated test env vars.
         unsafe {

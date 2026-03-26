@@ -131,7 +131,28 @@ impl AgentSetup {
                 )
             }
         };
-        secrets.preflight_session_cache();
+        let mut preflight = std::collections::BTreeSet::<String>::new();
+        if let Some(settings) = settings.as_ref()
+            && let Ok(guard) = settings.lock()
+        {
+            let provider = crate::providers::infer_provider_id(&guard.model);
+            preflight.extend(
+                crate::auth::provider_env_vars(&provider)
+                    .iter()
+                    .map(|s| (*s).to_string()),
+            );
+        }
+        let recipes = secrets.list_recipes();
+        for provider in ["brave", "tavily", "serper"] {
+            let env_names = crate::auth::provider_env_vars(provider);
+            if env_names
+                .iter()
+                .any(|name| recipes.iter().any(|(n, _)| n == name))
+            {
+                preflight.extend(env_names.iter().map(|s| (*s).to_string()));
+            }
+        }
+        secrets.preflight_session_cache(preflight);
 
         let mut bus = EventBus::new();
 
