@@ -29,3 +29,8 @@ sessions/
 .omegon/history
 test-project/
 dist/
+
+# Codescan index cache (content-hashed, rebuilt automatically)
+.omegon/codescan.db
+.omegon/codescan.db-shm
+.omegon/codescan.db-wal

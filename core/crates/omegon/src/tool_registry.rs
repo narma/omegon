@@ -127,6 +127,12 @@ pub mod persona {
     pub const LIST_PERSONAS: &str = "list_personas";
 }
 
+/// Code and knowledge scanning — owned by `tools::codebase_search`
+pub mod codescan {
+    pub const CODEBASE_SEARCH: &str = "codebase_search";
+    pub const CODEBASE_INDEX: &str = "codebase_index";
+}
+
 // ─── Registry query ─────────────────────────────────────────────────────────
 
 /// All statically-declared tool names. Used by `EventBus::finalize()` to
@@ -137,7 +143,7 @@ pub mod persona {
 /// **Maintenance rule**: every `pub const` above MUST appear here.
 /// The `registry_count_is_current` test will catch omissions.
 /// Number of statically registered tools (for splash screen display).
-pub const TOOL_COUNT: usize = 51;
+pub const TOOL_COUNT: usize = 53;
 
 pub fn all_static_names() -> Vec<&'static str> {
     vec![
@@ -207,8 +213,11 @@ pub fn all_static_names() -> Vec<&'static str> {
         persona::SWITCH_PERSONA,
         persona::SWITCH_TONE,
         persona::LIST_PERSONAS,
+        // codescan (2)
+        codescan::CODEBASE_SEARCH,
+        codescan::CODEBASE_INDEX,
     ]
-    // Total: 13+1+1+2+3+12+4+2+3+1+3+1+1+1+3 = 51
+    // Total: 13+1+1+2+3+12+4+2+3+1+3+1+1+1+3+2 = 53
 }
 
 #[cfg(test)]

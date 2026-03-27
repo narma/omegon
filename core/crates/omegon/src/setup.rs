@@ -291,6 +291,14 @@ impl AgentSetup {
         let cleave_handle = cleave_feature.shared_progress();
         bus.register(Box::new(cleave_feature));
 
+        // ─── Codescan (codebase_search / codebase_index) ──────────────
+        bus.register(Box::new(features::adapter::ToolAdapter::new(
+            "codescan",
+            Box::new(tools::codebase_search::CodescanProvider::new(
+                project_root.clone(),
+            )),
+        )));
+
         // ─── Delegate (subagent system) ─────────────────────────────────
         let agents = crate::features::delegate::scan_agents(&cwd);
         bus.register(Box::new(features::delegate::DelegateFeature::new(
