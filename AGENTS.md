@@ -15,3 +15,8 @@ Key points for working on Omegon itself:
 - The `ai/.gitignore` excludes `memory/*.db` files — only `facts.jsonl` is tracked
 - **Type checking**: `npx tsc --noEmit` must pass before committing TypeScript changes. Run `npm run typecheck` or `npm run check` (typecheck + tests).
 - **Release flow**: `just rc` → `just link` → `just sign` → `just publish`. See `CONTRIBUTING.md` § Release Process for the full lifecycle. Milestones are tracked automatically in `.omegon/milestones.json`.
+- **Release preflight is mandatory** before `just rc` / `just release`:
+  - confirm `git branch --show-current` is `main` (never cut releases from detached HEAD)
+  - confirm the working tree is clean
+  - confirm release-facing surfaces are reconciled when touched (`CHANGELOG.md`, site/docs install/version examples, milestones)
+  - confirm any active OpenSpec change is either archived or explicitly accepted as non-blocking for the release

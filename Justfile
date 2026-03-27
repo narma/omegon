@@ -98,6 +98,23 @@ rc:
     #!/usr/bin/env bash
     set -euo pipefail
 
+    # Refuse detached HEAD or non-main release cuts.
+    BRANCH=$(git branch --show-current)
+    if [ -z "$BRANCH" ]; then
+        echo "✗ Detached HEAD. Check out main before cutting an RC."
+        exit 1
+    fi
+    if [ "$BRANCH" != "main" ]; then
+        echo "✗ RC cuts must run from main. Current branch: $BRANCH"
+        exit 1
+    fi
+    HEAD_SHA=$(git rev-parse HEAD)
+    MAIN_SHA=$(git rev-parse refs/heads/main)
+    if [ "$HEAD_SHA" != "$MAIN_SHA" ]; then
+        echo "✗ HEAD is not the tip of main. Check out main and retry."
+        exit 1
+    fi
+
     # Refuse to run with uncommitted changes (core/ and milestones)
     DIRTY=$(git status --porcelain -- core/ .omegon/milestones.json)
     if [ -n "$DIRTY" ]; then
@@ -180,6 +197,22 @@ rc:
 release:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    BRANCH=$(git branch --show-current)
+    if [ -z "$BRANCH" ]; then
+        echo "✗ Detached HEAD. Check out main before cutting a stable release."
+        exit 1
+    fi
+    if [ "$BRANCH" != "main" ]; then
+        echo "✗ Stable releases must run from main. Current branch: $BRANCH"
+        exit 1
+    fi
+    HEAD_SHA=$(git rev-parse HEAD)
+    MAIN_SHA=$(git rev-parse refs/heads/main)
+    if [ "$HEAD_SHA" != "$MAIN_SHA" ]; then
+        echo "✗ HEAD is not the tip of main. Check out main and retry."
+        exit 1
+    fi
 
     DIRTY=$(git status --porcelain -- core/ .omegon/milestones.json)
     if [ -n "$DIRTY" ]; then
