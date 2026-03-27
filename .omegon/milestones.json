@@ -25,9 +25,9 @@
     "nodes": [],
     "frozen": false,
     "opened": "2026-03-26T01:28:41Z",
-    "last_rc": "2026-03-27T02:25:39Z",
-    "rc_version": "0.15.3-rc.27",
-    "rc_count": 28,
+    "last_rc": "2026-03-27T02:44:07Z",
+    "rc_version": "0.15.3-rc.28",
+    "rc_count": 29,
     "released": null,
     "notes": [
       "feat(cleave): inherit warmed session secrets in children",
@@ -47,6 +47,7 @@
       "feat(tui): render assistant responses as soft cards",
       "feat(tui): split inference bar into thinking/context rows",
       "feat(tui): strengthen operator and assistant segment identity",
+      "feat(tui): waveform context bar with memory/thinking/used segments",
       "feat(update): add rc channel self-update flow",
       "feat(update): embed sigstore verification",
       "feat(update): verify release signatures before install",
@@ -106,7 +107,8 @@
       "refactor(tui): render operator input with raw textarea widget",
       "refactor(tui): scaffold segment presentation roles",
       "refactor(update): rename prerelease channel to nightly",
-      "refactor: purge all .pi runtime path references — we are Omegon"
+      "refactor: purge all .pi runtime path references — we are Omegon",
+      "test(prompt): add tool token budget audit test"
     ]
   },
   "0.16.0": {

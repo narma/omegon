@@ -991,22 +991,45 @@ Auto-derivation rules:
 **Status:** decided
 **Rationale:** Every provider response includes rate limit headers AND usage data that we were discarding:
 
-**Anthropic** (every response):
-- Headers: `anthropic-ratelimit-input-tokens-limit`, `anthropic-ratelimit-input-tokens-remaining`, `anthropic-ratelimit-input-tokens-reset` (and output equivalents)
-- SSE `message_start`: `usage.input_tokens`, `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens`
-- SSE `message_delta`: `usage.output_tokens` (final)
+### Decision: Price sensitivity is derived from quota headers, not static subscription tiers — operator sets their comfort threshold
 
-**OpenAI/Chat Completions** (every response):
-- Headers: `x-ratelimit-limit-tokens`, `x-ratelimit-remaining-tokens`, `x-ratelimit-reset-tokens`
-- Final chunk: `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`
+**Status:** exploring
+**Rationale:** The rate limit headers give us the operator's ACTUAL quota per window — this is better than guessing from auth method:
 
-**Codex** (every response):
-- Headers: rate limit headers on HTTP response
-- `response.completed`: `response.usage.input_tokens`, `response.usage.output_tokens`
+```
+anthropic-ratelimit-input-tokens-limit: 80000    ← quota per minute
+anthropic-ratelimit-input-tokens-remaining: 62000 ← tokens left this window
+anthropic-ratelimit-input-tokens-reset: 2026-03-27T15:30:00Z
+```
 
-This data is now captured at `tracing::info` level from all providers (rc.24+). Next step: pipe it into the buffer's TokenEstimator for calibration and surface it in HarnessStatus for the dashboard.
+From this we can derive:
+- **Quota tier**: 80k tokens/min → Pro subscription. 300k → Max. 40k → free tier.
+- **Current utilization**: 62000/80000 = 77.5% remaining
+- **Burn rate**: (80000 - 62000) / elapsed_since_reset = tokens consumed per second
+- **Time to exhaustion**: remaining / burn_rate
 
-This is the foundation for price sensitivity — rate limit headers tell you your QUOTA (how many tokens per window), remaining shows USAGE, reset shows the WINDOW. From these three values you can derive: subscription tier, utilization rate, time until quota refreshes, and whether you're approaching a limit.
+The operator's "price sensitivity" knob is NOT "how much does a token cost" — it's **"how much of my quota am I comfortable burning?"**
+
+```toml
+[context]
+# How aggressively to use available quota
+# "relaxed" = use up to 90% of quota per window (subscription user who doesn't care)
+# "balanced" = stay under 60% (wants headroom for other tools/sessions)
+# "frugal" = stay under 30% (sharing quota across many sessions/tools)
+price_sensitivity = "balanced"
+```
+
+Auto-detection from first response:
+- If `remaining ≈ limit` (>95%): fresh window, no constraint
+- If `remaining < 30%` of limit: warn operator, tighten selector budget
+- If `remaining < 10%`: switch to cost-optimal compaction regardless of setting
+
+For API key users where there's no quota (just billing), the knob maps to estimated cost:
+- "relaxed" = no cost concern, send maximum context
+- "balanced" = target ~$1/session
+- "frugal" = target ~$0.25/session
+
+The knob is the same for both subscription and API key — but the underlying metric changes (quota % vs estimated cost).
 
 ## Open Questions
 
