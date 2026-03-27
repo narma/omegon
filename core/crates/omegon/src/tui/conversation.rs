@@ -394,17 +394,17 @@ mod tests {
     }
 
     #[test]
-    fn finalize_resets_scroll() {
+    fn finalize_preserves_manual_scroll() {
         let mut cv = ConversationView::new();
         cv.append_streaming("text");
         cv.scroll_up(10);
         cv.finalize_message();
-        assert!(!cv.conv_state.user_scrolled);
-        assert_eq!(cv.conv_state.scroll_offset, 0);
+        assert!(cv.conv_state.user_scrolled, "manual scroll should remain pinned after finalize");
+        assert_eq!(cv.conv_state.scroll_offset, 10);
     }
 
     #[test]
-    fn finalize_preserves_manual_scroll() {
+    fn finalize_preserves_manual_scroll_when_streaming_completes() {
         let mut cv = ConversationView::new();
         cv.append_streaming("text");
         cv.scroll_up(10);
