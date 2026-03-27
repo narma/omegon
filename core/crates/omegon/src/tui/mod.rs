@@ -1444,8 +1444,11 @@ impl App {
             self.memory_ops_this_frame = 0;
 
             let memory_fill = if self.footer_data.context_window > 0 {
-                // Estimate ~300 tokens per injected fact
-                (self.footer_data.total_facts * 300) as f64
+                // Keep memory's visual footprint conservative.
+                // We want the harness to reach for memory on demand rather than
+                // imply that a large resident memory slab is always injected.
+                // Estimate ~48 tokens per fact and let instruments cap further.
+                (self.footer_data.total_facts * 48) as f64
                     / self.footer_data.context_window as f64
             } else {
                 0.0
@@ -2155,7 +2158,7 @@ impl App {
             "compact" => {
                 let _ = tx.try_send(TuiCommand::Compact);
                 SlashResult::Display(
-                    "Compaction armed — next turn will compact regardless of threshold.".into(),
+                    "Compacting conversation now…".into(),
                 )
             }
 

@@ -672,9 +672,15 @@ impl ConversationState {
         Ok(())
     }
 
-    /// Load a previously saved session. The loaded messages become the
-    /// canonical history (since they were already decay-processed at save time).
+    /// Load a previously saved session.
+    ///
+    /// To avoid blowing the first resumed turn's context budget, we do NOT
+    /// hydrate the entire prior session as if it were all recent. Instead we:
+    /// - keep only a recent tail of messages as canonical history
+    /// - fold older messages into `compaction_summary` so they still inform the model
     pub fn load_session(path: &Path) -> anyhow::Result<Self> {
+        const RESUME_TAIL_MESSAGES: usize = 24;
+
         let json = std::fs::read_to_string(path)?;
         let snapshot: SessionSnapshot = serde_json::from_str(&json)?;
         tracing::info!(
@@ -684,22 +690,53 @@ impl ConversationState {
             "session loaded"
         );
 
-        // Reconstruct canonical from the saved LLM view.
-        // Assign all messages to the last turn so they stay within the decay window
-        // on the next build_llm_view() call. (Original per-message turns are lost
-        // through the LLM view serialization, but that's acceptable — the saved
-        // view was already decay-processed at save time.)
         let last_turn = snapshot.intent.stats.turns;
-        let canonical: Vec<AgentMessage> = snapshot
-            .messages
-            .into_iter()
+        let total_messages = snapshot.messages.len();
+        let split_at = total_messages.saturating_sub(RESUME_TAIL_MESSAGES);
+        let (older, recent) = snapshot.messages.split_at(split_at);
+
+        let resume_summary = if older.is_empty() {
+            snapshot.compaction_summary.clone()
+        } else {
+            let mut lines = Vec::new();
+            lines.push(format!(
+                "Resumed session with {} earlier message(s) compacted.",
+                older.len()
+            ));
+            for msg in older.iter().rev().take(8).rev() {
+                match msg {
+                    LlmMessage::User { content, .. } => {
+                        lines.push(format!("- User: {}", crate::util::truncate(content, 140)));
+                    }
+                    LlmMessage::Assistant { text, tool_calls, .. } => {
+                        let body = crate::util::truncate(&text.join("\n"), 140);
+                        if tool_calls.is_empty() {
+                            lines.push(format!("- Assistant: {body}"));
+                        } else {
+                            let tools = tool_calls.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(", ");
+                            lines.push(format!("- Assistant ({tools}): {body}"));
+                        }
+                    }
+                    LlmMessage::ToolResult { tool_name, content, .. } => {
+                        lines.push(format!("- Tool {tool_name}: {}", crate::util::truncate(content, 120)));
+                    }
+                }
+            }
+            match snapshot.compaction_summary.as_ref() {
+                Some(existing) if !existing.trim().is_empty() => {
+                    Some(format!("{existing}\n\n{}", lines.join("\n")))
+                }
+                _ => Some(lines.join("\n")),
+            }
+        };
+
+        let canonical: Vec<AgentMessage> = recent
+            .iter()
+            .cloned()
             .map(|msg| {
                 let turn = last_turn;
                 match msg {
-                    LlmMessage::User { content, .. } => AgentMessage::User {
-                        text: content,
-                        turn,
-                    },
+                    LlmMessage::User { content, .. } => AgentMessage::User { text: content, turn },
                     LlmMessage::Assistant {
                         text,
                         thinking,
@@ -708,18 +745,10 @@ impl ConversationState {
                     } => AgentMessage::Assistant(
                         AssistantMessage {
                             text: text.join("\n"),
-                            thinking: if thinking.is_empty() {
-                                None
-                            } else {
-                                Some(thinking.join("\n"))
-                            },
+                            thinking: if thinking.is_empty() { None } else { Some(thinking.join("\n")) },
                             tool_calls: tool_calls
                                 .into_iter()
-                                .map(|tc| ToolCall {
-                                    id: tc.id,
-                                    name: tc.name,
-                                    arguments: tc.arguments,
-                                })
+                                .map(|tc| ToolCall { id: tc.id, name: tc.name, arguments: tc.arguments })
                                 .collect(),
                             raw: raw.unwrap_or(Value::Null),
                         },
@@ -750,7 +779,7 @@ impl ConversationState {
             intent: snapshot.intent,
             decay_window: snapshot.decay_window,
             referenced_turns: std::collections::HashSet::new(),
-            compaction_summary: snapshot.compaction_summary,
+            compaction_summary: resume_summary,
             pending_images: Vec::new(),
         })
     }
@@ -1682,18 +1711,44 @@ mod tests {
         conv.save_session(&tmp).unwrap();
 
         let loaded = ConversationState::load_session(&tmp).unwrap();
-        // After load, all messages are at last_turn=10.
-        // With decay_window=10, messages at turn 10 with current_turn=10 → age 0 → NOT decayed.
         let view = loaded.build_llm_view();
         if let LlmMessage::Assistant { thinking, .. } = &view[1] {
-            // Thinking should be PRESERVED (not decayed) because the message
-            // is within the decay window after load
             assert!(
                 !thinking.is_empty(),
                 "thinking should be preserved after load, got empty"
             );
         } else {
             panic!("expected assistant message at index 1");
+        }
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn load_session_compacts_large_history_into_summary_plus_tail() {
+        let mut conv = ConversationState::new();
+        conv.intent.stats.turns = 20;
+        for i in 0..20 {
+            conv.push_user(format!("user-{i}"));
+            conv.push_assistant(AssistantMessage {
+                text: format!("assistant-{i}"),
+                thinking: None,
+                tool_calls: vec![],
+                raw: serde_json::Value::Null,
+            });
+        }
+
+        let tmp = std::env::temp_dir().join("omegon-test-load-compacts-session.json");
+        conv.save_session(&tmp).unwrap();
+
+        let loaded = ConversationState::load_session(&tmp).unwrap();
+        let view = loaded.build_llm_view();
+        assert!(loaded.compaction_summary.is_some(), "large resumed sessions should synthesize a summary");
+        assert!(view.len() < 40, "resumed view should not pull the full prior session back in");
+        if let Some(LlmMessage::User { content, .. }) = view.first() {
+            assert!(content.contains("Resumed session"), "summary header should explain the compaction: {content}");
+        } else {
+            panic!("expected synthesized summary as first message");
         }
 
         let _ = std::fs::remove_file(&tmp);

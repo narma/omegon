@@ -916,10 +916,45 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::Compact => {
                 tracing::info!("manual compaction requested");
-                pending_compact.store(true, std::sync::atomic::Ordering::SeqCst);
-                let _ = events_tx.send(AgentEvent::SystemNotification {
-                    message: "Compaction armed — next turn will compact regardless of threshold.".into(),
-                });
+
+                let bridge_guard = bridge.read().await;
+                let stream_options = {
+                    let s = shared_settings.lock().unwrap();
+                    crate::bridge::StreamOptions {
+                        model: Some(s.model.clone()),
+                        reasoning: Some(s.thinking.as_str().to_string()),
+                        extended_context: false,
+                    }
+                };
+                if let Some((payload, _evict_count)) = agent.conversation.build_compaction_payload() {
+                    match r#loop::compact_via_llm(bridge_guard.as_ref(), &payload, &stream_options).await {
+                        Ok(summary) => {
+                            agent.conversation.apply_compaction(summary);
+                            let est = agent.conversation.estimate_tokens();
+                            if let Ok(s) = shared_settings.lock() {
+                                let ctx_window = s.context_window;
+                                if ctx_window > 0 {
+                                    let _ = events_tx.send(AgentEvent::TurnEnd {
+                                        turn: agent.conversation.intent.stats.turns,
+                                        estimated_tokens: est,
+                                    });
+                                }
+                            }
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: "Compaction completed immediately.".into(),
+                            });
+                        }
+                        Err(e) => {
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: format!("Compaction failed: {e}"),
+                            });
+                        }
+                    }
+                } else {
+                    let _ = events_tx.send(AgentEvent::SystemNotification {
+                        message: "Nothing eligible to compact yet.".into(),
+                    });
+                }
             }
 
             tui::TuiCommand::ListSessions => {

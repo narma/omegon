@@ -443,7 +443,7 @@ pub async fn run(
 ///
 /// The payload is truncated to ~100k chars (~25k tokens) to ensure the
 /// compaction request itself doesn't exceed provider limits.
-async fn compact_via_llm(
+pub(crate) async fn compact_via_llm(
     bridge: &dyn LlmBridge,
     payload: &str,
     options: &StreamOptions,

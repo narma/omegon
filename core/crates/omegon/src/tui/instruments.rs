@@ -267,7 +267,7 @@ impl InstrumentPanel {
         if self.minds.len() > 1 {
             self.minds[1].fact_count = working_memory;
         }
-        self.memory_fill = memory_fill.clamp(0.0, 0.5);
+        self.memory_fill = memory_fill.clamp(0.0, 0.12);
     }
 
     /// Update telemetry from harness state.
@@ -499,11 +499,12 @@ impl InstrumentPanel {
                 (0, Color::Rgb(12, 22, 32))
             };
 
-            // Glitch: ±1 amplitude jitter on ~6% of cells during inference.
-            // Uses a deterministic hash so it doesn’t flicker every frame —
-            // it shifts slowly as time advances.
+            // Glitch: visible but restrained.
+            // ±1 amplitude jitter on ~18% of cells during inference, plus an
+            // occasional subtle noise-char overlay on the thinking/context band.
+            let mut overlay_noise = false;
             if active {
-                let jitter_threshold = self.thinking_intensity * 0.10;
+                let jitter_threshold = self.thinking_intensity * 0.28;
                 let hash = x.wrapping_mul(31)
                     .wrapping_add((t * 4.0) as usize)
                     .wrapping_mul(17)
@@ -511,6 +512,7 @@ impl InstrumentPanel {
                 if (hash as f64) < jitter_threshold * 100.0 {
                     let up = (x.wrapping_mul(7) + (t * 2.0) as usize) % 2 == 0;
                     amp = if up { (amp + 1).min(7) } else { amp.saturating_sub(1) };
+                    overlay_noise = (x + (t * 3.0) as usize).is_multiple_of(3);
                 }
             }
 
@@ -526,11 +528,33 @@ impl InstrumentPanel {
             };
 
             for row in 0..area.height.min(2) {
-                let (ch, fg) = if row == 0 {
+                let is_divider = row < 2
+                    && mem_frac > 0.0
+                    && (((mem_frac * w as f64).round() as isize - x as isize).abs() <= 0);
+                let (mut ch, mut fg) = if row == 0 {
                     if top_ch == '·' { ('·', dim_color) } else { (top_ch, color) }
                 } else {
                     if bot_ch == '·' { ('·', dim_color) } else { (bot_ch, color) }
                 };
+
+                // Divider between navy memory region and teal/orange context region.
+                // Two-row dashed pipe that drifts slowly so the bar reads as one
+                // continuous system with internal partitions, not separate widgets.
+                if is_divider {
+                    let phase = ((t * 2.0) as usize + row as usize) % 4;
+                    ch = match phase {
+                        0 | 2 => '╎',
+                        _ => '┆',
+                    };
+                    fg = Color::Rgb(42, 180, 200);
+                } else if overlay_noise && ch != '·' {
+                    let idx = (x.wrapping_mul(11)
+                        .wrapping_add(row as usize * 5)
+                        .wrapping_add((t * 9.0) as usize))
+                        % NOISE_CHARS.len();
+                    ch = NOISE_CHARS[idx];
+                    fg = if row == 0 { Color::Rgb(90, 210, 220) } else { color };
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, area.y + row)) {
                     cell.set_char(ch);
                     cell.set_fg(fg);
@@ -866,6 +890,13 @@ mod tests {
         assert!((panel.context_fill - 0.5).abs() < 0.001, "context fill should track 50%");
         panel.update_telemetry(100.0, None, false, "off", None, false, 0.016);
         assert!((panel.context_fill - 1.0).abs() < 0.001, "context fill should track 100%");
+    }
+
+    #[test]
+    fn memory_fill_is_visually_capped() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(10_000, 0, 0.9);
+        assert!(panel.memory_fill <= 0.12, "memory fill should be capped conservatively");
     }
 
     #[test]
