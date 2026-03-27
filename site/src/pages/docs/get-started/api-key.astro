@@ -1,0 +1,39 @@
+---
+import Docs from "../../../layouts/Docs.astro";
+---
+<Docs title="API Key Path" description="Happy path for getting Omegon working with an inference API key.">
+  <h1>API Key Path</h1>
+  <p>
+    Use this path if you already have a provider API key and want a direct, reproducible setup.
+    Start with one provider only. Do not try to configure the whole matrix on first run.
+  </p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Omegon installed</li>
+    <li>One valid inference API key such as Anthropic, OpenAI, or OpenRouter</li>
+    <li>A shell where you can export an environment variable</li>
+  </ul>
+
+  <h2>Steps</h2>
+  <ol>
+    <li>Export one key, for example <code>export ANTHROPIC_API_KEY="sk-ant-..."</code></li>
+    <li><code>cd</code> into your project and run <code>omegon</code></li>
+    <li>Optional: run <code>/status</code> to confirm the provider is visible</li>
+    <li>Send this prompt: <code>Read README.md and tell me the next high-value task in this repo.</code></li>
+  </ol>
+
+  <h2>Success signal</h2>
+  <ul>
+    <li>No auth error appears at startup</li>
+    <li>The response references the actual repository</li>
+    <li>The agent makes at least one tool call</li>
+  </ul>
+
+  <h2>If it fails</h2>
+  <ul>
+    <li>Check that you exported the right environment variable for the provider</li>
+    <li>Run <code>/status</code> or <code>/auth status</code> to confirm Omegon sees the credential</li>
+    <li>If setup works only after extra undocumented steps, file a <strong>Docs confusion</strong> or <strong>Setup problem</strong> issue</li>
+  </ul>
+</Docs>

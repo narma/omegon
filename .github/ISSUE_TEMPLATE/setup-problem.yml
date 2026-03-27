@@ -1,0 +1,63 @@
+name: Setup problem
+description: Report a first-run or provider setup failure using the guided happy paths.
+title: "[setup]: "
+labels:
+  - setup
+body:
+  - type: dropdown
+    id: path
+    attributes:
+      label: Which getting-started path were you following?
+      options:
+        - Claude subscription path
+        - API key path
+        - Local Ollama path
+        - Installation page only
+        - Something else
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - WSL2
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: step
+    attributes:
+      label: Which step failed?
+      placeholder: "Example: Step 3 — run omegon login"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Paste the exact error if you have it.
+    validations:
+      required: true
+  - type: dropdown
+    id: first_response
+    attributes:
+      label: Did Omegon ever successfully respond to a prompt?
+      options:
+        - Yes
+        - No
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else that would have made the guide easier to follow?

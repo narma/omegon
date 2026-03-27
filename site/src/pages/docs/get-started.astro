@@ -1,0 +1,42 @@
+---
+import Docs from "../../layouts/Docs.astro";
+---
+<Docs title="Get Working Fast" description="Choose the shortest provider path to a working Omegon setup.">
+  <h1>Get Working Fast</h1>
+  <p>
+    This section is for first successful setup, not a tour of Omegon internals. Pick the path
+    that matches what you already have, follow the steps exactly, and confirm the success signal
+    before exploring deeper features.
+  </p>
+
+  <h2>Choose Your Path</h2>
+  <table>
+    <thead><tr><th>Path</th><th>Best For</th><th>What You Need</th></tr></thead>
+    <tbody>
+      <tr><td><a href="/docs/get-started/claude">Claude subscription</a></td><td>Fastest “just make it work” route</td><td>Claude Pro/Max account and browser login</td></tr>
+      <tr><td><a href="/docs/get-started/api-key">API key path</a></td><td>Direct control over provider credentials</td><td>At least one inference API key</td></tr>
+      <tr><td><a href="/docs/get-started/ollama">Local Ollama path</a></td><td>Local/offline-first evaluation</td><td>Ollama installed and at least one model pulled</td></tr>
+    </tbody>
+  </table>
+
+  <h2>What counts as success?</h2>
+  <p>You are done with onboarding when all of these are true:</p>
+  <ul>
+    <li>Omegon launches without provider/auth errors</li>
+    <li>Your first prompt gets a real model response</li>
+    <li>You see at least one tool call or file read in the conversation</li>
+    <li>You know which path to revisit if setup breaks later</li>
+  </ul>
+
+  <h2>If a path fails</h2>
+  <ul>
+    <li>Use the matching guide’s troubleshooting section first</li>
+    <li>If the guide is wrong or incomplete, file a <strong>Setup problem</strong> issue</li>
+    <li>If your real goal does not fit any path, file a <strong>Use case</strong> issue</li>
+  </ul>
+
+  <p>
+    Prefer examples over theory at this stage. If you want a guided tour of the interface and
+    Omegon’s internal model, use <a href="/docs/tutorial">/tutorial</a> afterward.
+  </p>
+</Docs>

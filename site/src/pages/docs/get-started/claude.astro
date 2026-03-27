@@ -1,0 +1,41 @@
+---
+import Docs from "../../../layouts/Docs.astro";
+---
+<Docs title="Claude Subscription Path" description="Fastest path to a working Omegon session using Claude Pro/Max.">
+  <h1>Claude Subscription Path</h1>
+  <p>
+    This is the shortest happy path for many operators. If you have Claude Pro or Max,
+    use browser login and get to a first successful prompt before touching advanced settings.
+  </p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Omegon installed</li>
+    <li>A git repo or project directory</li>
+    <li>Claude Pro or Max access</li>
+    <li>A browser available on the same machine</li>
+  </ul>
+
+  <h2>Steps</h2>
+  <ol>
+    <li><code>omegon login</code></li>
+    <li>Choose the Anthropic/Claude path in the login flow</li>
+    <li>Complete browser authentication</li>
+    <li><code>cd</code> into a project and run <code>omegon</code></li>
+    <li>Send this prompt: <code>Read README.md and summarize this project in 5 bullets.</code></li>
+  </ol>
+
+  <h2>Success signal</h2>
+  <ul>
+    <li>You see a normal assistant response, not an auth/provider error</li>
+    <li>You see at least one tool card such as <code>read</code></li>
+    <li>The response references your actual repo contents</li>
+  </ul>
+
+  <h2>If it fails</h2>
+  <ul>
+    <li>If browser login succeeds but Omegon still errors, run <code>/auth status</code></li>
+    <li>If the wrong provider appears active, run <code>/model</code> and select the Claude-backed route</li>
+    <li>If this guide is wrong or incomplete, file a <strong>Setup problem</strong> issue and say you followed the Claude subscription path</li>
+  </ul>
+</Docs>

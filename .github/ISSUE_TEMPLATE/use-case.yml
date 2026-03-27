@@ -1,0 +1,46 @@
+name: Use case
+description: Share a workflow or outcome you want Omegon to support well.
+title: "[use-case]: "
+labels:
+  - use-case
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What were you trying to accomplish?
+      description: Focus on the real-world outcome, not the implementation.
+    validations:
+      required: true
+  - type: input
+    id: project
+    attributes:
+      label: What kind of project were you using Omegon on?
+      placeholder: "Example: small Rust CLI, docs-only repo, internal monorepo"
+    validations:
+      required: true
+  - type: textarea
+    id: working
+    attributes:
+      label: What worked well?
+    validations:
+      required: true
+  - type: textarea
+    id: blocked
+    attributes:
+      label: What blocked or confused you?
+    validations:
+      required: true
+  - type: dropdown
+    id: example_help
+    attributes:
+      label: Would a worked example or happy-path guide have helped?
+      options:
+        - Yes
+        - No
+        - Maybe
+    validations:
+      required: true
+  - type: textarea
+    id: ideal
+    attributes:
+      label: What would the ideal experience look like?

@@ -8,6 +8,7 @@ on:
       - 'core/install.sh'
       - 'CHANGELOG.md'
       - 'site/**'
+      - '.github/ISSUE_TEMPLATE/**'
       - 'docs/**'
       - 'openspec/baseline/**'
   release:

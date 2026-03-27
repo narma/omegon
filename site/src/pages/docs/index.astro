@@ -70,19 +70,20 @@ import Docs from "../../layouts/Docs.astro";
     <li><strong>Signed Releases</strong> — Cosign signatures, CycloneDX SBOM, GitHub Attestations, and installer verification before update.</li>
   </ul>
 
-  <h2>Quick Start</h2>
-  <pre><code>curl -fsSL https://omegon.styrene.dev/install.sh | sh
-
-# With API key:
-export ANTHROPIC_API_KEY="sk-ant-..."
-omegon
-
-# With Claude Pro/Max subscription (free):
-omegon login</code></pre>
-
+  <h2>Get Working Fast</h2>
+  <p>
+    If your goal is a first successful run rather than a deep tour of Omegon internals,
+    start with the provider happy paths:
+  </p>
+  <ul>
+    <li><a href="/docs/get-started">Choose Your Path</a> — Claude subscription, API key, or local Ollama</li>
+    <li><a href="/docs/get-started/claude">Claude Subscription Path</a> — fastest “it works” route for many operators</li>
+    <li><a href="/docs/get-started/api-key">API Key Path</a> — direct setup for key-based providers</li>
+    <li><a href="/docs/get-started/ollama">Local Ollama Path</a> — on-device inference without external API keys</li>
+  </ul>
   <p>
     See <a href="/docs/install">Installation</a> for all methods, and
-    <a href="/docs/quickstart">Quick Start</a> for your first session walkthrough.
+    <a href="/docs/quickstart">Quick Start</a> if you want a broader first-session walkthrough.
   </p>
 
   <h2>At a Glance</h2>

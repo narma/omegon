@@ -1,0 +1,41 @@
+---
+import Docs from "../../../layouts/Docs.astro";
+---
+<Docs title="Local Ollama Path" description="Happy path for getting Omegon working with local Ollama inference.">
+  <h1>Local Ollama Path</h1>
+  <p>
+    Use this path if you want Omegon working with local inference first. It is the best path for
+    offline evaluation, cost-free experimentation, and environments where external provider setup
+    is a distraction.
+  </p>
+
+  <h2>What you need</h2>
+  <ul>
+    <li>Ollama installed and running</li>
+    <li>At least one model pulled locally</li>
+    <li>Omegon installed</li>
+  </ul>
+
+  <h2>Steps</h2>
+  <ol>
+    <li>Install or start Ollama</li>
+    <li>Pull a model, for example <code>ollama pull qwen3:32b</code></li>
+    <li>Run <code>omegon</code> in your project directory</li>
+    <li>If needed, use <code>/model</code> and select a local/Ollama-backed model</li>
+    <li>Send this prompt: <code>Read README.md and summarize the project layout.</code></li>
+  </ol>
+
+  <h2>Success signal</h2>
+  <ul>
+    <li>Omegon responds without asking for an external provider key</li>
+    <li>The model/provider metadata indicates a local path</li>
+    <li>The agent successfully reads local project files</li>
+  </ul>
+
+  <h2>If it fails</h2>
+  <ul>
+    <li>Confirm <code>ollama list</code> shows at least one installed model</li>
+    <li>Confirm the Ollama daemon is reachable from the same machine</li>
+    <li>If Omegon still does not detect it, file a <strong>Setup problem</strong> issue and say you followed the local Ollama path</li>
+  </ul>
+</Docs>
