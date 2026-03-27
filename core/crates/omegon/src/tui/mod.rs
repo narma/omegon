@@ -552,6 +552,21 @@ impl App {
                 ratatui_toaster::ToastType::Error,
             );
         }
+
+        // Memory backend degradation/recovery
+        if prev.memory_available != current.memory_available {
+            if current.memory_available {
+                self.show_toast("Memory backend restored", ratatui_toaster::ToastType::Success);
+            } else {
+                self.show_toast(
+                    current
+                        .memory_warning
+                        .as_deref()
+                        .unwrap_or("Memory backend unavailable — memory_* tools disabled"),
+                    ratatui_toaster::ToastType::Error,
+                );
+            }
+        }
     }
 
     fn confirm_selector(&mut self, tx: &mpsc::Sender<TuiCommand>) -> Option<String> {

@@ -47,6 +47,7 @@ pub struct HarnessStatus {
     // ── Feature availability ───────────────────────────────
     pub memory_available: bool,
     pub cleave_available: bool,
+    pub memory_warning: Option<String>,
 
     // ── Active delegates ─────────────────────────────────────
     /// Currently running delegate processes (cleave children).
@@ -446,6 +447,7 @@ impl Default for HarnessStatus {
             providers: vec![],
             memory_available: false,
             cleave_available: false,
+            memory_warning: None,
             active_delegates: vec![],
         }
     }
@@ -463,6 +465,7 @@ mod tests {
         assert_eq!(status.context_class, "Squad");
         assert!(!status.memory_available);
         assert!(!status.cleave_available);
+        assert!(status.memory_warning.is_none());
     }
 
     #[test]
