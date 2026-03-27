@@ -255,6 +255,26 @@ pub async fn run(
                             &stream_options, events, config,
                         ).await?
                     }
+                    Err(e) if is_malformed_history(&e.to_string()) => {
+                        // Conversation structure is invalid for this provider
+                        // (orphaned tool results, bad IDs, missing signatures).
+                        // Aggressive decay + rebuild should fix it.
+                        tracing::warn!(
+                            error = %e,
+                            "Malformed conversation history — applying emergency decay and retrying"
+                        );
+                        let _ = events.send(AgentEvent::SystemNotification {
+                            message: "Conversation history incompatible with provider — repairing and retrying…".into(),
+                        });
+                        // Drop the first half of history — brute but effective
+                        let half = conversation.message_count() / 2;
+                        conversation.decay_oldest(half.max(1));
+                        let llm_messages = conversation.build_llm_view();
+                        stream_with_retry(
+                            bridge, &system_prompt, &llm_messages, &tool_defs,
+                            &stream_options, events, config,
+                        ).await?
+                    }
                     Err(e) => return Err(e),
                 }
             },
@@ -412,6 +432,9 @@ pub async fn run(
 }
 
 /// Request an LLM-driven compaction summary for old conversation messages.
+///
+/// The payload is truncated to ~100k chars (~25k tokens) to ensure the
+/// compaction request itself doesn't exceed provider limits.
 async fn compact_via_llm(
     bridge: &dyn LlmBridge,
     payload: &str,
@@ -421,8 +444,22 @@ async fn compact_via_llm(
                   preserving: what was done, what failed, constraints discovered, \
                   and current approach. Output only the summary, no preamble.";
 
+    // Truncate the compaction payload to prevent the compaction request itself
+    // from exceeding provider limits (~100k chars ≈ 25k tokens).
+    const MAX_COMPACTION_CHARS: usize = 100_000;
+    let truncated_payload = if payload.len() > MAX_COMPACTION_CHARS {
+        tracing::warn!(
+            original = payload.len(),
+            truncated = MAX_COMPACTION_CHARS,
+            "compaction payload truncated to fit provider limits"
+        );
+        &payload[..MAX_COMPACTION_CHARS]
+    } else {
+        payload
+    };
+
     let messages = vec![crate::bridge::LlmMessage::User {
-        content: payload.to_string(),
+        content: truncated_payload.to_string(),
         images: vec![],
     }];
 
@@ -509,6 +546,7 @@ async fn stream_with_retry(
 }
 
 /// Detect context-too-large errors that can be recovered by compaction.
+/// Must NOT match general rate-limit 429s — those are transient and retried separately.
 fn is_context_overflow(msg: &str) -> bool {
     let lower = msg.to_lowercase();
     lower.contains("long context")
@@ -516,7 +554,23 @@ fn is_context_overflow(msg: &str) -> bool {
         || lower.contains("maximum context")
         || lower.contains("token limit")
         || lower.contains("request too large")
+        || lower.contains("prompt is too long")
+        || lower.contains("maximum number of tokens")
         || (lower.contains("extra usage") && lower.contains("context"))
+}
+
+/// Detect malformed request errors that can be recovered by stripping bad history.
+/// These are 400-class errors from conversation structure issues.
+fn is_malformed_history(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("tool_use_id")
+        || lower.contains("tool_result")
+        || lower.contains("thinking.signature")
+        || lower.contains("content_block")
+        || lower.contains("role must alternate")
+        || lower.contains("must have a corresponding")
+        || lower.contains("field required")
+        || lower.contains("does not match pattern")
 }
 
 /// Heuristic: is this error message transient (worth retrying)?
@@ -525,6 +579,12 @@ fn is_context_overflow(msg: &str) -> bool {
 /// matching to avoid false positives (e.g. "model gpt-500" shouldn't match).
 fn is_transient_error(msg: &str) -> bool {
     let lower = msg.to_lowercase();
+
+    // Context overflow and malformed history errors are NOT transient —
+    // they need structural repair (compaction/decay), not blind retries.
+    if is_context_overflow(&lower) || is_malformed_history(&lower) {
+        return false;
+    }
 
     // Semantic patterns — safe as substring matches
     if lower.contains("overloaded")
@@ -535,6 +595,7 @@ fn is_transient_error(msg: &str) -> bool {
         || lower.contains("capacity")
         || lower.contains("temporarily")
         || lower.contains("try again")
+        || lower.contains("too many requests")
         || lower.contains("service unavailable")
         || lower.contains("bad gateway")
         || lower.contains("internal server error")
@@ -1132,8 +1193,35 @@ mod tests {
         assert!(is_context_overflow("maximum context length exceeded"));
         assert!(is_context_overflow("token limit reached for this request"));
         assert!(is_context_overflow("request too large"));
+        assert!(is_context_overflow("prompt is too long"));
+        assert!(is_context_overflow("maximum number of tokens exceeded"));
         assert!(!is_context_overflow("rate limit exceeded"));
         assert!(!is_context_overflow("Invalid API key"));
+    }
+
+    #[test]
+    fn malformed_history_detection() {
+        assert!(is_malformed_history("unexpected tool_use_id found in tool_result blocks"));
+        assert!(is_malformed_history("thinking.signature: Field required"));
+        assert!(is_malformed_history("String does not match pattern '^[a-zA-Z0-9_-]+$'"));
+        assert!(is_malformed_history("role must alternate between user and assistant"));
+        assert!(is_malformed_history("Each tool_result block must have a corresponding tool_use"));
+        assert!(!is_malformed_history("rate limit exceeded"));
+        assert!(!is_malformed_history("Invalid API key"));
+    }
+
+    #[test]
+    fn context_overflow_not_classified_as_transient() {
+        // Context overflow should NOT be retried blindly — it needs compaction
+        assert!(!is_transient_error("Anthropic 429 Too Many Requests: Extra usage is required for long context requests."));
+        // But regular 429 rate limits SHOULD be retried
+        assert!(is_transient_error("429 Too Many Requests: rate limit exceeded"));
+    }
+
+    #[test]
+    fn malformed_history_not_classified_as_transient() {
+        assert!(!is_transient_error("400 Bad Request: messages.9.content.1.tool_use.id: String does not match pattern"));
+        assert!(!is_transient_error("thinking.signature: Field required"));
     }
 
     #[test]

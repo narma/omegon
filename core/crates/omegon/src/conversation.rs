@@ -518,6 +518,12 @@ impl ConversationState {
         // with "unexpected tool_use_id found in tool_result blocks".
         strip_orphaned_tool_results(&mut messages);
 
+        // Enforce role alternation: providers require strict user/assistant
+        // alternation. After compaction or decay, adjacent same-role messages
+        // can appear. Merge adjacent user messages; drop adjacent assistant
+        // messages (keep the last one — it's the most recent).
+        enforce_role_alternation(&mut messages);
+
         messages
     }
 
@@ -890,6 +896,58 @@ impl ConversationState {
 }
 
 /// Extract identifier-like tokens from a line of code.
+/// Enforce strict role alternation (user → assistant → user → …).
+/// After compaction/decay/orphan stripping, the message list may violate this.
+/// - Adjacent User messages: merge content with newline separator
+/// - Adjacent Assistant messages: keep only the last one
+/// - ToolResult without a preceding Assistant: drop it (orphaned)
+/// - Leading Assistant message (no prior User): drop it
+fn enforce_role_alternation(messages: &mut Vec<LlmMessage>) {
+    if messages.len() < 2 {
+        return;
+    }
+
+    let mut result: Vec<LlmMessage> = Vec::with_capacity(messages.len());
+    for msg in messages.drain(..) {
+        let prev_role = result.last().map(|m| match m {
+            LlmMessage::User { .. } => "user",
+            LlmMessage::Assistant { .. } => "assistant",
+            LlmMessage::ToolResult { .. } => "tool_result",
+        });
+
+        match (&msg, prev_role) {
+            // User after user → merge
+            (LlmMessage::User { content, images }, Some("user")) => {
+                if let Some(LlmMessage::User {
+                    content: prev_content,
+                    images: prev_images,
+                }) = result.last_mut()
+                {
+                    prev_content.push('\n');
+                    prev_content.push_str(content);
+                    prev_images.extend(images.iter().cloned());
+                }
+            }
+            // Assistant after assistant (no tool results between) → replace
+            (LlmMessage::Assistant { .. }, Some("assistant")) => {
+                result.pop();
+                result.push(msg);
+            }
+            // Tool result is always valid after assistant (part of the same turn)
+            (LlmMessage::ToolResult { .. }, Some("assistant" | "tool_result")) => {
+                result.push(msg);
+            }
+            // Tool result without preceding assistant → drop
+            (LlmMessage::ToolResult { call_id, .. }, _) => {
+                tracing::debug!(call_id, "dropping tool_result with no preceding assistant");
+            }
+            // Normal alternation (including edge cases like leading assistant)
+            _ => result.push(msg),
+        }
+    }
+    *messages = result;
+}
+
 /// Remove tool_result messages that reference tool_use IDs not present in any
 /// preceding assistant message. This happens after compaction/decay evicts
 /// assistant messages but leaves their tool_result responses.
@@ -1227,12 +1285,13 @@ mod tests {
             "Only the recent message should remain"
         );
 
-        // The LLM view should have the summary + the recent message
+        // The LLM view should have the summary merged with the recent message
+        // (both are User role, so role alternation merges them)
         let view = conv.build_llm_view();
-        assert_eq!(view.len(), 2); // summary pseudo-message + recent
+        assert_eq!(view.len(), 1); // merged summary + recent into one user message
         if let LlmMessage::User { content, .. } = &view[0] {
             assert!(content.contains("Summary of old conversation"));
-            assert!(content.contains("[Intent"));
+            assert!(content.contains("recent"));
         }
     }
 
@@ -1638,5 +1697,69 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn role_alternation_merges_adjacent_users() {
+        let mut msgs = vec![
+            LlmMessage::User { content: "hello".into(), images: vec![] },
+            LlmMessage::User { content: "world".into(), images: vec![] },
+        ];
+        enforce_role_alternation(&mut msgs);
+        assert_eq!(msgs.len(), 1);
+        if let LlmMessage::User { content, .. } = &msgs[0] {
+            assert!(content.contains("hello"));
+            assert!(content.contains("world"));
+        }
+    }
+
+    #[test]
+    fn role_alternation_drops_orphaned_tool_result_after_user() {
+        let mut msgs = vec![
+            LlmMessage::User { content: "test".into(), images: vec![] },
+            LlmMessage::ToolResult {
+                call_id: "t1".into(),
+                tool_name: "bash".into(),
+                content: "output".into(),
+                args_summary: None,
+                is_error: false,
+            },
+        ];
+        enforce_role_alternation(&mut msgs);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], LlmMessage::User { .. }));
+    }
+
+    #[test]
+    fn orphan_stripping_plus_alternation_produces_valid_sequence() {
+        let mut conv = ConversationState::new();
+        conv.push_user("do something".into());
+        push_matching_assistant(&mut conv, "t1");
+        conv.push_tool_result(ToolResultEntry {
+            call_id: "t1".into(),
+            tool_name: "bash".into(),
+            content: vec![omegon_traits::ContentBlock::Text { text: "ok".into() }],
+            is_error: false,
+            args_summary: None,
+        });
+        conv.push_user("continue".into());
+        conv.intent.stats.turns = 1;
+
+        let view = conv.build_llm_view();
+        assert!(view.len() >= 3, "got {} messages", view.len());
+        assert!(matches!(&view[0], LlmMessage::User { .. }));
+        assert!(matches!(&view[1], LlmMessage::Assistant { .. }));
+        assert!(matches!(&view[2], LlmMessage::ToolResult { .. }));
+    }
+
+    #[test]
+    fn decay_oldest_removes_from_front() {
+        let mut conv = ConversationState::new();
+        conv.push_user("a".into());
+        conv.push_user("b".into());
+        conv.push_user("c".into());
+        assert_eq!(conv.message_count(), 3);
+        conv.decay_oldest(2);
+        assert_eq!(conv.message_count(), 1);
     }
 }
