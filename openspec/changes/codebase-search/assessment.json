@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "changeName": "codebase-search",
+  "assessmentKind": "cleave",
+  "outcome": "pass",
+  "timestamp": "2026-03-27T13:40:00.085Z",
+  "summary": "All 6 task groups implemented: new omegon-codescan crate with cache/bm25/code/knowledge/indexer modules, tool integration (codebase_search.rs, registry, mod.rs, setup.rs). 959+22 tests pass.",
+  "snapshot": {
+    "gitHead": "28febd8c42b89767bb4914fa8c9980a33c70b268",
+    "fingerprint": "202dd767c1c5416cab5144e1c83f836766c162acfdc2d96d3d439411bec6da5a",
+    "dirty": false,
+    "scopedPaths": [],
+    "files": [
+      {
+        "path": "openspec/changes/codebase-search/design.md",
+        "exists": true,
+        "size": 2925,
+        "sha256": "fd374670449ca503d6c11684f1e192cd67f8b552521b81d0a524db2e2963deb6"
+      },
+      {
+        "path": "openspec/changes/codebase-search/proposal.md",
+        "exists": true,
+        "size": 1170,
+        "sha256": "4f3f12e45cd192f99ebb2b92d7a99ee0a6ab71143d4e492c06dad0efe02feb16"
+      },
+      {
+        "path": "openspec/changes/codebase-search/tasks.md",
+        "exists": true,
+        "size": 4538,
+        "sha256": "2b8ea578488e2bc83494fb8cb4d7f2748830d2be1398e6694c8ba9d3a51db687"
+      }
+    ]
+  },
+  "reconciliation": {
+    "reopen": false,
+    "changedFiles": [
+      "core/crates/omegon-codescan/Cargo.toml",
+      "core/crates/omegon-codescan/src/lib.rs",
+      "core/crates/omegon-codescan/src/cache.rs",
+      "core/crates/omegon-codescan/src/bm25.rs",
+      "core/crates/omegon-codescan/src/code.rs",
+      "core/crates/omegon-codescan/src/knowledge.rs",
+      "core/crates/omegon-codescan/src/indexer.rs",
+      "core/crates/omegon/src/tools/codebase_search.rs",
+      "core/crates/omegon/src/tool_registry.rs",
+      "core/crates/omegon/src/tools/mod.rs",
+      "core/crates/omegon/src/setup.rs",
+      "core/Cargo.toml",
+      ".gitignore"
+    ],
+    "constraints": [],
+    "recommendedAction": null
+  }
+}
