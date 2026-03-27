@@ -494,6 +494,7 @@ async fn run_cleave_command(
         max_turns,
         inventory: None,
         inherited_env: agent_setup.session_secret_env.clone(),
+        progress_sink: cleave::progress::stdout_progress_sink(),
     };
 
     let cancel = CancellationToken::new();
@@ -684,6 +685,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // ─── Event channel ──────────────────────────────────────────────────
     let (events_tx, events_rx) = broadcast::channel::<AgentEvent>(256);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<tui::TuiCommand>(16);
+    let pending_compact = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let web_command_tx = command_tx.clone(); // For forwarding web dashboard commands
 
     // Broadcast initial HarnessStatus — bridges BusEvent (emitted in setup)
@@ -915,8 +917,48 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::Compact => {
                 tracing::info!("manual compaction requested");
-                // Compaction runs automatically before the next turn
-                // via the needs_compaction check in the loop
+
+                let bridge_guard = bridge.read().await;
+                let stream_options = {
+                    let s = shared_settings.lock().unwrap();
+                    crate::bridge::StreamOptions {
+                        model: Some(s.model.clone()),
+                        reasoning: Some(s.thinking.as_str().to_string()),
+                        extended_context: false,
+                    }
+                };
+                if let Some((payload, _evict_count)) = agent.conversation.build_compaction_payload()
+                {
+                    match r#loop::compact_via_llm(bridge_guard.as_ref(), &payload, &stream_options)
+                        .await
+                    {
+                        Ok(summary) => {
+                            agent.conversation.apply_compaction(summary);
+                            let est = agent.conversation.estimate_tokens();
+                            if let Ok(s) = shared_settings.lock() {
+                                let ctx_window = s.context_window;
+                                if ctx_window > 0 {
+                                    let _ = events_tx.send(AgentEvent::TurnEnd {
+                                        turn: agent.conversation.intent.stats.turns,
+                                        estimated_tokens: est,
+                                    });
+                                }
+                            }
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: "Compaction completed immediately.".into(),
+                            });
+                        }
+                        Err(e) => {
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: format!("Compaction failed: {e}"),
+                            });
+                        }
+                    }
+                } else {
+                    let _ = events_tx.send(AgentEvent::SystemNotification {
+                        message: "Nothing eligible to compact yet.".into(),
+                    });
+                }
             }
 
             tui::TuiCommand::ListSessions => {
@@ -1301,6 +1343,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     extended_context: false,
                     settings: Some(shared_settings.clone()),
                     secrets: Some(agent.secrets.clone()),
+                    force_compact: Some(pending_compact.clone()),
                 };
 
                 let cancel = CancellationToken::new();
@@ -1351,6 +1394,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     extended_context: false,
                     settings: Some(shared_settings.clone()),
                     secrets: Some(agent.secrets.clone()),
+                    force_compact: Some(pending_compact.clone()),
                 };
 
                 let cancel = CancellationToken::new();
@@ -1481,8 +1525,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
     }
 
     let resume = cli.resume.as_ref().map(|r| r.as_deref());
-    let mut agent =
-        setup::AgentSetup::new(&cli.cwd, resume, Some(shared_settings.clone())).await?;
+    let mut agent = setup::AgentSetup::new(&cli.cwd, resume, Some(shared_settings.clone())).await?;
     agent.conversation.push_user(prompt_text.clone());
 
     // ─── Build loop config ──────────────────────────────────────────────
@@ -1500,6 +1543,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
         extended_context: false, // headless uses standard context
         settings: Some(shared_settings.clone()),
         secrets: Some(agent.secrets.clone()),
+        force_compact: None,
     };
 
     // ─── LLM provider (native Rust clients only) ─────────────────────

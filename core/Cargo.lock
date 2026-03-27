@@ -1939,6 +1939,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "getopts"
+version = "0.2.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfe4fbac503b8d1f88e6676011885f34b7174f46e59956bba534ba83abded4df"
+dependencies = [
+ "unicode-width",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4266,7 +4275,7 @@ dependencies = [
 
 [[package]]
 name = "omegon"
-version = "0.15.3-rc.29"
+version = "0.15.3-rc.36"
 dependencies = [
  "ansi-to-tui",
  "anyhow",
@@ -4285,6 +4294,7 @@ dependencies = [
  "indexmap 2.13.0",
  "insta",
  "libc",
+ "omegon-codescan",
  "omegon-git",
  "omegon-memory",
  "omegon-secrets",
@@ -4327,8 +4337,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "omegon-codescan"
+version = "0.15.3-rc.36"
+dependencies = [
+ "anyhow",
+ "glob",
+ "hex",
+ "pulldown-cmark",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tracing",
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "walkdir",
+]
+
+[[package]]
 name = "omegon-git"
-version = "0.15.3-rc.29"
+version = "0.15.3-rc.36"
 dependencies = [
  "anyhow",
  "git2",
@@ -4340,7 +4373,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-memory"
-version = "0.15.3-rc.29"
+version = "0.15.3-rc.36"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4358,7 +4391,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-secrets"
-version = "0.15.3-rc.29"
+version = "0.15.3-rc.36"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -4388,7 +4421,7 @@ dependencies = [
 
 [[package]]
 name = "omegon-traits"
-version = "0.15.3-rc.29"
+version = "0.15.3-rc.36"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5076,6 +5109,25 @@ dependencies = [
  "quote",
  "syn 2.0.117",
 ]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
+dependencies = [
+ "bitflags 2.11.0",
+ "getopts",
+ "memchr",
+ "pulldown-cmark-escape",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-escape"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
 name = "pxfm"
@@ -7119,6 +7171,64 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log",
+]
+
+[[package]]
+name = "tree-sitter"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0203df02a3b6dd63575cc1d6e609edc2181c9a11867a271b25cfd2abff3ec5ca"
+dependencies = [
+ "cc",
+ "regex",
+ "regex-syntax",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-go"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8560a4d2f835cc0d4d2c2e03cbd0dde2f6114b43bc491164238d333e28b16ea"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
+
+[[package]]
+name = "tree-sitter-python"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6bf85fd39652e740bf60f46f4cda9492c3a9ad75880575bf14960f775cb74a1c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-rust"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f715f73a0687261ddb686f0d64a1e5af57bd199c4d12be5fdda6676ce1885bf9"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-typescript"
+version = "0.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
 ]
 
 [[package]]

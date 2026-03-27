@@ -32,9 +32,17 @@ fn editor_raw_cursor_screen_position_matches_top_border_only_input_box() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("abc");
     editor.move_end();
-    let area = Rect { x: 10, y: 5, width: 20, height: 5 };
+    let area = Rect {
+        x: 10,
+        y: 5,
+        width: 20,
+        height: 5,
+    };
     let (x, y) = editor.raw_cursor_screen_position(area);
-    assert_eq!(x, 13, "cursor should align with text origin, not a fictitious left border");
+    assert_eq!(
+        x, 13,
+        "cursor should align with text origin, not a fictitious left border"
+    );
     assert_eq!(y, 6, "cursor should sit one row below the top border");
 }
 
@@ -42,10 +50,21 @@ fn editor_raw_cursor_screen_position_matches_top_border_only_input_box() {
 fn editor_raw_cursor_screen_position_is_inside_editor_box() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("hello\nworld");
-    let area = Rect { x: 10, y: 5, width: 20, height: 5 };
+    let area = Rect {
+        x: 10,
+        y: 5,
+        width: 20,
+        height: 5,
+    };
     let (x, y) = editor.raw_cursor_screen_position(area);
-    assert!((11..29).contains(&x), "x should be inside bordered editor area: {x}");
-    assert!((6..9).contains(&y), "y should be inside bordered editor area: {y}");
+    assert!(
+        (11..29).contains(&x),
+        "x should be inside bordered editor area: {x}"
+    );
+    assert!(
+        (6..9).contains(&y),
+        "y should be inside bordered editor area: {y}"
+    );
 }
 
 #[test]
@@ -53,7 +72,12 @@ fn editor_cursor_screen_position_wraps_without_horizontal_scroll() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("1234567890\nabc");
     editor.move_end();
-    let area = Rect { x: 0, y: 0, width: 4, height: 6 };
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 4,
+        height: 6,
+    };
     let (x, y) = editor.cursor_screen_position(area);
     assert!(x < 4, "cursor x should stay within editor width: {x}");
     assert!(y >= 1, "cursor y should account for wrapped rows: {y}");
@@ -64,7 +88,11 @@ fn editor_visual_line_count_accounts_for_wrapping() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("1234567890");
     assert_eq!(editor.line_count(), 1, "logical lines should stay at 1");
-    assert_eq!(editor.visual_line_count(4), 3, "wrapped rows should expand to 3");
+    assert_eq!(
+        editor.visual_line_count(4),
+        3,
+        "wrapped rows should expand to 3"
+    );
 }
 
 #[test]
@@ -78,13 +106,24 @@ fn editor_visual_line_count_counts_newlines_and_wraps() {
 fn editor_cursor_screen_position_tracks_wrapped_backspace() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("123456789");
-    let area = Rect { x: 0, y: 0, width: 6, height: 6 };
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 6,
+        height: 6,
+    };
     editor.move_end();
     let before = editor.cursor_screen_position(area);
     editor.backspace();
     let after = editor.cursor_screen_position(area);
-    assert!(after.0 <= before.0, "backspace should not leave the caret stranded to the right");
-    assert!(after.1 <= before.1, "backspace should move within wrapped layout");
+    assert!(
+        after.0 <= before.0,
+        "backspace should not leave the caret stranded to the right"
+    );
+    assert!(
+        after.1 <= before.1,
+        "backspace should move within wrapped layout"
+    );
 }
 
 #[test]
@@ -92,22 +131,46 @@ fn editor_cursor_screen_position_wraps_at_expected_column() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("123456789");
     editor.move_end();
-    let area = Rect { x: 0, y: 0, width: 6, height: 6 };
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 6,
+        height: 6,
+    };
     let (x, y) = editor.cursor_screen_position(area);
     assert_eq!(x, 3, "9 chars at width 6 should wrap to column 3");
-    assert_eq!(y, 2, "9 chars at width 6 should land on the second wrapped row beneath the border");
+    assert_eq!(
+        y, 2,
+        "9 chars at width 6 should land on the second wrapped row beneath the border"
+    );
 }
 
 #[test]
 fn editor_height_expands_for_wrapped_input() {
     let mut editor = crate::tui::editor::Editor::new();
     editor.set_text("1234567890abcdefghij");
-    let narrow = Rect { x: 0, y: 0, width: 8, height: 20 };
-    let wide = Rect { x: 0, y: 0, width: 40, height: 20 };
+    let narrow = Rect {
+        x: 0,
+        y: 0,
+        width: 8,
+        height: 20,
+    };
+    let wide = Rect {
+        x: 0,
+        y: 0,
+        width: 40,
+        height: 20,
+    };
     let narrow_height = super::editor_height_for(&editor, narrow);
     let wide_height = super::editor_height_for(&editor, wide);
-    assert!(narrow_height > wide_height, "wrapped input should expand editor height");
-    assert!(narrow_height >= 5, "wrapped input should grow beyond the minimum height");
+    assert!(
+        narrow_height > wide_height,
+        "wrapped input should expand editor height"
+    );
+    assert!(
+        narrow_height >= 5,
+        "wrapped input should grow beyond the minimum height"
+    );
 }
 
 #[test]
@@ -133,6 +196,42 @@ fn operator_event_queue_keeps_most_recent_entries() {
     assert_eq!(app.footer_data.operator_events.len(), 2);
     assert_eq!(app.footer_data.operator_events[0].message, "second");
     assert_eq!(app.footer_data.operator_events[1].message, "first");
+}
+
+#[test]
+fn mouse_wheel_scroll_direction_latches_manual_scroll() {
+    let mut app = test_app();
+    app.conversation.push_user("user");
+    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+
+    assert_eq!(app.conversation.conv_state.scroll_offset, 0);
+    app.conversation.scroll_up(3);
+    assert!(app.conversation.conv_state.user_scrolled);
+    assert_eq!(app.conversation.conv_state.scroll_offset, 3);
+
+    app.conversation.append_streaming("\nnew line");
+    assert_eq!(
+        app.conversation.conv_state.scroll_offset,
+        3,
+        "streaming should not pull the viewport back to bottom once manually scrolled"
+    );
+}
+
+#[test]
+fn mouse_wheel_scroll_up_matches_natural_scroll_direction() {
+    let mut app = test_app();
+    app.conversation.push_user("user");
+    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+
+    app.conversation.scroll_up(3);
+    let after_scroll_up = app.conversation.conv_state.scroll_offset;
+    assert!(after_scroll_up > 0, "scroll up should move into history");
+
+    app.conversation.scroll_down(3);
+    assert!(
+        app.conversation.conv_state.scroll_offset < after_scroll_up,
+        "scroll down should move back toward the live bottom"
+    );
 }
 
 #[test]
@@ -166,9 +265,12 @@ fn slash_update_reports_available_version() {
     let _ = update_tx.send(Some(UpdateInfo {
         current: "0.15.2".into(),
         latest: "0.15.3-rc.7".into(),
-        download_url: "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz".into(),
-        signature_url: "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz.sig".into(),
-        certificate_url: "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz.pem".into(),
+        download_url: "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz"
+            .into(),
+        signature_url: "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz.sig"
+            .into(),
+        certificate_url:
+            "https://example.invalid/omegon-0.15.3-rc.7-aarch64-apple-darwin.tar.gz.pem".into(),
         release_notes: "notes".into(),
         is_newer: true,
     }));
@@ -205,7 +307,10 @@ fn slash_update_install_requires_update_info() {
     let tx = test_tx();
     let result = app.handle_slash_command("/update install", &tx);
     if let SlashResult::Display(text) = result {
-        assert!(text.contains("No update information") || text.contains("No downloadable update"), "{text}");
+        assert!(
+            text.contains("No update information") || text.contains("No downloadable update"),
+            "{text}"
+        );
     } else {
         panic!("expected Display result");
     }

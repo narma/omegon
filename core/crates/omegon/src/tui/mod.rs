@@ -107,6 +107,8 @@ pub struct App {
     history: Vec<String>,
     history_idx: Option<usize>,
     dashboard: DashboardState,
+    /// Last on-screen dashboard area for mouse hit-testing.
+    dashboard_area: Option<Rect>,
     footer_data: FooterData,
     /// CIC instrument panel for telemetry visualization
     instrument_panel: InstrumentPanel,
@@ -168,6 +170,9 @@ pub struct App {
     update_tx: Option<crate::update::UpdateSender>,
     /// Whether we enabled the Kitty keyboard protocol (must pop on cleanup).
     keyboard_enhancement: bool,
+    /// Whether crossterm mouse capture is enabled. Disable this to let the
+    /// terminal handle native text selection/copy in the conversation pane.
+    mouse_capture_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -238,6 +243,7 @@ impl App {
             history: Vec::new(),
             history_idx: None,
             dashboard: DashboardState::default(),
+            dashboard_area: None,
             footer_data: FooterData {
                 model_id,
                 model_provider,
@@ -275,6 +281,19 @@ impl App {
             update_rx: None,
             update_tx: None,
             keyboard_enhancement: false,
+            mouse_capture_enabled: true,
+        }
+    }
+
+    fn set_mouse_capture(&mut self, enabled: bool) {
+        if self.mouse_capture_enabled == enabled {
+            return;
+        }
+        self.mouse_capture_enabled = enabled;
+        if enabled {
+            let _ = io::stdout().execute(EnableMouseCapture);
+        } else {
+            let _ = io::stdout().execute(DisableMouseCapture);
         }
     }
 
@@ -551,6 +570,24 @@ impl App {
                 "Authentication expired for provider",
                 ratatui_toaster::ToastType::Error,
             );
+        }
+
+        // Memory backend degradation/recovery
+        if prev.memory_available != current.memory_available {
+            if current.memory_available {
+                self.show_toast(
+                    "Memory backend restored",
+                    ratatui_toaster::ToastType::Success,
+                );
+            } else {
+                self.show_toast(
+                    current
+                        .memory_warning
+                        .as_deref()
+                        .unwrap_or("Memory backend unavailable — memory_* tools disabled"),
+                    ratatui_toaster::ToastType::Error,
+                );
+            }
         }
     }
 
@@ -1368,7 +1405,10 @@ impl App {
 
         // Dashboard panel (right side)
         if show_dashboard && dash_area.width > 0 {
+            self.dashboard_area = Some(dash_area);
             self.dashboard.render_themed(dash_area, frame, t.as_ref());
+        } else {
+            self.dashboard_area = None;
         }
 
         // ── Sync footer data from settings (every frame) ────
@@ -1423,9 +1463,11 @@ impl App {
             self.memory_ops_this_frame = 0;
 
             let memory_fill = if self.footer_data.context_window > 0 {
-                // Estimate ~300 tokens per injected fact
-                (self.footer_data.total_facts * 300) as f64
-                    / self.footer_data.context_window as f64
+                // Keep memory's visual footprint conservative.
+                // We want the harness to reach for memory on demand rather than
+                // imply that a large resident memory slab is always injected.
+                // Estimate ~48 tokens per fact and let instruments cap further.
+                (self.footer_data.total_facts * 48) as f64 / self.footer_data.context_window as f64
             } else {
                 0.0
             };
@@ -1508,10 +1550,8 @@ impl App {
                 .and_then(|i| self.history.get(i))
                 .map(|s| s.as_str())
                 .unwrap_or("");
-            let editor_title = Span::styled(
-                format!(" (reverse-i-search)`{query}': "),
-                t.style_warning(),
-            );
+            let editor_title =
+                Span::styled(format!(" (reverse-i-search)`{query}': "), t.style_warning());
             let editor_block = Block::default()
                 .borders(Borders::TOP)
                 .border_type(ratatui::widgets::BorderType::Rounded)
@@ -1764,6 +1804,11 @@ impl App {
         ("sessions", "list saved sessions", &[]),
         ("memory", "memory stats", &[]),
         (
+            "cleave",
+            "show cleave status or trigger decomposition",
+            &["status"],
+        ),
+        (
             "login",
             "log in to a provider or service",
             &["anthropic", "openai", "openrouter", "github"],
@@ -1786,7 +1831,11 @@ impl App {
             "initialize project — scan & migrate agent conventions",
             &["scan", "migrate"],
         ),
-        ("update", "check for and install updates", &["install", "channel"]),
+        (
+            "update",
+            "check for and install updates",
+            &["install", "channel"],
+        ),
         (
             "migrate",
             "import from other tools",
@@ -1932,7 +1981,8 @@ impl App {
                 };
                 SlashResult::Display(format!(
                     "Session:\n  Duration:    {time}\n  Turns:       {}\n  Tool calls:  {}\n  Compactions: {}\n\n\
-                     Context:\n  Usage:       {:.0}%\n  Window:      {} tokens\n  Model:       {}\n  Thinking:    {} {}",
+                     Context:\n  Usage:       {:.0}%\n  Window:      {} tokens\n  Model:       {}\n  Thinking:    {} {}\n\n\
+                     Features:\n  Memory:      {}\n  Cleave:      {}",
                     self.turn,
                     self.tool_calls,
                     self.dashboard.compactions,
@@ -1941,6 +1991,16 @@ impl App {
                     s.model_short(),
                     s.thinking.icon(),
                     s.thinking.as_str(),
+                    if self.footer_data.harness.memory_available {
+                        "available"
+                    } else {
+                        "UNAVAILABLE"
+                    },
+                    if self.footer_data.harness.cleave_available {
+                        "available"
+                    } else {
+                        "UNAVAILABLE"
+                    },
                 ))
             }
 
@@ -2129,7 +2189,7 @@ impl App {
 
             "compact" => {
                 let _ = tx.try_send(TuiCommand::Compact);
-                SlashResult::Display("Compaction queued — runs before next turn.".into())
+                SlashResult::Display("Compacting conversation now…".into())
             }
 
             "clear" => {
@@ -2858,7 +2918,10 @@ impl App {
                 self.working_verb = spinner::next_verb();
                 self.effects.start_spinner_glow();
             }
-            AgentEvent::TurnEnd { turn, estimated_tokens } => {
+            AgentEvent::TurnEnd {
+                turn,
+                estimated_tokens,
+            } => {
                 self.turn = turn;
                 let ctx_window = self.footer_data.context_window;
                 if ctx_window > 0 {
@@ -3607,9 +3670,6 @@ pub async fn run_tui(
         crossterm::terminal::ClearType::All,
     ))?;
     // Enable mouse capture for scroll-wheel support.
-    // This blocks native text selection — users must hold Option (macOS) or
-    // Shift (most terminals) to select text. Proper in-app selection with
-    // OSC 52 clipboard is tracked in design node: mouse-text-selection.
     io::stdout().execute(EnableMouseCapture)?;
     io::stdout().execute(crossterm::event::EnableBracketedPaste)?;
 
@@ -3889,17 +3949,32 @@ pub async fn run_tui(
         if has_terminal_event {
             match event::read()? {
                 // ── Mouse scroll ────────────────────────────────────────
-                // macOS natural scrolling inverts at the OS level BEFORE
-                // the terminal sees it. crossterm's ScrollUp means "the OS
-                // sent scroll-up" which, with natural scrolling, means the
-                // user swiped fingers DOWN (wanting to see newer content).
-                // So: ScrollUp → scroll toward bottom, ScrollDown → scroll toward top.
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollUp => {
-                        app.conversation.scroll_up(3);
+                    MouseEventKind::ScrollUp if app.mouse_capture_enabled => {
+                        let over_dashboard = app.dashboard_area.is_some_and(|area| {
+                            mouse.column >= area.x
+                                && mouse.column < area.x + area.width
+                                && mouse.row >= area.y
+                                && mouse.row < area.y + area.height
+                        });
+                        if over_dashboard {
+                            app.dashboard.scroll_up(3);
+                        } else {
+                            app.conversation.scroll_up(3);
+                        }
                     }
-                    MouseEventKind::ScrollDown => {
-                        app.conversation.scroll_down(3);
+                    MouseEventKind::ScrollDown if app.mouse_capture_enabled => {
+                        let over_dashboard = app.dashboard_area.is_some_and(|area| {
+                            mouse.column >= area.x
+                                && mouse.column < area.x + area.width
+                                && mouse.row >= area.y
+                                && mouse.row < area.y + area.height
+                        });
+                        if over_dashboard {
+                            app.dashboard.scroll_down(3);
+                        } else {
+                            app.conversation.scroll_down(3);
+                        }
                     }
                     _ => {}
                 },
@@ -4284,6 +4359,7 @@ pub async fn run_tui(
                             if m.contains(KeyModifiers::SHIFT) || m.contains(KeyModifiers::ALT) =>
                         {
                             if !app.agent_active {
+                                app.conversation.snap_to_bottom();
                                 app.editor.insert_newline();
                             }
                         }
@@ -4349,9 +4425,11 @@ pub async fn run_tui(
                         // Basic editing — only insert if no Ctrl modifier
                         // (Ctrl+letter arms above handle those explicitly)
                         (KeyCode::Char(c), mods) if !mods.contains(KeyModifiers::CONTROL) => {
+                            app.conversation.snap_to_bottom();
                             app.editor.insert(c);
                         }
                         (KeyCode::Backspace, _) => {
+                            app.conversation.snap_to_bottom();
                             app.editor.backspace();
                         }
                         (KeyCode::Left, KeyModifiers::ALT) => {

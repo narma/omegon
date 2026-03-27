@@ -95,11 +95,17 @@ pub fn render_bootstrap(status: &HarnessStatus, color: bool) -> String {
 
     // Memory — single line
     let mem = &status.memory;
-    if mem.total_facts > 0 {
-        out.push_str(&format!(
-            "  {dim}{} facts, {} episodes, {} edges{reset}\n",
-            mem.total_facts, mem.episodes, mem.edges
-        ));
+    if status.memory_available {
+        if mem.total_facts > 0 {
+            out.push_str(&format!(
+                "  {dim}{} facts, {} episodes, {} edges{reset}\n",
+                mem.total_facts, mem.episodes, mem.edges
+            ));
+        } else {
+            out.push_str(&format!("  {dim}memory ready (0 facts){reset}\n"));
+        }
+    } else if let Some(ref warning) = status.memory_warning {
+        out.push_str(&format!("  {yellow}⚠{reset} {warning}\n"));
     }
 
     // Active persona — single line
@@ -199,6 +205,7 @@ mod tests {
         status.memory.active_facts = 1800;
         status.memory.project_facts = 1790;
         status.memory.persona_facts = 10;
+        status.memory_available = true;
 
         let output = render_bootstrap(&status, false);
 
@@ -240,6 +247,7 @@ mod tests {
         status.thinking_level = "High".into();
         status.memory.total_facts = 1200;
         status.memory.active_facts = 900;
+        status.memory_available = true;
 
         // /status renders without ANSI (SlashResult::Display goes through ratatui)
         let output = render_bootstrap(&status, false);

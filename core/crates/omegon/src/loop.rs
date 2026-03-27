@@ -36,6 +36,8 @@ pub struct LoopConfig {
     pub settings: Option<crate::settings::SharedSettings>,
     /// Secrets manager for output redaction and tool guards.
     pub secrets: Option<std::sync::Arc<omegon_secrets::SecretsManager>>,
+    /// Force a compaction pass before the next turn regardless of threshold.
+    pub force_compact: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl Default for LoopConfig {
@@ -50,6 +52,7 @@ impl Default for LoopConfig {
             extended_context: false,
             settings: None,
             secrets: None,
+            force_compact: None,
         }
     }
 }
@@ -100,7 +103,10 @@ pub async fn run(
             );
             let _ = events.send(AgentEvent::TurnStart { turn });
             bus.emit(&omegon_traits::BusEvent::TurnEnd { turn });
-            let _ = events.send(AgentEvent::TurnEnd { turn, estimated_tokens: conversation.estimate_tokens() });
+            let _ = events.send(AgentEvent::TurnEnd {
+                turn,
+                estimated_tokens: conversation.estimate_tokens(),
+            });
             break;
         }
 
@@ -132,13 +138,18 @@ pub async fn run(
             .as_ref()
             .and_then(|s| s.lock().ok().map(|g| g.context_window))
             .unwrap_or(200_000);
-        if conversation.needs_compaction(context_window, 0.75)
+        let forced_compact = config
+            .force_compact
+            .as_ref()
+            .is_some_and(|flag| flag.swap(false, std::sync::atomic::Ordering::SeqCst));
+        if (forced_compact || conversation.needs_compaction(context_window, 0.75))
             && let Some((payload, evict_count)) = conversation.build_compaction_payload()
         {
             tracing::info!(
                 estimated_tokens = conversation.estimate_tokens(),
                 evict_count,
-                "Context utilization high — requesting LLM compaction"
+                forced = forced_compact,
+                "Context compaction requested"
             );
             // Use the bridge to summarize the evictable messages
             match compact_via_llm(bridge, &payload, &base_stream_options).await {
@@ -311,11 +322,17 @@ pub async fn run(
                         .to_string(),
                 );
                 bus.emit(&omegon_traits::BusEvent::TurnEnd { turn });
-                let _ = events.send(AgentEvent::TurnEnd { turn, estimated_tokens: conversation.estimate_tokens() });
+                let _ = events.send(AgentEvent::TurnEnd {
+                    turn,
+                    estimated_tokens: conversation.estimate_tokens(),
+                });
                 continue; // give it one more turn to commit
             }
             bus.emit(&omegon_traits::BusEvent::TurnEnd { turn });
-            let _ = events.send(AgentEvent::TurnEnd { turn, estimated_tokens: conversation.estimate_tokens() });
+            let _ = events.send(AgentEvent::TurnEnd {
+                turn,
+                estimated_tokens: conversation.estimate_tokens(),
+            });
             break;
         }
 
@@ -398,7 +415,10 @@ pub async fn run(
             }
         }
 
-        let _ = events.send(AgentEvent::TurnEnd { turn, estimated_tokens: conversation.estimate_tokens() });
+        let _ = events.send(AgentEvent::TurnEnd {
+            turn,
+            estimated_tokens: conversation.estimate_tokens(),
+        });
     }
 
     let elapsed = session_start.elapsed();
@@ -435,7 +455,7 @@ pub async fn run(
 ///
 /// The payload is truncated to ~100k chars (~25k tokens) to ensure the
 /// compaction request itself doesn't exceed provider limits.
-async fn compact_via_llm(
+pub(crate) async fn compact_via_llm(
     bridge: &dyn LlmBridge,
     payload: &str,
     options: &StreamOptions,
@@ -1189,7 +1209,9 @@ mod tests {
 
     #[test]
     fn context_overflow_detection() {
-        assert!(is_context_overflow("Extra usage is required for long context requests."));
+        assert!(is_context_overflow(
+            "Extra usage is required for long context requests."
+        ));
         assert!(is_context_overflow("maximum context length exceeded"));
         assert!(is_context_overflow("token limit reached for this request"));
         assert!(is_context_overflow("request too large"));
@@ -1201,11 +1223,19 @@ mod tests {
 
     #[test]
     fn malformed_history_detection() {
-        assert!(is_malformed_history("unexpected tool_use_id found in tool_result blocks"));
+        assert!(is_malformed_history(
+            "unexpected tool_use_id found in tool_result blocks"
+        ));
         assert!(is_malformed_history("thinking.signature: Field required"));
-        assert!(is_malformed_history("String does not match pattern '^[a-zA-Z0-9_-]+$'"));
-        assert!(is_malformed_history("role must alternate between user and assistant"));
-        assert!(is_malformed_history("Each tool_result block must have a corresponding tool_use"));
+        assert!(is_malformed_history(
+            "String does not match pattern '^[a-zA-Z0-9_-]+$'"
+        ));
+        assert!(is_malformed_history(
+            "role must alternate between user and assistant"
+        ));
+        assert!(is_malformed_history(
+            "Each tool_result block must have a corresponding tool_use"
+        ));
         assert!(!is_malformed_history("rate limit exceeded"));
         assert!(!is_malformed_history("Invalid API key"));
     }
@@ -1213,14 +1243,20 @@ mod tests {
     #[test]
     fn context_overflow_not_classified_as_transient() {
         // Context overflow should NOT be retried blindly — it needs compaction
-        assert!(!is_transient_error("Anthropic 429 Too Many Requests: Extra usage is required for long context requests."));
+        assert!(!is_transient_error(
+            "Anthropic 429 Too Many Requests: Extra usage is required for long context requests."
+        ));
         // But regular 429 rate limits SHOULD be retried
-        assert!(is_transient_error("429 Too Many Requests: rate limit exceeded"));
+        assert!(is_transient_error(
+            "429 Too Many Requests: rate limit exceeded"
+        ));
     }
 
     #[test]
     fn malformed_history_not_classified_as_transient() {
-        assert!(!is_transient_error("400 Bad Request: messages.9.content.1.tool_use.id: String does not match pattern"));
+        assert!(!is_transient_error(
+            "400 Bad Request: messages.9.content.1.tool_use.id: String does not match pattern"
+        ));
         assert!(!is_transient_error("thinking.signature: Field required"));
     }
 
@@ -1563,6 +1599,7 @@ mod tests {
             extended_context: false,
             settings: None,
             secrets: None,
+            force_compact: None,
         };
         // soft_limit_turns=0 → loop should compute 2/3 of max_turns (40)
         assert_eq!(config.soft_limit_turns, 0, "0 = auto-calculate in run()");

@@ -235,6 +235,7 @@ impl AgentSetup {
         let jsonl_path = memory_dir.join("facts.jsonl");
 
         let mut initial_fact_count: usize = 0;
+        let mut memory_warning: Option<String> = None;
 
         if let Ok(backend) = omegon_memory::SqliteBackend::open(&db_path) {
             tracing::info!(mind = %mind, db = %db_path.display(), child = is_child, "memory backend loaded");
@@ -267,6 +268,13 @@ impl AgentSetup {
                 memory_backend,
                 mind,
             )));
+        } else {
+            let warning = format!(
+                "Memory backend unavailable — memory_* tools disabled ({})",
+                db_path.display()
+            );
+            tracing::error!(db = %db_path.display(), "memory backend unavailable — memory_* tools disabled");
+            memory_warning = Some(warning);
         }
 
         // ─── Lifecycle (design-tree + openspec) ──────────────────────────
@@ -279,10 +287,17 @@ impl AgentSetup {
         bus.register(Box::new(lifecycle_feature));
 
         // ─── Cleave (decomposition + dispatch) ─────────────────────────
-        let cleave_feature =
-            features::cleave::CleaveFeature::new(&cwd, session_secret_env.clone());
+        let cleave_feature = features::cleave::CleaveFeature::new(&cwd, session_secret_env.clone());
         let cleave_handle = cleave_feature.shared_progress();
         bus.register(Box::new(cleave_feature));
+
+        // ─── Codescan (codebase_search / codebase_index) ──────────────
+        bus.register(Box::new(features::adapter::ToolAdapter::new(
+            "codescan",
+            Box::new(tools::codebase_search::CodescanProvider::new(
+                project_root.clone(),
+            )),
+        )));
 
         // ─── Delegate (subagent system) ─────────────────────────────────
         let agents = crate::features::delegate::scan_agents(&cwd);
@@ -398,6 +413,14 @@ impl AgentSetup {
             edges: 0,
             active_persona_mind: None,
         });
+        if initial_fact_count == 0 {
+            // update_memory() marks memory_available=true even for an empty-but-working backend;
+            // if startup failed earlier, restore the unavailable state and carry the warning.
+            if let Some(ref warning) = memory_warning {
+                harness_status.memory_available = false;
+                harness_status.memory_warning = Some(warning.clone());
+            }
+        }
 
         tracing::info!(
             providers = harness_status.providers.len(),

@@ -7,6 +7,7 @@
 pub mod bash;
 pub mod change;
 pub mod chronos;
+pub mod codebase_search;
 pub mod edit;
 pub mod local_inference;
 pub mod read;
