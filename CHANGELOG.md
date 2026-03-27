@@ -3,6 +3,29 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.15.3] - 2026-03-27
+
+### Added
+
+- **Codebase search** — shipped the `omegon-codescan` crate plus `codebase_search` / `codebase_index` tools for ranked concept search across code and project knowledge.
+- **Lifecycle doctor** — design-drift auditing surfaced as an operator tool for catching suspicious lifecycle state before release.
+- **Diagnostics and session observability** — startup preflight and child-environment diagnostics, session-log tool exposure, auto-written session narratives, provider usage/rate-limit capture, and RC-channel self-update verification.
+- **TUI input and conversation upgrades** — multiline operator editor with wrapped rendering, cursor navigation, visible blinking cursor, Shift+Enter support, copy-mode improvements, soft-card assistant responses, and clearer operator/assistant identity.
+
+### Fixed
+
+- **Cleave/provider routing hardening** — separated OpenAI API routing from Codex OAuth, repaired cross-provider model routing, passed warmed session secrets into children, reset internal workspaces more reliably, and simplified child finalization/cleanup.
+- **Secrets and startup behavior** — aligned preflight with the active model, avoided duplicate keychain reads, hydrated configured API keys into the environment, and unified the macOS keychain service name.
+- **TUI correctness** — fixed wrapped editor growth, cursor alignment/overflow, manual conversation scroll preservation, dashboard scroll routing, context-window synchronization, memory failure surfacing, and wrapped tool/card height stability.
+- **Release/install pipeline** — restored valid nightly/RC automation, tightened `just` release behavior, fixed asset naming and POSIX install compatibility, added signature verification, and now require branch-attached release cuts from `main`.
+- **Loop/provider robustness** — hardened LLM call handling, improved 429 overflow compaction behavior, sanitized tool IDs, and omitted invalid unsigned thinking blocks in Anthropic message assembly.
+
+### Changed
+
+- Release workflow now treats RCs as first-class milestones with automated milestone tracking, cleaner nightly draft handling, and stricter branch discipline.
+- Session behavior now defaults to auto-resume with a clearer fresh-session escape hatch.
+- The TUI status/inference surfaces now emphasize real context, memory, and tool-state telemetry over ornamental noise.
+
 ## [0.15.2] - 2026-03-25
 
 ### Added
