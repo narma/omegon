@@ -473,7 +473,7 @@ impl AnthropicClient {
                     json!({"role": "user", "content": blocks})
                 }
             }
-            LlmMessage::Assistant { text, thinking, tool_calls, raw } => {
+            LlmMessage::Assistant { text, thinking: _, tool_calls, raw } => {
                 // Prefer raw content blocks if available — they preserve provider-specific
                 // fields like thinking signatures that are required for round-tripping.
                 if let Some(raw_val) = raw {
