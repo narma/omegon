@@ -512,6 +512,12 @@ impl ConversationState {
             *images = self.pending_images.clone();
         }
 
+        // Strip orphaned tool_result messages whose tool_use was evicted.
+        // After compaction/decay, tool_use blocks may be removed while their
+        // corresponding tool_result blocks survive. Anthropic rejects these
+        // with "unexpected tool_use_id found in tool_result blocks".
+        strip_orphaned_tool_results(&mut messages);
+
         messages
     }
 
@@ -884,6 +890,32 @@ impl ConversationState {
 }
 
 /// Extract identifier-like tokens from a line of code.
+/// Remove tool_result messages that reference tool_use IDs not present in any
+/// preceding assistant message. This happens after compaction/decay evicts
+/// assistant messages but leaves their tool_result responses.
+fn strip_orphaned_tool_results(messages: &mut Vec<LlmMessage>) {
+    use std::collections::HashSet;
+    // Collect all tool_use IDs from assistant messages
+    let mut known_ids: HashSet<String> = HashSet::new();
+    for msg in messages.iter() {
+        if let LlmMessage::Assistant { tool_calls, .. } = msg {
+            for tc in tool_calls {
+                known_ids.insert(tc.id.clone());
+            }
+        }
+    }
+    // Remove tool_result messages whose call_id isn't in known_ids
+    messages.retain(|msg| {
+        if let LlmMessage::ToolResult { call_id, .. } = msg {
+            if !known_ids.contains(call_id) {
+                tracing::debug!(call_id, "stripping orphaned tool_result");
+                return false;
+            }
+        }
+        true
+    });
+}
+
 /// Returns sequences of `[a-zA-Z0-9_]` that are at least 8 chars long.
 /// Threshold of 8 avoids false positives on common short identifiers
 /// (String, Error, value, token, state) that appear in most responses.
@@ -913,6 +945,21 @@ fn extract_identifiers(line: &str) -> impl Iterator<Item = &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Insert an assistant message with a tool_call matching the given call_id.
+    /// Required so that subsequent tool_result messages aren't stripped as orphans.
+    fn push_matching_assistant(conv: &mut ConversationState, call_id: &str) {
+        conv.push_assistant(AssistantMessage {
+            text: String::new(),
+            thinking: None,
+            tool_calls: vec![ToolCall {
+                id: call_id.into(),
+                name: "test".into(),
+                arguments: serde_json::json!({}),
+            }],
+            raw: serde_json::Value::Null,
+        });
+    }
 
     #[test]
     fn assistant_decay_strips_thinking() {
@@ -969,6 +1016,7 @@ mod tests {
         let mut conv = ConversationState::new();
         conv.decay_window = 0;
 
+        push_matching_assistant(&mut conv, "t1");
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
             tool_name: "read".into(),
@@ -981,9 +1029,10 @@ mod tests {
         conv.intent.stats.turns = 1;
 
         let view = conv.build_llm_view();
+        // view[0] = decayed assistant, view[1] = decayed tool_result
         if let LlmMessage::ToolResult {
             content, tool_name, ..
-        } = &view[0]
+        } = &view[1]
         {
             assert_eq!(tool_name, "read");
             // Rich decay skeleton includes line/byte counts
@@ -1317,6 +1366,7 @@ mod tests {
         let mut conv = ConversationState::new();
         conv.decay_window = 0;
 
+        push_matching_assistant(&mut conv, "t1");
         let output = (1..=20)
             .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
@@ -1331,7 +1381,7 @@ mod tests {
         conv.intent.stats.turns = 1;
 
         let view = conv.build_llm_view();
-        if let LlmMessage::ToolResult { content, .. } = &view[0] {
+        if let LlmMessage::ToolResult { content, .. } = &view[1] {
             assert!(
                 content.contains("20 lines"),
                 "should report line count, got: {content}"
@@ -1346,6 +1396,7 @@ mod tests {
         let mut conv = ConversationState::new();
         conv.decay_window = 0;
 
+        push_matching_assistant(&mut conv, "t1");
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
             tool_name: "bash".into(),
@@ -1358,7 +1409,7 @@ mod tests {
         conv.intent.stats.turns = 1;
 
         let view = conv.build_llm_view();
-        if let LlmMessage::ToolResult { content, .. } = &view[0] {
+        if let LlmMessage::ToolResult { content, .. } = &view[1] {
             assert!(content.contains("ERROR"), "should indicate error");
             assert!(
                 content.contains("command not found"),
@@ -1372,6 +1423,7 @@ mod tests {
         let mut conv = ConversationState::new();
         conv.decay_window = 0;
 
+        push_matching_assistant(&mut conv, "t1");
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
             tool_name: "edit".into(),
@@ -1384,7 +1436,7 @@ mod tests {
         conv.intent.stats.turns = 1;
 
         let view = conv.build_llm_view();
-        if let LlmMessage::ToolResult { content, .. } = &view[0] {
+        if let LlmMessage::ToolResult { content, .. } = &view[1] {
             assert!(
                 content.contains("src/auth.rs"),
                 "should preserve path, got: {content}"
@@ -1398,7 +1450,8 @@ mod tests {
         conv.decay_window = 2;
         conv.intent.stats.turns = 1;
 
-        // Turn 1: read a file with identifiable content
+        // Turn 1: assistant calls a tool, then we get the result
+        push_matching_assistant(&mut conv, "t1");
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
             tool_name: "read".into(),
@@ -1430,7 +1483,8 @@ mod tests {
         conv.intent.stats.turns = 5;
         let view = conv.build_llm_view();
         // The tool result at turn 1 should NOT be decayed (referenced, extended window = 4)
-        if let LlmMessage::ToolResult { content, .. } = &view[0] {
+        let tool_msg = view.iter().find(|m| matches!(m, LlmMessage::ToolResult { .. })).unwrap();
+        if let LlmMessage::ToolResult { content, .. } = tool_msg {
             assert!(
                 content.contains("authenticate_user"),
                 "referenced result should preserve full content at age 4, got: {content}"
@@ -1440,7 +1494,8 @@ mod tests {
         // At turn 6 (age 5), even referenced results should decay (5 > 4)
         conv.intent.stats.turns = 6;
         let view = conv.build_llm_view();
-        if let LlmMessage::ToolResult { content, .. } = &view[0] {
+        let tool_msg = view.iter().find(|m| matches!(m, LlmMessage::ToolResult { .. })).unwrap();
+        if let LlmMessage::ToolResult { content, .. } = tool_msg {
             assert!(
                 !content.contains("authenticate_user"),
                 "referenced result should be decayed at age 5"
@@ -1503,6 +1558,7 @@ mod tests {
     fn args_summary_survives_session_round_trip() {
         let mut conv = ConversationState::new();
         conv.push_user("read a file".into());
+        push_matching_assistant(&mut conv, "t1");
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
             tool_name: "read".into(),
