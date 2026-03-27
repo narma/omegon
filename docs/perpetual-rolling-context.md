@@ -494,6 +494,67 @@ fn compute_budget(
 
 Clean, universal, zero dependencies.
 
+### Operator metrics, settings, and subscription-aware defaults
+
+### What we already know at startup
+
+The harness already probes at startup and knows:
+- Which providers are authenticated (OAuth vs API key)
+- Subscription type implied by auth method (OAuth → Pro/Max/Plus, API key → pay-per-token)
+- Active model and its context window (from `/v1/models` probe or static lookup)
+- Context class (Squad/Maniple/Clan/Legion)
+
+From this we can derive **cost posture** — whether the operator is paying per token or on a subscription:
+
+| Auth method | Provider | Cost posture | Budget strategy |
+|-------------|----------|-------------|-----------------|
+| OAuth | Anthropic | Subscription (Pro/Max) | Generous — context is prepaid, send more |
+| OAuth | Codex | Subscription (ChatGPT Pro) | Generous — tokens included |
+| API key | Anthropic | Pay-per-token | Economical — minimize input tokens |
+| API key | OpenAI | Pay-per-token | Economical |
+| API key | OpenRouter | Mixed (some free models) | Model-dependent |
+| n/a | Ollama | Free (local) | Generous — no cost, only context limit |
+
+### Metrics to expose (HarnessStatus + dashboard)
+
+**Per-turn (real-time, shown in footer/dashboard):**
+- Buffer utilization: `{entries} entries, ~{estimated_tokens}k tokens in buffer`
+- Projection coverage: `{selected}/{total} turns included ({pct}%)`
+- Last turn cost: `{input_tokens} in / {output_tokens} out`
+- Calibration ratio: `{ratio:.1}x chars/token` (diagnostic, not prominent)
+
+**Per-session (shown in raised dashboard):**
+- Cumulative: `{total_input}k input + {total_output}k output = {total}k tokens`
+- Estimated cost: `~${cost:.2}` (derived from model pricing, if known)
+- Buffer growth: entries over time, compaction waypoints
+- Provider switches: count, which providers, mid-session model changes
+
+### Operator settings
+
+**Automatic (derived from subscription):**
+- Budget target: 80% for pay-per-token, 90% for subscription (can afford less margin)
+- Compaction: aggressive for pay-per-token (save money), lazy for subscription (save latency)
+- Context class: from model's authoritative context window
+
+**Manual overrides (/settings or project profile):**
+- `context_budget`: explicit token budget override (ignores auto-detection)
+- `compaction_mode`: `never` | `cost-optimal` (default) | `aggressive`
+- `cost_alert_threshold`: warn when estimated session cost exceeds $X
+- `max_buffer_entries`: cap buffer size (default: unlimited within ~10MB)
+
+### Context class mapping to selector behavior
+
+The existing ContextClass maps cleanly to selector aggressiveness:
+
+| Class | Budget | Mandatory window | Compaction | Cost posture |
+|-------|--------|-----------------|------------|-------------|
+| Squad (128k) | 80k conversation | 3 turns | Aggressive | Economical |
+| Maniple (272k) | 180k conversation | 5 turns | Cost-optimal | Standard |
+| Clan (440k) | 320k conversation | 8 turns | Lazy | Generous |
+| Legion (1M+) | 750k conversation | 15 turns | Never | Unlimited |
+
+Legion on a subscription provider (OAuth Anthropic, Codex) is effectively "send everything" — the entire buffer fits, no selection needed, no compaction needed. The simplest and best experience.
+
 ## Decisions
 
 ### Decision: Three-layer architecture: Buffer → Selector → Projector
