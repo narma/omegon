@@ -136,6 +136,18 @@ fn operator_event_queue_keeps_most_recent_entries() {
 }
 
 #[test]
+fn copy_mode_toggle_flips_mouse_capture_state() {
+    let mut app = test_app();
+    assert!(app.mouse_capture_enabled, "mouse capture should start enabled");
+
+    app.set_mouse_capture(false);
+    assert!(!app.mouse_capture_enabled, "copy mode should disable mouse capture");
+
+    app.set_mouse_capture(true);
+    assert!(app.mouse_capture_enabled, "exiting copy mode should re-enable mouse capture");
+}
+
+#[test]
 fn slash_update_channel_without_args_shows_helpful_usage() {
     let mut app = test_app();
     let tx = test_tx();

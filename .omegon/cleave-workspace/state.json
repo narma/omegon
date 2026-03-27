@@ -1,0 +1,36 @@
+{
+  "runId": "clv-01xylxt6-kvta",
+  "directive": "Minimal internal cleave_run smoke test: inspect the repository README and report one concise observation about the project; do not modify tracked files.",
+  "repoPath": "/Users/cwilson/workspace/black-meridian/omegon",
+  "workspacePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace",
+  "children": [
+    {
+      "childId": 0,
+      "label": "readme-observation",
+      "description": "Read README.md, extract one concise observation about the project, and report it back without modifying tracked files.",
+      "scope": [
+        "README.md"
+      ],
+      "dependsOn": [],
+      "status": "failed",
+      "error": "branch not found: cleave/0-readme-observation",
+      "branch": "cleave/0-readme-observation",
+      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/0-wt-readme-observation",
+      "backend": "native",
+      "executeModel": "anthropic:claude-sonnet-4-6"
+    }
+  ],
+  "plan": {
+    "children": [
+      {
+        "depends_on": [],
+        "description": "Read README.md, extract one concise observation about the project, and report it back without modifying tracked files.",
+        "label": "readme-observation",
+        "scope": [
+          "README.md"
+        ]
+      }
+    ],
+    "rationale": "Smallest viable internal cleave_run demonstration: a single child with no code changes."
+  }
+}

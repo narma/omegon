@@ -170,6 +170,9 @@ pub struct App {
     update_tx: Option<crate::update::UpdateSender>,
     /// Whether we enabled the Kitty keyboard protocol (must pop on cleanup).
     keyboard_enhancement: bool,
+    /// Whether crossterm mouse capture is enabled. Disable this to let the
+    /// terminal handle native text selection/copy in the conversation pane.
+    mouse_capture_enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -278,6 +281,27 @@ impl App {
             update_rx: None,
             update_tx: None,
             keyboard_enhancement: false,
+            mouse_capture_enabled: true,
+        }
+    }
+
+    fn set_mouse_capture(&mut self, enabled: bool) {
+        if self.mouse_capture_enabled == enabled {
+            return;
+        }
+        self.mouse_capture_enabled = enabled;
+        if enabled {
+            let _ = io::stdout().execute(EnableMouseCapture);
+            self.show_toast(
+                "Mouse capture enabled — scroll/hover restored",
+                ratatui_toaster::ToastType::Info,
+            );
+        } else {
+            let _ = io::stdout().execute(DisableMouseCapture);
+            self.show_toast(
+                "Copy mode enabled — use native terminal selection/copy; press Ctrl+Shift+C to return",
+                ratatui_toaster::ToastType::Info,
+            );
         }
     }
 
@@ -3637,9 +3661,8 @@ pub async fn run_tui(
         crossterm::terminal::ClearType::All,
     ))?;
     // Enable mouse capture for scroll-wheel support.
-    // This blocks native text selection — users must hold Option (macOS) or
-    // Shift (most terminals) to select text. Proper in-app selection with
-    // OSC 52 clipboard is tracked in design node: mouse-text-selection.
+    // This blocks native text selection. Operators can temporarily disable it
+    // in-session with Ctrl+Shift+C to use terminal-native selection/copy.
     io::stdout().execute(EnableMouseCapture)?;
     io::stdout().execute(crossterm::event::EnableBracketedPaste)?;
 
@@ -3925,7 +3948,7 @@ pub async fn run_tui(
                 // user swiped fingers DOWN (wanting to see newer content).
                 // So: ScrollUp → scroll toward bottom, ScrollDown → scroll toward top.
                 Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollUp => {
+                    MouseEventKind::ScrollUp if app.mouse_capture_enabled => {
                         let over_dashboard = app.dashboard_area.is_some_and(|area| {
                             mouse.column >= area.x
                                 && mouse.column < area.x + area.width
@@ -3938,7 +3961,7 @@ pub async fn run_tui(
                             app.conversation.scroll_up(3);
                         }
                     }
-                    MouseEventKind::ScrollDown => {
+                    MouseEventKind::ScrollDown if app.mouse_capture_enabled => {
                         let over_dashboard = app.dashboard_area.is_some_and(|area| {
                             mouse.column >= area.x
                                 && mouse.column < area.x + area.width
@@ -4299,6 +4322,13 @@ pub async fn run_tui(
                         // Ctrl+O: toggle pin/expand on nearest tool card
                         (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
                             app.conversation.toggle_pin();
+                        }
+
+                        // Ctrl+Shift+C: toggle copy mode for native terminal selection.
+                        // Mouse capture blocks terminal text selection, so this is the
+                        // fast path until in-app selection/OSC52 exists.
+                        (KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                            app.set_mouse_capture(!app.mouse_capture_enabled);
                         }
 
                         // Ctrl+D: toggle sidebar navigation mode (design tree)
