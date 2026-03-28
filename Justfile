@@ -113,11 +113,16 @@ link-tag tag:
 
     VERSION="${TAG#v}"
     WT="$(pwd)/.omegon/release-worktrees/$TAG"
+    BINARY="$WT/core/target/release/omegon"
 
     mkdir -p "$(pwd)/.omegon/release-worktrees"
 
+    echo "Preparing durable worktree for $TAG..."
     if [ ! -d "$WT/.git" ] && [ ! -f "$WT/.git" ]; then
+        echo "  creating worktree at $WT"
         git worktree add --detach "$WT" "$TAG"
+    else
+        echo "  reusing existing worktree at $WT"
     fi
 
     MANIFEST_VERSION=$(grep '^version = ' "$WT/core/Cargo.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
@@ -128,13 +133,25 @@ link-tag tag:
         exit 1
     fi
 
-    echo "Building $TAG in durable worktree..."
-    (cd "$WT/core" && cargo build --release -p omegon)
+    if [ -x "$BINARY" ]; then
+        EXISTING_VERSION=$($BINARY --version | head -1 || true)
+        echo "  existing binary: $EXISTING_VERSION"
+        if echo "$EXISTING_VERSION" | grep -q "$VERSION"; then
+            echo "✓ Existing tagged binary already matches $VERSION — skipping rebuild"
+        else
+            echo "Building $TAG in durable worktree..."
+            echo "  binary version mismatch; rebuilding release binary"
+            (cd "$WT/core" && cargo build --release -p omegon)
+        fi
+    else
+        echo "Building $TAG in durable worktree..."
+        echo "  no existing tagged binary found; building release binary"
+        (cd "$WT/core" && cargo build --release -p omegon)
+    fi
 
     echo "Linking installed omegon to $TAG..."
     (cd "$WT" && OMEGON_ALLOW_DETACHED_LINK=1 just link)
 
-    BINARY="$WT/core/target/release/omegon"
     BINARY_VERSION=$($BINARY --version | head -1)
     if ! echo "$BINARY_VERSION" | grep -q "$VERSION"; then
         echo "✗ Built binary version mismatch: $BINARY_VERSION"
