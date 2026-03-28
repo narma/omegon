@@ -69,6 +69,16 @@ impl ConvState {
 
     /// Ensure heights are computed for all segments at the given width.
     fn ensure_heights(&mut self, segments: &[Segment], width: u16, t: &dyn Theme) {
+        self.ensure_heights_with_scroll_state(segments, width, t, self.user_scrolled);
+    }
+
+    fn ensure_heights_with_scroll_state(
+        &mut self,
+        segments: &[Segment],
+        width: u16,
+        t: &dyn Theme,
+        user_scrolled: bool,
+    ) {
         // Full recompute if width changed
         if width != self.cached_width {
             self.heights.clear();
@@ -83,8 +93,10 @@ impl ConvState {
             self.cached_count = segments.len();
         }
 
-        // Recompute the last segment (it might be streaming)
-        if !segments.is_empty() && self.cached_count == segments.len() {
+        // Recompute the last segment only when the viewport is attached to the live tail.
+        // When manually detached, the streaming tail is often off-screen, and remeasuring
+        // it on every chunk creates avoidable scroll jank.
+        if !segments.is_empty() && self.cached_count == segments.len() && !user_scrolled {
             let last = segments.len() - 1;
             self.heights[last] = segments[last].height(width, t);
         }
@@ -378,6 +390,30 @@ mod tests {
     }
 
     #[test]
+    fn detached_scroll_skips_last_segment_remeasure() {
+        let segments = vec![Segment {
+            meta: Default::default(),
+            content: SegmentContent::AssistantText {
+                text: "streaming tail".into(),
+                thinking: String::new(),
+                complete: false,
+            },
+        }];
+        let mut state = ConvState::new();
+        state.ensure_heights(&segments, 40, &Alpharius);
+        state.heights[0] = 7;
+        state.cached_count = segments.len();
+        state.cached_width = 40;
+        state.user_scrolled = true;
+
+        state.ensure_heights_with_scroll_state(&segments, 40, &Alpharius, true);
+        assert_eq!(
+            state.heights[0], 7,
+            "detached viewport should preserve cached tail height instead of remeasuring it"
+        );
+    }
+
+    #[test]
     fn multiple_segments_render() {
         let segments = vec![
             Segment::user_prompt("first"),
@@ -458,10 +494,13 @@ mod tests {
             &mut state,
         );
 
-        assert!(state.last_total_height > old_total, "test setup must grow content height");
-        assert!(
-            state.scroll_offset > detached_offset,
-            "detached viewport must compensate for appended height instead of visually sliding"
+        assert_eq!(
+            state.last_total_height, old_total,
+            "detached viewport should preserve cached total height while the streaming tail is off-screen"
+        );
+        assert_eq!(
+            state.scroll_offset, detached_offset,
+            "detached viewport should preserve the operator's scroll anchor instead of chasing the live tail"
         );
     }
 
