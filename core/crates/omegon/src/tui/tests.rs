@@ -253,6 +253,19 @@ fn conversation_scroll_does_not_recall_input_history() {
 }
 
 #[test]
+fn empty_editor_does_not_implicitly_recall_history() {
+    let mut app = test_app();
+    app.history = vec!["first".into(), "second".into(), "third".into()];
+
+    assert!(app.editor.is_empty());
+    assert_eq!(app.history_idx, None);
+
+    // Plain Up/Down now stay inert until history recall is explicitly entered.
+    assert_eq!(app.editor.render_text(), "");
+    assert_eq!(app.history_idx, None);
+}
+
+#[test]
 fn history_up_walks_back_multiple_entries_after_recall_starts() {
     let mut app = test_app();
     app.history = vec!["first".into(), "second".into(), "third".into()];

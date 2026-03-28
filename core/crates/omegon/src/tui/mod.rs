@@ -4475,20 +4475,22 @@ pub async fn run_tui(
                         (KeyCode::Up, _) => {
                             if app.agent_active {
                                 app.conversation.scroll_up(3);
-                            } else if app.history_idx.is_some() || app.editor.is_empty() {
+                            } else if app.history_idx.is_some() {
                                 app.history_up();
                             } else if app.editor.line_count() > 1 && app.editor.cursor_row() > 0 {
                                 // Multiline: move cursor up within editor
                                 app.editor.move_up();
                             } else {
                                 // Keep plain Up bound to the composer while focused.
+                                // Do not implicitly recall history from an empty editor:
+                                // some terminals translate wheel scroll into Up/Down keys.
                                 // Conversation scrolling stays on Shift+Up/PageUp.
                             }
                         }
                         (KeyCode::Down, _) => {
                             if app.agent_active {
                                 app.conversation.scroll_down(3);
-                            } else if app.history_idx.is_some() || app.editor.is_empty() {
+                            } else if app.history_idx.is_some() {
                                 app.history_down();
                             } else if app.editor.line_count() > 1
                                 && app.editor.cursor_row() < app.editor.line_count() - 1
@@ -4497,6 +4499,8 @@ pub async fn run_tui(
                                 app.editor.move_down();
                             } else {
                                 // Keep plain Down bound to the composer while focused.
+                                // Do not implicitly recall history from an empty editor:
+                                // some terminals translate wheel scroll into Up/Down keys.
                                 // Conversation scrolling stays on Shift+Down/PageDown.
                             }
                         }
