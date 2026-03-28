@@ -771,10 +771,44 @@ fn render_tool_card(
     buf: &mut Buffer,
     t: &dyn Theme,
 ) {
+    let summarize_change_args = |args: &str| -> Option<String> {
+        let v = serde_json::from_str::<serde_json::Value>(args).ok()?;
+
+        if let Some(edits) = v.get("edits").and_then(|e| e.as_array()) {
+            let mut files: Vec<&str> = edits
+                .iter()
+                .filter_map(|edit| edit.get("file").and_then(|f| f.as_str()))
+                .collect();
+            files.dedup();
+            return match files.as_slice() {
+                [] => Some(format!("{} edits", edits.len())),
+                [only] => Some(format!("{only} · {} edit{}", edits.len(), if edits.len() == 1 { "" } else { "s" })),
+                [first, second, ..] => Some(format!("{first}, {second} · {} edits", edits.len())),
+            };
+        }
+
+        let path = v
+            .get("file")
+            .or(v.get("path"))
+            .and_then(|f| f.as_str())
+            .unwrap_or("(unknown file)");
+        let old_len = v
+            .get("oldText")
+            .and_then(|s| s.as_str())
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        let new_len = v
+            .get("newText")
+            .and_then(|s| s.as_str())
+            .map(|s| s.lines().count())
+            .unwrap_or(0);
+        Some(format!("{path} · {old_len}→{new_len} lines"))
+    };
+
     let summarize_args = |tool_name: &str, args: Option<&str>| -> Option<String> {
         let args = args?;
         match tool_name {
-            "edit" | "change" => serde_json::from_str::<serde_json::Value>(args)
+            "edit" => serde_json::from_str::<serde_json::Value>(args)
                 .ok()
                 .and_then(|v| {
                     let path = v
@@ -794,6 +828,8 @@ fn render_tool_card(
                         .unwrap_or(0);
                     Some(format!("{path} · {old_len}→{new_len} lines"))
                 })
+                .or_else(|| Some(crate::util::truncate(args, 80))),
+            "change" => summarize_change_args(args)
                 .or_else(|| Some(crate::util::truncate(args, 80))),
             "read" | "write" | "view" | "bash" => {
                 Some(args.lines().next().unwrap_or(args).to_string())
@@ -1064,12 +1100,12 @@ fn render_tool_card(
         .wrap(Wrap { trim: false })
         .render(card_inner, buf);
 
-    // ── Post-render: OSC 8 hyperlinks for file paths ────────────
-    if matches!(name, "read" | "edit" | "write" | "change" | "view")
+    // ── Post-render: OSC 8 hyperlinks for single-file tool paths ────────────
+    if matches!(name, "read" | "edit" | "write" | "view")
         && let Some(args) = detail_args
     {
         let file_path = match name {
-            "edit" | "change" => serde_json::from_str::<serde_json::Value>(args)
+            "edit" => serde_json::from_str::<serde_json::Value>(args)
                 .ok()
                 .and_then(|v| {
                     v.get("file")
@@ -1083,7 +1119,7 @@ fn render_tool_card(
             let url = format!("file://{file_path}");
             let link_area = Rect {
                 x: card_inner.x,
-                y: card_inner.y, // first line is the file path
+                y: card_inner.y,
                 width: card_inner.width.min(file_path.len() as u16),
                 height: 1,
             };
@@ -1527,6 +1563,33 @@ mod tests {
             !text.contains("oldText"),
             "edit cards should not dump raw JSON keys into the card header: {text}"
         );
+    }
+
+    #[test]
+    fn change_tool_card_summarizes_multi_file_edits_without_raw_json_noise() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::ToolCard {
+                id: "1".into(),
+                name: "change".into(),
+                args_summary: None,
+                detail_args: Some(
+                    r#"{"edits":[{"file":"src/main.rs","oldText":"a","newText":"b"},{"file":"src/lib.rs","oldText":"c","newText":"d"}],"validate":"cargo test"}"#.into(),
+                ),
+                result_summary: None,
+                detail_result: Some("ok".into()),
+                is_error: false,
+                complete: true,
+                expanded: false,
+            },
+        };
+        let (area, mut buf) = make_buf(90, 8);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("src/main.rs"), "change cards should show a real file path: {text}");
+        assert!(text.contains("2 edits"), "change cards should summarize edit count: {text}");
+        assert!(!text.contains("oldText"), "change cards should not leak raw JSON keys: {text}");
+        assert!(!text.contains("\"edits\""), "change cards should not render the raw JSON payload: {text}");
     }
 
     #[test]
