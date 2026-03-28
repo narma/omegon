@@ -216,6 +216,9 @@ struct ToolEntry {
     last_called: f64,
     is_error: bool,
     error_ttl: f64,
+    running: bool,
+    started_at: Option<f64>,
+    last_duration_ms: Option<u64>,
 }
 
 // ─── Panel ──────────────────────────────────────────────────────────────
@@ -346,8 +349,74 @@ impl InstrumentPanel {
     fn active_tool_load(&self) -> f64 {
         self.tools
             .iter()
-            .map(|tool| (1.0 - ((self.time - tool.last_called).max(0.0) / 4.0)).clamp(0.0, 1.0))
+            .map(|tool| {
+                let recency = (1.0 - ((self.time - tool.last_called).max(0.0) / 4.0)).clamp(0.0, 1.0);
+                if tool.running { 1.0 } else { recency }
+            })
             .fold(0.0_f64, f64::max)
+    }
+
+    fn format_duration_ms(duration_ms: u64) -> String {
+        if duration_ms < 1_000 {
+            format!("{:>4}ms", duration_ms)
+        } else if duration_ms < 60_000 {
+            format!("{:>4.1}s", duration_ms as f64 / 1_000.0)
+        } else if duration_ms < 3_600_000 {
+            let total_secs = duration_ms / 1_000;
+            let mins = total_secs / 60;
+            let secs = total_secs % 60;
+            format!("{:>2}:{secs:02}", mins)
+        } else {
+            let total_mins = duration_ms / 60_000;
+            let hours = total_mins / 60;
+            let mins = total_mins % 60;
+            format!("{:>2}h{mins:02}", hours)
+        }
+    }
+
+    pub fn tool_started(&mut self, name: &str) {
+        self.has_ever_fired = true;
+        if let Some(entry) = self.tools.iter_mut().find(|t| t.name == name) {
+            entry.last_called = self.time;
+            entry.running = true;
+            entry.started_at = Some(self.time);
+            entry.is_error = false;
+            entry.error_ttl = 0.0;
+        } else {
+            self.tools.push(ToolEntry {
+                name: name.to_string(),
+                last_called: self.time,
+                is_error: false,
+                error_ttl: 0.0,
+                running: true,
+                started_at: Some(self.time),
+                last_duration_ms: None,
+            });
+        }
+    }
+
+    pub fn tool_finished(&mut self, name: &str, is_error: bool) {
+        self.has_ever_fired = true;
+        if let Some(entry) = self.tools.iter_mut().find(|t| t.name == name) {
+            let started_at = entry.started_at.unwrap_or(entry.last_called);
+            let duration_ms = ((self.time - started_at).max(0.0) * 1_000.0).round() as u64;
+            entry.last_called = self.time;
+            entry.running = false;
+            entry.started_at = None;
+            entry.last_duration_ms = Some(duration_ms);
+            entry.is_error = is_error;
+            entry.error_ttl = if is_error { 5.0 } else { 0.0 };
+        } else {
+            self.tools.push(ToolEntry {
+                name: name.to_string(),
+                last_called: self.time,
+                is_error,
+                error_ttl: if is_error { 5.0 } else { 0.0 },
+                running: false,
+                started_at: None,
+                last_duration_ms: Some(0),
+            });
+        }
     }
 
     fn activity_mode(&self) -> ActivityMode {
@@ -401,8 +470,8 @@ impl InstrumentPanel {
     pub fn update_telemetry(
         &mut self,
         context_pct: f32,
-        tool_name: Option<&str>,
-        tool_error: bool,
+        _tool_name: Option<&str>,
+        _tool_error: bool,
         thinking_level: &str,
         memory_op: Option<(usize, WaveDirection)>,
         agent_active: bool,
@@ -443,27 +512,7 @@ impl InstrumentPanel {
             (self.external_wait - dt * 1.2).clamp(0.0, 1.0)
         };
 
-        // Tool: register call
-        if tool_name.is_some() {
-            self.has_ever_fired = true;
-        }
-        if let Some(name) = tool_name {
-            if let Some(entry) = self.tools.iter_mut().find(|t| t.name == name) {
-                entry.last_called = self.time;
-                if tool_error {
-                    entry.is_error = true;
-                    entry.error_ttl = 5.0;
-                }
-            } else {
-                self.tools.push(ToolEntry {
-                    name: name.to_string(),
-                    last_called: self.time,
-                    is_error: tool_error,
-                    error_ttl: if tool_error { 5.0 } else { 0.0 },
-                });
-            }
-        }
-        // Decay tool error TTLs
+        // Tool recency/error decay is time-based even without a new tool event.
         for tool in &mut self.tools {
             if tool.is_error {
                 tool.error_ttl -= dt;
@@ -497,6 +546,10 @@ impl InstrumentPanel {
         if let Some(entry) = self.tools.iter_mut().find(|t| t.name == name) {
             entry.is_error = true;
             entry.error_ttl = 5.0;
+            entry.running = false;
+            if let Some(started_at) = entry.started_at.take() {
+                entry.last_duration_ms = Some(((self.time - started_at).max(0.0) * 1_000.0).round() as u64);
+            }
         }
     }
 
@@ -790,8 +843,9 @@ impl InstrumentPanel {
 
         let buf = frame.buffer_mut();
         let w = inner.width as usize;
-        let name_w = 15.min(w / 2);
-        let bar_w = w.saturating_sub(name_w + 6).max(2);
+        let duration_w = 6usize.min(w.saturating_sub(8)).max(4);
+        let name_w = 14.min(w.saturating_sub(duration_w + 6)).max(7);
+        let bar_w = w.saturating_sub(name_w + duration_w + 2).max(0);
 
         // Sort by recency
         let mut sorted: Vec<&ToolEntry> = self.tools.iter().collect();
@@ -814,9 +868,19 @@ impl InstrumentPanel {
                 (1.0 - age / 120.0).max(0.0)
             };
 
-            let indicator = if age < 2.0 { "▸ " } else { "  " };
+            let indicator = if tool.is_error {
+                "✗ "
+            } else if tool.running {
+                "▶ "
+            } else if age < 2.0 {
+                "▸ "
+            } else {
+                "  "
+            };
             let ind_color = if tool.is_error {
                 Color::Rgb(224, 72, 72)
+            } else if tool.running {
+                Color::Rgb(232, 186, 104)
             } else if age < 2.0 {
                 Color::Rgb(42, 180, 200)
             } else {
@@ -838,6 +902,8 @@ impl InstrumentPanel {
             };
             let name_color = if tool.is_error {
                 Color::Rgb(224, 72, 72)
+            } else if tool.running {
+                Color::Rgb(232, 186, 104)
             } else if recency > 0.1 {
                 tool_color(recency)
             } else {
@@ -846,17 +912,20 @@ impl InstrumentPanel {
             let bar_filled = (recency * bar_w as f64) as usize;
             let bar_color = if tool.is_error {
                 Color::Rgb(224, 72, 72)
+            } else if tool.running {
+                Color::Rgb(232, 186, 104)
             } else {
                 tool_color(recency)
             };
 
-            let time_str = if age > 999.0 {
-                "   ·".to_string()
-            } else if age > 60.0 {
-                format!("{:>3.0}m", age / 60.0)
+            let duration_ms = if tool.running {
+                tool.started_at
+                    .map(|started_at| ((self.time - started_at).max(0.0) * 1_000.0).round() as u64)
+                    .unwrap_or(0)
             } else {
-                format!("{:>3.0}s", age)
+                tool.last_duration_ms.unwrap_or(0)
             };
+            let time_str = Self::format_duration_ms(duration_ms);
 
             let mut x = inner.x;
             for ch in indicator.chars() {
@@ -871,8 +940,8 @@ impl InstrumentPanel {
                 x += 1;
             }
             let short = tool_short_name(&tool.name);
-            let display_name = if short.len() > name_w - 2 {
-                &short[..name_w - 2]
+            let display_name = if short.len() > name_w {
+                &short[..name_w]
             } else {
                 short.as_str()
             };
@@ -888,6 +957,33 @@ impl InstrumentPanel {
                 x += 1;
             }
             while x < inner.x + 2 + name_w as u16 {
+                if x >= inner.right() {
+                    break;
+                }
+                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                    cell.set_char(' ');
+                    cell.set_bg(panel_bg(t));
+                }
+                x += 1;
+            }
+            for ch in time_str.chars().take(duration_w) {
+                if x >= inner.right() {
+                    break;
+                }
+                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                    cell.set_char(ch);
+                    cell.set_fg(if tool.is_error {
+                        Color::Rgb(224, 72, 72)
+                    } else if tool.running {
+                        Color::Rgb(232, 186, 104)
+                    } else {
+                        Color::Rgb(48, 64, 80)
+                    });
+                    cell.set_bg(panel_bg(t));
+                }
+                x += 1;
+            }
+            while x < inner.x + 2 + name_w as u16 + duration_w as u16 {
                 if x >= inner.right() {
                     break;
                 }
@@ -1054,9 +1150,28 @@ mod tests {
     #[test]
     fn tool_registration() {
         let mut panel = InstrumentPanel::default();
-        panel.update_telemetry(0.0, Some("bash"), false, "off", None, false, 0.016);
+        panel.tool_started("bash");
         assert_eq!(panel.tools.len(), 1);
         assert_eq!(panel.tools[0].name, "bash");
+        assert!(panel.tools[0].running);
+    }
+
+    #[test]
+    fn tool_runtime_finishes_with_duration() {
+        let mut panel = InstrumentPanel::default();
+        panel.tool_started("bash");
+        panel.update_telemetry(0.0, None, false, "off", None, false, 1.25);
+        panel.tool_finished("bash", false);
+        let tool = panel.tools.iter().find(|t| t.name == "bash").unwrap();
+        assert!(!tool.running);
+        assert_eq!(tool.last_duration_ms, Some(1250));
+    }
+
+    #[test]
+    fn duration_formatting_covers_ms_seconds_and_minutes() {
+        assert_eq!(InstrumentPanel::format_duration_ms(220), " 220ms");
+        assert_eq!(InstrumentPanel::format_duration_ms(8_100), " 8.1s");
+        assert_eq!(InstrumentPanel::format_duration_ms(125_000), " 2:05");
     }
 
     #[test]

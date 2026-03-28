@@ -2964,6 +2964,7 @@ impl App {
             }
             AgentEvent::ToolStart { id, name, args } => {
                 self.working_verb = spinner::next_verb();
+                self.instrument_panel.tool_started(&name);
                 let args_summary = crate::r#loop::summarize_tool_args(&name, &args);
                 // Full args for detailed view
                 let detail_args = match name.as_str() {
@@ -3077,6 +3078,9 @@ impl App {
                     }
                 }
                 // Save for instrument telemetry before clearing
+                if let Some(ref name) = self.last_tool_name {
+                    self.instrument_panel.tool_finished(name, is_error);
+                }
                 self.completed_tool_name = self.last_tool_name.take();
             }
             AgentEvent::AgentEnd => {
