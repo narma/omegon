@@ -667,7 +667,7 @@ fn top_right_timestamp<'a>(meta: &SegmentMeta, t: &dyn Theme) -> Option<Line<'a>
 }
 
 fn tool_title_line(
-    icon: &str,
+    status_icon: &str,
     status_color: Color,
     display_name: &str,
     area_width: u16,
@@ -683,23 +683,23 @@ fn tool_title_line(
         .saturating_sub(2)
         .saturating_sub(reserved_right as u16)
         .max(6) as usize;
-    let icon_prefix = format!(" {icon} ");
-    let icon_width = UnicodeWidthStr::width(icon_prefix.as_str());
-    let name_budget = left_budget.saturating_sub(icon_width).max(1);
+    let status_prefix = format!(" {status_icon} ");
+    let prefix_width = UnicodeWidthStr::width(status_prefix.as_str());
+    let name_budget = left_budget.saturating_sub(prefix_width).max(1);
     let title_name = crate::util::truncate(display_name, name_budget);
-    let title_text = format!("{icon_prefix}{title_name} ");
+    let title_text = format!("{status_prefix}{title_name} ");
     let used_width = UnicodeWidthStr::width(title_text.as_str());
     let pad = left_budget.saturating_sub(used_width);
 
     Line::from(vec![
-        Span::styled(icon_prefix, Style::default().fg(status_color)),
+        Span::styled(status_prefix, Style::default().fg(status_color)),
         Span::styled(
             format!("{title_name} "),
             Style::default()
                 .fg(status_color)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" ".repeat(pad), Style::default().fg(status_color)),
+        Span::styled("─".repeat(pad), Style::default().fg(status_color)),
     ])
 }
 
@@ -977,13 +977,13 @@ fn render_tool_card(
                 _ => first_word.to_string(),
             }
         } else {
-            super::instruments::tool_short_name(name)
+            "shell".to_string()
         }
     } else {
-        super::instruments::tool_short_name(name)
+        name.replace('_', " ")
     };
 
-    let (icon, status_color, border_color, bg) = if is_error {
+    let (status_icon, status_color, border_color, bg) = if is_error {
         ("✗", t.error(), t.error(), t.tool_error_bg())
     } else if !complete {
         ("▶", t.warning(), t.warning(), t.tool_success_bg())
@@ -992,7 +992,13 @@ fn render_tool_card(
     };
 
     let timestamp = format_timestamp(meta.timestamp);
-    let title = tool_title_line(icon, status_color, &display_name, area.width, timestamp.as_deref());
+    let title = tool_title_line(
+        status_icon,
+        status_color,
+        &display_name,
+        area.width,
+        timestamp.as_deref(),
+    );
 
     let card_block = Block::default()
         .borders(Borders::ALL)
@@ -1776,7 +1782,8 @@ mod tests {
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
         assert!(top_row.contains("▸"), "top row should retain completed tool icon: {top_row}");
-        assert!(top_row.contains("◇ read") || top_row.contains("◇ rea…"), "top row should retain truncated instrument-aligned tool label: {top_row}");
+        assert!(top_row.contains("read") || top_row.contains("rea…"), "top row should retain truncated tool label: {top_row}");
+        assert!(!top_row.contains("◇ read"), "conversation tool titles should not duplicate status and tool icons: {top_row}");
         assert!(!top_row.contains("filename_that_used_to_bleed"), "long header text should be truncated before colliding with the rest of the title row: {top_row}");
     }
 
@@ -1818,7 +1825,11 @@ mod tests {
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
-        assert!(top_row.contains("◇ read"), "top row should contain the current instrument-aligned tool label: {top_row}");
+        assert!(top_row.contains("read"), "top row should contain the current tool label: {top_row}");
+        assert!(
+            top_row.contains("─"),
+            "top border should continue after the tool title instead of stopping early: {top_row}"
+        );
         assert!(
             !top_row.contains("Cargo.tomlm") && !top_row.contains("package.jsonon"),
             "shorter redraw should not leave stale suffix characters in the title row: {top_row}"
@@ -1845,7 +1856,8 @@ mod tests {
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
         assert!(text.contains("✗"), "should have error icon: {text}");
-        assert!(text.contains("◆ write"), "error cards should still use the instrument-aligned tool label: {text}");
+        assert!(text.contains("write"), "error cards should use the full tool name in conversation view: {text}");
+        assert!(!text.contains("◆ write"), "conversation view should not duplicate the status icon with a second tool icon: {text}");
     }
 
     #[test]
@@ -1868,7 +1880,8 @@ mod tests {
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
         assert!(text.contains("▶"), "running tools should use the amber running indicator from the instrument panel: {text}");
-        assert!(text.contains("◇ read"), "running tools should use the same short name vocabulary as the instrument panel: {text}");
+        assert!(text.contains("read"), "running tools should use a readable conversation title: {text}");
+        assert!(!text.contains("◇ read"), "conversation view should not stack a second tool icon after the running indicator: {text}");
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //! No terminal rendering — uses App::new() with test settings.
 
 use super::*;
+use crate::lifecycle::types::NodeStatus;
 use crate::settings::{ContextClass, Settings, ThinkingLevel};
+use crate::tui::dashboard::FocusedNodeSummary;
 use crate::update::{UpdateChannel, UpdateInfo};
 use tokio::sync::mpsc;
 
@@ -428,6 +430,33 @@ fn selected_tool_segment_exports_args_and_result() {
     assert!(selected.contains("echo hi"), "missing args body: {selected}");
     assert!(selected.contains("result:"), "missing result block: {selected}");
     assert!(selected.contains("hi"), "missing result body: {selected}");
+}
+
+#[test]
+fn selected_tool_segment_copy_excludes_dashboard_content() {
+    let mut app = test_app();
+    app.dashboard.focused_node = Some(FocusedNodeSummary {
+        id: "auth-surface".into(),
+        title: "Dashboard node title that must never be copied".into(),
+        status: NodeStatus::Implementing,
+        open_questions: 2,
+        assumptions: 0,
+        decisions: 3,
+        readiness: 0.6,
+        openspec_change: None,
+    });
+    app.conversation
+        .push_tool_start("t1", "codebase_search", Some("routing"), Some("routing"));
+    app.conversation
+        .push_tool_end("t1", false, Some("core/crates/omegon/src/tui/mod.rs"));
+    app.conversation.select_segment(0);
+
+    let selected = app
+        .conversation
+        .selected_segment_text_with_mode(SegmentExportMode::Raw)
+        .expect("tool text should export");
+    assert!(selected.contains("tool: codebase_search"));
+    assert!(!selected.contains("Dashboard node title that must never be copied"));
 }
 
 #[test]
