@@ -689,10 +689,10 @@ impl InstrumentPanel {
 
             let (mut top_ch, mut bottom_ch, mut fg) = match band {
                 ContextBand::Conversation => (' ', '█', color),
-                ContextBand::System => (' ', '■', color),
-                ContextBand::Memory => (' ', '▓', color),
-                ContextBand::Tools => (' ', '▆', color),
-                ContextBand::Thinking => (' ', '▒', color),
+                ContextBand::System => ('─', '═', color),
+                ContextBand::Memory => ('╌', '≈', color),
+                ContextBand::Tools => ('┆', '┆', color),
+                ContextBand::Thinking => ('·', '⠂', color),
                 ContextBand::Free => ('·', '·', color),
             };
 
@@ -701,10 +701,10 @@ impl InstrumentPanel {
                     let phase = (time * 3.0) + (1.0 - center_rel) * 1.8;
                     let pulse = ((phase.sin() + 1.0) * 0.5 * self.thinking_intensity.max(0.15))
                         .clamp(0.0, 1.0);
-                    let glyphs = ['░', '▒', '▓', '█'];
+                    let glyphs = ['·', '⠂', '⠒', '⠶'];
                     let idx = (pulse * (glyphs.len() as f64 - 1.0)).round() as usize;
                     bottom_ch = glyphs[idx.min(glyphs.len() - 1)];
-                    top_ch = if pulse > 0.72 && center_rel < 0.72 { '▄' } else { ' ' };
+                    top_ch = if pulse > 0.72 && center_rel < 0.72 { '⠤' } else { '·' };
                     fg = if pulse > 0.72 {
                         Color::Rgb(198, 178, 255)
                     } else {
@@ -713,13 +713,14 @@ impl InstrumentPanel {
                 }
                 ActivityMode::ToolChurn if band == ContextBand::Tools => {
                     let pulse = (((time * 10.0) + x as f64 * 0.9).sin() + 1.0) * 0.5;
-                    bottom_ch = if pulse > 0.75 { '█' } else if pulse > 0.4 { '▆' } else { '▄' };
-                    top_ch = if pulse > 0.8 { '▂' } else { ' ' };
+                    bottom_ch = if pulse > 0.75 { '▮' } else if pulse > 0.4 { '┇' } else { '┆' };
+                    top_ch = if pulse > 0.8 { '╻' } else { ' ' };
                     fg = if pulse > 0.75 { Color::Rgb(255, 196, 96) } else { color };
                 }
                 ActivityMode::Waiting if band == ContextBand::Tools => {
                     let pulse = (((time * 2.2) + x as f64 * 0.1).sin() + 1.0) * 0.5;
-                    bottom_ch = if pulse > 0.6 { '▅' } else { '▃' };
+                    bottom_ch = if pulse > 0.6 { '╎' } else { '┆' };
+                    top_ch = ' ';
                     fg = if pulse > 0.6 { Color::Rgb(232, 186, 104) } else { color };
                 }
                 ActivityMode::Idle if band == ContextBand::Free => {
