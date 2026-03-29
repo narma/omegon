@@ -357,8 +357,39 @@ impl App {
         let catalog = self::model_catalog::ModelCatalog::new();
         let mut options: Vec<selector::SelectOption> = Vec::new();
         
+        // Determine which providers are available based on harness status
+        let available_backends = self.previous_harness_status.as_ref()
+            .map(|s| s.inference_backends.iter()
+                .filter(|b| b.available)
+                .map(|b| b.name.to_lowercase())
+                .collect::<std::collections::HashSet<_>>())
+            .unwrap_or_default();
+        
+        let authenticated_providers = self.previous_harness_status.as_ref()
+            .map(|s| s.providers.iter()
+                .filter(|p| p.authenticated)
+                .map(|p| p.name.to_lowercase())
+                .collect::<std::collections::HashSet<_>>())
+            .unwrap_or_default();
+        
         // Group models by provider for visual organization
         for (provider_name, models) in &catalog.providers {
+            let provider_lower = provider_name.to_lowercase();
+            
+            // Skip providers that aren't available
+            let is_local_backend = provider_lower == "ollama";
+            let is_cloud_provider = !is_local_backend;
+            
+            // Ollama: only show if available locally
+            if is_local_backend && !available_backends.contains(&provider_lower) {
+                continue;
+            }
+            
+            // Cloud providers: only show if authenticated
+            if is_cloud_provider && !authenticated_providers.contains(&provider_lower) {
+                continue;
+            }
+            
             for model in models {
                 // Format: "Provider: Model Name — description (context, cost tier, capabilities)"
                 let context = model.context_str();
@@ -391,7 +422,7 @@ impl App {
         
         if options.is_empty() {
             self.conversation.push_system(
-                "Model catalog is empty. Check /model list for available options.",
+                "No available models. Start Ollama (ollama serve) or set up cloud authentication (/login).",
             );
             return;
         }
