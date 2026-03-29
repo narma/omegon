@@ -1,5 +1,11 @@
 ---
 import "../styles/global.css";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+
+const changelog = readFileSync(resolve("../CHANGELOG.md"), "utf-8");
+const versionMatch = changelog.match(/## \[([0-9]+\.[0-9]+\.[0-9]+)\]/);
+const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
 ---
 
 <html lang="en">
@@ -32,7 +38,23 @@ import "../styles/global.css";
         For operators who build.
       </p>
 
-      <pre class="hero-install"><code>curl -fsSL https://omegon.styrene.dev/install.sh | sh</code></pre>
+      <div class="hero-install-wrap">
+        <pre class="hero-install" id="hero-install-pre"><code id="hero-install-cmd">curl -fsSL https://omegon.styrene.dev/install.sh | sh</code></pre>
+        <button class="copy-btn" id="copy-btn" aria-label="Copy install command" title="Copy">
+          <svg class="copy-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
+            <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+          </svg>
+          <svg class="check-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+            <path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <p class="hero-version">
+        installs <a href={`https://github.com/styrene-lab/omegon/releases/tag/${currentVersion}`} class="version-tag">{currentVersion}</a>
+        &thinsp;·&thinsp;
+        <a href="/docs/install">other versions &amp; options →</a>
+      </p>
       <p class="hero-alt-install">or <code>brew tap styrene-lab/tap && brew install omegon</code></p>
 
       <div class="hero-cta">
@@ -87,6 +109,24 @@ import "../styles/global.css";
     <a href="https://github.com/styrene-lab/omegon/blob/main/LICENSE">BSL 1.1</a> ·
     © 2024–2026 Black Meridian, LLC
   </footer>
+  <script>
+    const btn = document.getElementById('copy-btn');
+    const cmd = document.getElementById('hero-install-cmd');
+    if (btn && cmd) {
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(cmd.textContent.trim()).then(() => {
+          btn.classList.add('copied');
+          btn.querySelector('.copy-icon').style.display = 'none';
+          btn.querySelector('.check-icon').style.display = '';
+          setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.querySelector('.copy-icon').style.display = '';
+            btn.querySelector('.check-icon').style.display = 'none';
+          }, 1800);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
 
@@ -166,9 +206,8 @@ import "../styles/global.css";
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 12px 24px;
+    padding: 12px 48px 12px 24px;
     font-size: 14px;
-    margin-bottom: 24px;
     color: var(--accent);
   }
 
@@ -179,10 +218,55 @@ import "../styles/global.css";
     color: inherit;
   }
 
+  .hero-install-wrap {
+    display: inline-block;
+    position: relative;
+    margin-bottom: 8px;
+  }
+
+  .copy-btn {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s, background 0.15s;
+  }
+  .copy-btn:hover {
+    color: var(--fg);
+    background: var(--border-dim);
+  }
+  .copy-btn.copied { color: var(--accent); }
+  .copy-btn svg { width: 15px; height: 15px; }
+
+  .hero-version {
+    font-size: 12px;
+    color: var(--dim);
+    margin-bottom: 20px;
+  }
+  .hero-version a { color: var(--muted); }
+  .hero-version a:hover { color: var(--fg); }
+  .version-tag {
+    font-family: monospace;
+    background: var(--surface);
+    border: 1px solid var(--border-dim);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: var(--accent) !important;
+  }
+
   .hero-alt-install {
     font-size: 13px;
     color: var(--dim);
-    margin-top: -16px;
     margin-bottom: 24px;
   }
   .hero-alt-install code {
