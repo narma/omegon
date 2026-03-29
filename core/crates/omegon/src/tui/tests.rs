@@ -300,6 +300,32 @@ fn ctrl_y_keeps_editor_yank_outside_conversation_focus() {
 }
 
 #[test]
+fn terminal_copy_mode_disables_mouse_capture() {
+    let mut app = test_app();
+    app.mouse_capture_enabled = true;
+
+    app.set_terminal_copy_mode(true);
+    assert!(app.terminal_copy_mode);
+    assert!(!app.mouse_capture_enabled);
+
+    app.set_terminal_copy_mode(false);
+    assert!(!app.terminal_copy_mode);
+    assert!(app.mouse_capture_enabled);
+}
+
+#[test]
+fn copy_slash_command_toggles_terminal_copy_mode() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    assert!(!app.terminal_copy_mode);
+    assert!(matches!(app.handle_slash_command("/copy", &tx), SlashResult::Handled));
+    assert!(app.terminal_copy_mode);
+    assert!(matches!(app.handle_slash_command("/copy off", &tx), SlashResult::Handled));
+    assert!(!app.terminal_copy_mode);
+}
+
+#[test]
 fn empty_editor_up_recalls_latest_history_entry() {
     let mut app = test_app();
     app.history = vec!["first".into(), "second".into(), "third".into()];

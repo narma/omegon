@@ -185,6 +185,8 @@ pub struct App {
     keyboard_enhancement: bool,
     /// Whether crossterm mouse capture is enabled.
     mouse_capture_enabled: bool,
+    /// When true, terminal-native selection/copy mode is active.
+    terminal_copy_mode: bool,
     /// Last left-click press used to detect double-click expansion.
     last_left_click: Option<(u16, u16, std::time::Instant)>,
 }
@@ -299,6 +301,7 @@ impl App {
             update_tx: None,
             keyboard_enhancement: false,
             mouse_capture_enabled: false,
+            terminal_copy_mode: false,
             last_left_click: None,
         }
     }
@@ -312,6 +315,28 @@ impl App {
             let _ = io::stdout().execute(EnableMouseCapture);
         } else {
             let _ = io::stdout().execute(DisableMouseCapture);
+        }
+    }
+
+    fn set_terminal_copy_mode(&mut self, enabled: bool) {
+        if self.terminal_copy_mode == enabled {
+            return;
+        }
+        self.terminal_copy_mode = enabled;
+        self.set_mouse_capture(!enabled);
+        if enabled {
+            self.show_toast(
+                "Terminal copy mode enabled — drag to select, then use your terminal's copy shortcut",
+                ratatui_toaster::ToastType::Info,
+            );
+            self.conversation.push_system(
+                "⧉ Terminal copy mode ON — mouse capture disabled. Drag to select text, then use Cmd+C / Ctrl+Shift+C. Press Esc to return.",
+            );
+        } else {
+            self.show_toast(
+                "Terminal copy mode disabled — pane mouse interaction restored",
+                ratatui_toaster::ToastType::Info,
+            );
         }
     }
 
@@ -1894,6 +1919,7 @@ impl App {
     /// Command registry: (name, description, subcommands).
     const COMMANDS: &'static [(&'static str, &'static str, &'static [&'static str])] = &[
         ("help", "show available commands", &[]),
+        ("copy", "toggle terminal-native copy mode", &["on", "off"]),
         ("model", "view or switch model", &["list"]),
         (
             "think",
@@ -2046,6 +2072,22 @@ impl App {
                     lines.join("\n")
                 ))
             }
+
+            "copy" => match args {
+                "" => {
+                    self.set_terminal_copy_mode(!self.terminal_copy_mode);
+                    SlashResult::Handled
+                }
+                "on" => {
+                    self.set_terminal_copy_mode(true);
+                    SlashResult::Handled
+                }
+                "off" => {
+                    self.set_terminal_copy_mode(false);
+                    SlashResult::Handled
+                }
+                _ => SlashResult::Display("Usage: /copy [on|off]".into()),
+            },
 
             "model" => {
                 if args.is_empty() {
@@ -4410,7 +4452,9 @@ pub async fn run_tui(
                     match (key.code, key.modifiers) {
                         // ── Interrupt: Escape or Ctrl+C ─────────────────
                         (KeyCode::Esc, _) => {
-                            if app.agent_active {
+                            if app.terminal_copy_mode {
+                                app.set_terminal_copy_mode(false);
+                            } else if app.agent_active {
                                 app.interrupt();
                                 app.agent_active = false; // Unblock editor immediately
                                 app.conversation.finalize_message();
@@ -4461,6 +4505,10 @@ pub async fn run_tui(
                             } else {
                                 app.editor.yank();
                             }
+                        }
+                        (KeyCode::Char('t'), KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+                        | (KeyCode::Char('T'), KeyModifiers::CONTROL) => {
+                            app.set_terminal_copy_mode(!app.terminal_copy_mode);
                         }
                         (KeyCode::Char('a'), KeyModifiers::CONTROL) => {
                             app.editor.move_home();
