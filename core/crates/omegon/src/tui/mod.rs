@@ -318,6 +318,11 @@ impl App {
         }
     }
 
+    fn enable_mouse_interaction_mode(&mut self) {
+        self.terminal_copy_mode = false;
+        self.set_mouse_capture(true);
+    }
+
     fn set_terminal_copy_mode(&mut self, enabled: bool) {
         if self.terminal_copy_mode == enabled {
             return;
@@ -3847,7 +3852,8 @@ pub async fn run_tui(
     io::stdout().execute(crossterm::terminal::Clear(
         crossterm::terminal::ClearType::All,
     ))?;
-    // Default to terminal-native selection/copy. Mouse interaction is opt-in.
+    // Default to mouse interaction mode. Terminal-native selection remains
+    // available via Esc or /mouse off.
     io::stdout().execute(crossterm::event::EnableBracketedPaste)?;
 
     // Enable Kitty keyboard protocol when the terminal supports it.
@@ -3888,8 +3894,7 @@ pub async fn run_tui(
 
     let mut app = App::new(settings);
     app.keyboard_enhancement = has_keyboard_enhancement;
-    app.mouse_capture_enabled = true;
-    app.terminal_copy_mode = false;
+    app.enable_mouse_interaction_mode();
     app.history = App::load_history(&config.cwd);
     app.footer_data.cwd = config.cwd.clone();
     app.footer_data.is_oauth = config.is_oauth;

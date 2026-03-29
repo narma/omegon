@@ -486,6 +486,18 @@ fn startup_initialization_prefers_mouse_interaction_mode() {
 }
 
 #[test]
+fn enable_mouse_interaction_mode_restores_capture_from_copy_mode() {
+    let mut app = test_app();
+    app.terminal_copy_mode = true;
+    app.mouse_capture_enabled = false;
+
+    app.enable_mouse_interaction_mode();
+
+    assert!(!app.terminal_copy_mode);
+    assert!(app.mouse_capture_enabled);
+}
+
+#[test]
 fn terminal_copy_mode_disables_mouse_capture() {
     let mut app = test_app();
     app.mouse_capture_enabled = true;
