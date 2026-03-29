@@ -9,8 +9,7 @@
 //! - TUI footer: continuous, re-rendered on BusEvent::HarnessStatusChanged
 //! - Web dashboard: broadcast over WebSocket on the existing event bus
 
-use omegon_memory::MemoryBackend as _;
-use rusqlite;
+use rusqlite::{self, Connection};
 use serde::{Deserialize, Serialize};
 
 /// Complete observable state of the harness.
@@ -281,21 +280,63 @@ impl HarnessStatus {
             return None;
         }
 
-        let backend = omegon_memory::SqliteBackend::open(&db_path).ok()?;
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
+        let conn = Connection::open(db_path).ok()?;
+        conn.busy_timeout(std::time::Duration::from_secs(5)).ok()?;
+
+        let total_facts: usize = conn
+            .query_row("SELECT COUNT(*) FROM facts", [], |r| r.get(0))
             .ok()?;
-        let stats = rt.block_on(backend.stats("default")).ok()?;
+        let active_facts: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facts WHERE status = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let project_facts: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facts WHERE status = 'active' AND layer = 'project'",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let persona_facts: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facts WHERE status = 'active' AND layer = 'persona'",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let working_facts: usize = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facts WHERE status = 'active' AND layer = 'working'",
+                [],
+                |r| r.get(0),
+            )
+            .ok()?;
+        let episodes: usize = conn
+            .query_row("SELECT COUNT(*) FROM episodes", [], |r| r.get(0))
+            .ok()?;
+        let edges: usize = conn
+            .query_row("SELECT COUNT(*) FROM edges WHERE status = 'active'", [], |r| r.get(0))
+            .ok()?;
+        let active_persona_mind: Option<String> = conn
+            .query_row(
+                "SELECT mind FROM facts WHERE status = 'active' AND layer = 'persona' GROUP BY mind ORDER BY COUNT(*) DESC, mind ASC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .ok();
+
         Some(MemoryStatus {
-            total_facts: stats.total_facts,
-            active_facts: stats.active_facts,
-            project_facts: stats.active_facts,
-            persona_facts: 0,
-            working_facts: 0,
-            episodes: stats.episodes,
-            edges: stats.edges,
-            active_persona_mind: None,
+            total_facts,
+            active_facts,
+            project_facts,
+            persona_facts,
+            working_facts,
+            episodes,
+            edges,
+            active_persona_mind,
         })
     }
 
@@ -659,10 +700,13 @@ mod tests {
     #[test]
     fn assemble_runs_without_panic() {
         let status = HarnessStatus::assemble();
-        // Should always have routing defaults
         assert_eq!(status.context_class, "Squad");
-        // Container runtime may or may not be found — that's fine
-        // Just verify it doesn't panic
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn assemble_runs_inside_tokio_runtime() {
+        let status = HarnessStatus::assemble();
+        assert_eq!(status.context_class, "Squad");
     }
 
     #[test]
