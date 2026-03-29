@@ -74,7 +74,7 @@ fn intensity_color(intensity: f64) -> Color {
 
 /// Compact glyph+label for the instrument panel. Keeps tool rows readable
 /// even in narrow terminals. Format: "⌘ label" — 2-char glyph prefix + short name.
-fn tool_short_name(name: &str) -> String {
+pub(crate) fn tool_short_name(name: &str) -> String {
     let (glyph, label) = match name {
         // ── Core file ops ──
         "bash" => ("⌘", "sh"),

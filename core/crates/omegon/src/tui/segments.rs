@@ -943,76 +943,56 @@ fn render_tool_card(
         }
     };
 
-    let (icon, status_color) = if complete {
-        if is_error {
-            ("✗", t.error())
-        } else {
-            ("✓", t.success())
-        }
-    } else {
-        ("⟳", t.warning())
-    };
-
-    // ── Card block with rounded borders ─────────────────────────
-    // For bash, show a short description of what the command does
     let display_name = if name == "bash" {
         if let Some(args) = detail_args {
             let cmd = args.lines().next().unwrap_or(args);
             let first_word = cmd.split_whitespace().next().unwrap_or("bash");
             match first_word {
-                "grep" | "rg" => "search",
-                "find" => "find",
-                "ls" | "dir" => "list",
-                "cat" | "head" | "tail" | "bat" => "read",
-                "sed" | "awk" => "transform",
-                "curl" | "wget" => "fetch",
-                "git" => "git",
-                "cargo" => "cargo",
-                "npm" | "npx" | "pnpm" | "yarn" | "bun" => "npm",
-                "docker" | "podman" => "container",
-                "kubectl" | "k" => "kubectl",
-                "make" | "cmake" => "build",
-                "python" | "python3" | "pip" => "python",
-                "rustc" | "rustup" => "rust",
-                "go" => "go",
-                "dig" | "nslookup" | "host" => "dns",
-                "ssh" | "scp" | "rsync" => "remote",
-                "tar" | "zip" | "unzip" | "gzip" => "archive",
-                "wc" => "count",
-                "sort" | "uniq" => "sort",
-                "diff" | "patch" => "diff",
-                "mkdir" | "rm" | "mv" | "cp" | "chmod" | "chown" => "fs",
-                "echo" | "printf" => "echo",
-                "test" | "[" => "test",
-                "vault" => "vault",
-                "sh" | "bash" | "zsh" => "shell",
-                _ => first_word,
+                "grep" | "rg" => "search".to_string(),
+                "find" => "find".to_string(),
+                "ls" | "dir" => "list".to_string(),
+                "cat" | "head" | "tail" | "bat" => "read".to_string(),
+                "sed" | "awk" => "transform".to_string(),
+                "curl" | "wget" => "fetch".to_string(),
+                "git" => "git".to_string(),
+                "cargo" => "cargo".to_string(),
+                "npm" | "npx" | "pnpm" | "yarn" | "bun" => "npm".to_string(),
+                "docker" | "podman" => "container".to_string(),
+                "kubectl" | "k" => "kubectl".to_string(),
+                "make" | "cmake" => "build".to_string(),
+                "python" | "python3" | "pip" => "python".to_string(),
+                "rustc" | "rustup" => "rust".to_string(),
+                "go" => "go".to_string(),
+                "dig" | "nslookup" | "host" => "dns".to_string(),
+                "ssh" | "scp" | "rsync" => "remote".to_string(),
+                "tar" | "zip" | "unzip" | "gzip" => "archive".to_string(),
+                "wc" => "count".to_string(),
+                "sort" | "uniq" => "sort".to_string(),
+                "diff" | "patch" => "diff".to_string(),
+                "mkdir" | "rm" | "mv" | "cp" | "chmod" | "chown" => "fs".to_string(),
+                "echo" | "printf" => "echo".to_string(),
+                "test" | "[" => "test".to_string(),
+                "vault" => "vault".to_string(),
+                "sh" | "bash" | "zsh" => "shell".to_string(),
+                _ => first_word.to_string(),
             }
         } else {
-            "bash"
+            super::instruments::tool_short_name(name)
         }
     } else {
-        name
+        super::instruments::tool_short_name(name)
+    };
+
+    let (icon, status_color, border_color, bg) = if is_error {
+        ("✗", t.error(), t.error(), t.tool_error_bg())
+    } else if !complete {
+        ("▶", t.warning(), t.warning(), t.tool_success_bg())
+    } else {
+        ("▸", t.accent_muted(), t.accent_muted(), t.tool_success_bg())
     };
 
     let timestamp = format_timestamp(meta.timestamp);
-    let title = tool_title_line(icon, status_color, display_name, area.width, timestamp.as_deref());
-
-    // Border color matches status — makes the card visually distinct
-    let border_color = if !complete {
-        t.warning()
-    } else if is_error {
-        t.error()
-    } else {
-        t.success()
-    };
-
-    // Card background varies by status
-    let bg = if is_error {
-        t.tool_error_bg()
-    } else {
-        t.tool_success_bg()
-    };
+    let title = tool_title_line(icon, status_color, &display_name, area.width, timestamp.as_deref());
 
     let card_block = Block::default()
         .borders(Borders::ALL)
@@ -1768,7 +1748,7 @@ mod tests {
             text.contains("list"),
             "should have display name for ls: {text}"
         );
-        assert!(text.contains("✓"), "should have checkmark: {text}");
+        assert!(text.contains("▸"), "completed tools should use the same teal indicator family as the tool instrument panel: {text}");
     }
 
     #[test]
@@ -1795,8 +1775,8 @@ mod tests {
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
-        assert!(top_row.contains("✓"), "top row should retain tool icon: {top_row}");
-        assert!(top_row.contains("read") || top_row.contains("rea…"), "top row should retain truncated tool label: {top_row}");
+        assert!(top_row.contains("▸"), "top row should retain completed tool icon: {top_row}");
+        assert!(top_row.contains("◇ read") || top_row.contains("◇ rea…"), "top row should retain truncated instrument-aligned tool label: {top_row}");
         assert!(!top_row.contains("filename_that_used_to_bleed"), "long header text should be truncated before colliding with the rest of the title row: {top_row}");
     }
 
@@ -1838,7 +1818,7 @@ mod tests {
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
-        assert!(top_row.contains("read"), "top row should contain the current tool label: {top_row}");
+        assert!(top_row.contains("◇ read"), "top row should contain the current instrument-aligned tool label: {top_row}");
         assert!(
             !top_row.contains("Cargo.tomlm") && !top_row.contains("package.jsonon"),
             "shorter redraw should not leave stale suffix characters in the title row: {top_row}"
@@ -1865,6 +1845,30 @@ mod tests {
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
         assert!(text.contains("✗"), "should have error icon: {text}");
+        assert!(text.contains("◆ write"), "error cards should still use the instrument-aligned tool label: {text}");
+    }
+
+    #[test]
+    fn running_tool_card_uses_instrument_panel_indicator() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::ToolCard {
+                id: "1".into(),
+                name: "read".into(),
+                args_summary: None,
+                detail_args: Some("Cargo.toml".into()),
+                result_summary: None,
+                detail_result: None,
+                is_error: false,
+                complete: false,
+                expanded: false,
+            },
+        };
+        let (area, mut buf) = make_buf(50, 8);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("▶"), "running tools should use the amber running indicator from the instrument panel: {text}");
+        assert!(text.contains("◇ read"), "running tools should use the same short name vocabulary as the instrument panel: {text}");
     }
 
     #[test]
