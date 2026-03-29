@@ -314,6 +314,21 @@ impl InstrumentPanel {
         inference_height.max(tools_height).clamp(10, 16)
     }
 
+    fn band_moniker(band: ContextBand) -> char {
+        match band {
+            ContextBand::Conversation => 'C',
+            ContextBand::System => 'S',
+            ContextBand::Memory => 'M',
+            ContextBand::Tools => 'T',
+            ContextBand::Thinking => 'H',
+            ContextBand::Free => 'F',
+        }
+    }
+
+    fn context_legend() -> &'static str {
+        "C conv  S sys  M mem  T tools  H think"
+    }
+
     pub fn render_inference_panel(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         if area.width < 20 || area.height < 4 {
             return;
@@ -630,15 +645,35 @@ impl InstrumentPanel {
         };
         self.render_context_bar(bar_area, buf, t);
 
+        if inner.height > bar_h {
+            clear_row(inner.y + bar_h, inner.x, inner.right(), buf, panel_bg(t));
+            let legend = crate::util::truncate(Self::context_legend(), inner.width as usize);
+            for (i, ch) in legend.chars().enumerate() {
+                if let Some(cell) = buf.cell_mut(Position::new(inner.x + i as u16, inner.y + bar_h)) {
+                    cell.set_char(ch);
+                    let fg = match ch {
+                        'C' => Self::band_color(ContextBand::Conversation),
+                        'S' => Self::band_color(ContextBand::System),
+                        'M' => Self::band_color(ContextBand::Memory),
+                        'T' => Self::band_color(ContextBand::Tools),
+                        'H' => Self::band_color(ContextBand::Thinking),
+                        _ => t.dim(),
+                    };
+                    cell.set_fg(fg);
+                    cell.set_bg(panel_bg(t));
+                }
+            }
+        }
+
         // Tree + memory strings: break through the left border
-        if inner.height > bar_h && !active_minds.is_empty() {
+        if inner.height > bar_h + 1 && !active_minds.is_empty() {
             // Start at the panel's left BORDER (area.x, not inner.x)
             // so the tree trunk overlays the border character
             let tree_area = Rect {
                 x: area.x,
-                y: inner.y + bar_h,
+                y: inner.y + bar_h + 1,
                 width: inner.width + 1, // include border column
-                height: inner.height - bar_h,
+                height: inner.height - bar_h - 1,
             };
             self.render_memory_strings(&active_minds, tree_area, buf, t);
         }
@@ -1342,6 +1377,31 @@ mod tests {
         assert_eq!(panel.minds[0].fact_count, 180);
         assert_eq!(panel.minds[1].fact_count, 12);
         assert_eq!(panel.minds[2].fact_count, 6);
+    }
+
+    #[test]
+    fn inference_context_bar_renders_bucket_monikers() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(180, 12, 6, 0.08);
+        panel.tool_started("read");
+        panel.update_telemetry(68.0, Some("read"), false, "high", None, true, 0.016);
+
+        let area = Rect::new(0, 0, 64, 10);
+        let backend = ratatui::backend::TestBackend::new(64, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+        terminal.draw(|f| panel.render_inference_panel(area, f, &t)).unwrap();
+
+        let buf = terminal.backend().buffer();
+        let legend_row: String = (0..area.width)
+            .map(|x| buf[(x, 3)].symbol().to_string())
+            .collect();
+
+        assert!(legend_row.contains("C conv"), "conversation bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("S sys"), "system bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("M mem"), "memory bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("T tools"), "tools bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("H think"), "thinking bucket legend should be visible: {legend_row}");
     }
 }
 
