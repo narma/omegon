@@ -767,10 +767,10 @@ fn render_assistant_text(
         )));
     }
 
-    // Thinking block — collapsed summary with line count
+    // Thinking block — stream full reasoning live, collapse after completion.
     if !thinking.is_empty() {
         let think_lines: Vec<&str> = thinking.lines().collect();
-        let show = think_lines.len().min(6);
+        let show = if complete { think_lines.len().min(6) } else { think_lines.len() };
         lines.push(Line::from(vec![
             Span::styled("◌ ", Style::default().fg(t.border()).bg(bg)),
             Span::styled(
@@ -794,7 +794,7 @@ fn render_assistant_text(
                     .add_modifier(Modifier::ITALIC),
             )));
         }
-        if think_lines.len() > show {
+        if complete && think_lines.len() > show {
             lines.push(Line::from(Span::styled(
                 format!("  ⋯ {} more", think_lines.len() - show),
                 Style::default().fg(t.border_dim()).bg(bg),
@@ -1685,6 +1685,43 @@ mod tests {
         assert!(text.contains("2 edits"), "change cards should summarize edit count: {text}");
         assert!(!text.contains("oldText"), "change cards should not leak raw JSON keys: {text}");
         assert!(!text.contains("\"edits\""), "change cards should not render the raw JSON payload: {text}");
+    }
+
+    #[test]
+    fn incomplete_assistant_renders_full_thinking_live() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::AssistantText {
+                text: String::new(),
+                thinking: "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8".into(),
+                complete: false,
+            },
+        };
+        let (area, mut buf) = make_buf(60, 16);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("l8"), "live thinking should render the tail: {text}");
+        assert!(
+            !text.contains("⋯ 2 more"),
+            "incomplete assistant thinking should not be collapsed: {text}"
+        );
+    }
+
+    #[test]
+    fn complete_assistant_collapses_long_thinking_summary() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::AssistantText {
+                text: "done".into(),
+                thinking: "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8".into(),
+                complete: true,
+            },
+        };
+        let (area, mut buf) = make_buf(60, 16);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("l6"), "collapsed thinking should keep the preview: {text}");
+        assert!(text.contains("⋯ 2 more"), "collapsed thinking should show a summary hint: {text}");
     }
 
     #[test]
