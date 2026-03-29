@@ -150,6 +150,21 @@
       "bound_change": null,
       "created_at": "2026-03-29T20:19:15Z",
       "updated_at": "2026-03-29T20:19:15Z"
+    },
+    {
+      "id": "huggingface-dynamic-model-browser",
+      "title": "HuggingFace dynamic model browser with API caching",
+      "state": "seed",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-03-29T21:12:57Z",
+      "updated_at": "2026-03-29T21:12:57Z"
     }
   ],
   "changes": [],
@@ -366,6 +381,15 @@
       "timestamp": "2026-03-29T20:19:15Z",
       "entity_type": "node",
       "entity_id": "model-selector-ux",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-03-29T21:12:57Z",
+      "entity_type": "node",
+      "entity_id": "huggingface-dynamic-model-browser",
       "from_state": "(new)",
       "to_state": "seed",
       "reason": null,
