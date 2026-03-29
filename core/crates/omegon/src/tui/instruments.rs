@@ -824,11 +824,7 @@ impl InstrumentPanel {
             } else {
                 Color::Rgb(64, 88, 112)
             };
-            let label = if mind.fact_count > 0 {
-                format!("{} ⌗{}", mind.name, mind.fact_count)
-            } else {
-                mind.name.clone()
-            };
+            let label = format!("{} ⌗{}", mind.name, mind.fact_count);
             for (i, ch) in label.chars().enumerate() {
                 let x = name_start + i;
                 if x >= w {
@@ -844,8 +840,15 @@ impl InstrumentPanel {
             // Sine wave — braille dots for sub-character resolution
             // Each braille cell: 2 dots wide × 4 dots tall
             // Wave displacement maps to vertical dot position
-            let wave_start = (name_start + label.len() + 1).min(w / 3);
+            let min_gap = 2usize;
+            let min_wave_width = 6usize;
+            let protected_label_end = name_start + label.chars().count() + min_gap;
+            let max_wave_start = w.saturating_sub(min_wave_width);
+            let wave_start = protected_label_end.min(max_wave_start);
             let wave_w = w.saturating_sub(wave_start);
+            if wave_w == 0 {
+                continue;
+            }
             let wave_len = mind.wave.len();
             let idle_phase = self.time;
             for wx in 0..wave_w {
@@ -1305,6 +1308,38 @@ mod tests {
     }
 
     #[test]
+    fn zero_fact_minds_keep_explicit_counts() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(0, 0, 0, 0.0);
+        assert_eq!(panel.debug_mind_fact_count(0), Some(0));
+        assert_eq!(panel.debug_mind_fact_count(1), Some(0));
+        assert_eq!(panel.debug_mind_fact_count(2), Some(0));
+    }
+
+    #[test]
+    fn narrow_memory_rows_preserve_count_before_wave() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(0, 0, 0, 0.0);
+        let area = Rect::new(0, 0, 24, 6);
+        let backend = ratatui::backend::TestBackend::new(24, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+
+        terminal
+            .draw(|f| panel.render_inference_panel(area, f, &t))
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let line: String = (0..buf.area.width)
+            .map(|x| buf[(x, 4)].symbol().to_string())
+            .collect::<String>();
+        assert!(
+            line.contains("project ⌗0") || line.contains("working ⌗0") || line.contains("episodes ⌗0"),
+            "narrow memory rows should preserve explicit counts before the wave: {line:?}"
+        );
+    }
+
+    #[test]
     fn tool_error_finish_records_runtime_once() {
         let mut panel = InstrumentPanel::default();
         panel.tool_started("bash");
@@ -1400,11 +1435,11 @@ mod tests {
             .map(|x| buf[(x, 3)].symbol().to_string())
             .collect();
 
-        assert!(legend_row.contains("C conv"), "conversation bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains("S sys"), "system bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains("M mem"), "memory bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains("T tools"), "tools bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains("H think"), "thinking bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("◌ conv"), "conversation bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("✉ sys"), "system bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("◈ mem"), "memory bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("⚒ tools"), "tools bucket legend should be visible: {legend_row}");
+        assert!(legend_row.contains("◔ think"), "thinking bucket legend should be visible: {legend_row}");
     }
 }
 
