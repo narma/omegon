@@ -86,7 +86,6 @@ pub async fn run(
     let mut stuck_detector = StuckDetector::new();
     let session_start = Instant::now();
     let mut turn: u32 = 0;
-    let mut commit_nudged = false;
 
     loop {
         if cancel.is_cancelled() {
@@ -329,8 +328,8 @@ pub async fn run(
             // Check if the agent skipped committing.
             // If the conversation has edit/write calls but hasn't been nudged yet,
             // give it one more turn to commit.
-            if !commit_nudged && has_mutations(conversation) && turn < config.max_turns {
-                commit_nudged = true;
+            if !conversation.intent.commit_nudged && has_mutations(conversation) && turn < config.max_turns {
+                conversation.intent.commit_nudged = true;
                 tracing::info!("Agent stopped without committing — nudging");
                 conversation.push_user(
                     "[System: You made file changes but did not run `git add` and `git commit`. \

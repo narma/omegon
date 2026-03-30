@@ -91,6 +91,10 @@ pub struct IntentDocument {
 
     pub files_read: IndexSet<PathBuf>,
     pub files_modified: IndexSet<PathBuf>,
+    /// Set to true after the agent has been nudged to commit once.
+    /// Persists across loop invocations (TUI re-enters run() per user turn)
+    /// to prevent the nudge from firing every turn in the same session.
+    pub commit_nudged: bool,
 
     pub constraints_discovered: Vec<String>,
     pub failed_approaches: Vec<FailedApproach>,
@@ -140,9 +144,11 @@ impl IntentDocument {
                     }
                 }
                 // commit clears the mutation set — after a commit the working tree is clean.
-                // Without this, the end-of-turn nudge fires even when the agent already committed.
+                // Also resets commit_nudged so the agent can be nudged again if it makes
+                // further changes after committing.
                 "commit" => {
                     self.files_modified.clear();
+                    self.commit_nudged = false;
                 }
                 // bash: can't reliably track which files are modified by arbitrary commands.
                 // File tracking for bash is inherently best-effort — the agent should use
