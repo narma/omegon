@@ -2385,16 +2385,19 @@ impl App {
                     // No args → open interactive context class selector
                     self.open_context_selector();
                     SlashResult::Handled
-                } else if let Some(mode) = crate::settings::ContextMode::parse(args) {
+                } else if let Some(class) = crate::settings::ContextClass::parse(args) {
                     self.update_settings(|s| {
-                        s.context_mode = mode;
-                        s.apply_context_mode();
+                        s.context_class = class;
+                        s.context_window = class.nominal_tokens();
+                        s.context_mode = class.context_mode();
                     });
                     let s = self.settings();
                     self.footer_data.context_window = s.context_window;
-                    SlashResult::Display(format!("Context → {} {}", mode.icon(), mode.as_str()))
+                    SlashResult::Display(format!("Context → {}", class.label()))
                 } else {
-                    SlashResult::Display(format!("Unknown mode: {args}. Options: 200k, 1m"))
+                    SlashResult::Display(format!(
+                        "Unknown class: {args}. Options: squad, maniple, clan, legion"
+                    ))
                 }
             }
 
