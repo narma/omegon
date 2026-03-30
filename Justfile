@@ -234,7 +234,8 @@ rc:
 
     # Test first (faster than build, catches errors early)
     echo "Testing..."
-    cd core && cargo test -p omegon 2>&1 | tail -3
+    # Auto-accept snapshot updates — version bump invalidates version-string snapshots
+    cd core && INSTA_UPDATE=always cargo test -p omegon 2>&1 | tail -3
     cd ..
 
     # Commit and tag BEFORE final build so the binary has the right sha
