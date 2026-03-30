@@ -57,6 +57,11 @@ pub struct Settings {
     /// "no provider" instead of a model name that can't actually be used.
     #[serde(skip)]
     pub provider_connected: bool,
+
+    /// Enable mouse capture (pane clicks, wheel scroll, segment targeting).
+    /// Defaults to true. Set to false to restore terminal-native text selection.
+    #[serde(default = "default_mouse")]
+    pub mouse: bool,
 }
 
 /// Tool card display mode in the conversation view.
@@ -236,6 +241,10 @@ fn default_update_channel() -> String {
     "stable".to_string()
 }
 
+fn default_mouse() -> bool {
+    true
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let context_window = 200_000;
@@ -251,6 +260,7 @@ impl Default for Settings {
             provider_order: Vec::new(),
             update_channel: default_update_channel(),
             provider_connected: true, // optimistic default — set false when NullBridge
+            mouse: true,
         }
     }
 }

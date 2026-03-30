@@ -3958,9 +3958,13 @@ pub async fn run_tui(
             .unwrap_or(42),
     );
 
-    let mut app = App::new(settings);
+    let mouse_enabled = settings.lock().map(|s| s.mouse).unwrap_or(true);
+    let mut app = App::new(settings.clone());
     app.keyboard_enhancement = has_keyboard_enhancement;
-    app.enable_mouse_interaction_mode();
+    // Respect the persisted mouse setting (default: true).
+    if mouse_enabled {
+        app.enable_mouse_interaction_mode();
+    }
     app.history = App::load_history(&config.cwd);
     app.footer_data.cwd = config.cwd.clone();
     app.footer_data.is_oauth = config.is_oauth;
@@ -4557,9 +4561,7 @@ pub async fn run_tui(
                     match (key.code, key.modifiers) {
                         // ── Interrupt: Escape or Ctrl+C ─────────────────
                         (KeyCode::Esc, _) => {
-                            if !app.terminal_copy_mode {
-                                app.set_terminal_copy_mode(true);
-                            } else if app.agent_active {
+                            if app.agent_active {
                                 app.interrupt();
                                 app.agent_active = false; // Unblock editor immediately
                                 app.conversation.finalize_message();
