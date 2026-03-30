@@ -1042,6 +1042,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                     let _ = events_tx.send(AgentEvent::TurnEnd {
                                         turn: agent.conversation.intent.stats.turns,
                                         estimated_tokens: est,
+                                        actual_input_tokens: 0,
+                                        actual_output_tokens: 0,
+                                        cache_read_tokens: 0,
                                     });
                                 }
                             }

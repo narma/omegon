@@ -132,7 +132,7 @@ async fn run_single(
                 match event {
                     LlmEvent::TextDelta { delta } => response_text.push_str(&delta),
                     LlmEvent::ToolCallEnd { .. } => tool_used = true,
-                    LlmEvent::Done { message } => {
+                    LlmEvent::Done { message, .. } => {
                         // Extract text from the done message if we missed deltas
                         if response_text.is_empty() {
                             if let Some(text) = message

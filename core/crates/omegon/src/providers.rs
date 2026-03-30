@@ -791,6 +791,10 @@ async fn parse_anthropic_stream(
     let mut current_block_text = String::new(); // per-block text accumulator
     let mut current_thinking_text = String::new();
     let mut current_thinking_signature: Option<String> = None;
+    // Actual billing tokens captured from message_start / message_delta
+    let mut acc_input_tokens: u64 = 0;
+    let mut acc_output_tokens: u64 = 0;
+    let mut acc_cache_read_tokens: u64 = 0;
 
     tracing::debug!("parsing Anthropic SSE stream");
     let mut event_count = 0u32;
@@ -915,11 +919,16 @@ async fn parse_anthropic_stream(
             // message_delta: stop_reason + final usage
             "message_delta" => {
                 if let Some(usage) = event.get("usage") {
+                    let out = usage["output_tokens"].as_u64().unwrap_or(0);
+                    let inp = usage["input_tokens"].as_u64().unwrap_or(0);
+                    let cr  = usage["cache_read_input_tokens"].as_u64().unwrap_or(0);
+                    let cc  = usage["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+                    if out > 0 { acc_output_tokens = out; }
+                    if inp > 0 { acc_input_tokens  = inp; }
+                    if cr  > 0 { acc_cache_read_tokens = cr; }
                     tracing::info!(
-                        output_tokens = usage["output_tokens"].as_u64().unwrap_or(0),
-                        input_tokens = usage["input_tokens"].as_u64().unwrap_or(0),
-                        cache_read = usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
-                        cache_creation = usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+                        output_tokens = out, input_tokens = inp,
+                        cache_read = cr, cache_creation = cc,
                         "Anthropic usage (final)"
                     );
                 }
@@ -967,6 +976,9 @@ async fn parse_anthropic_stream(
                         "tool_calls": tc_vals,
                         "content": content_blocks,
                     }),
+                    input_tokens: acc_input_tokens,
+                    output_tokens: acc_output_tokens,
+                    cache_read_tokens: acc_cache_read_tokens,
                 });
                 return false; // stop
             }
@@ -1114,6 +1126,8 @@ async fn parse_openai_stream(
 ) -> anyhow::Result<()> {
     let mut full_text = String::new();
     let mut tool_calls: Vec<ToolCallAccum> = Vec::new();
+    let mut acc_input_tokens: u64 = 0;
+    let mut acc_output_tokens: u64 = 0;
 
     let _ = tx.try_send(LlmEvent::Start);
     let _ = tx.try_send(LlmEvent::TextStart);
@@ -1125,9 +1139,13 @@ async fn parse_openai_stream(
 
         // Usage block appears at the top level of the final chunk
         if let Some(usage) = event.get("usage") {
+            let pt = usage["prompt_tokens"].as_u64().unwrap_or(0);
+            let ct = usage["completion_tokens"].as_u64().unwrap_or(0);
+            if pt > 0 { acc_input_tokens  = pt; }
+            if ct > 0 { acc_output_tokens = ct; }
             tracing::info!(
-                prompt_tokens = usage["prompt_tokens"].as_u64().unwrap_or(0),
-                completion_tokens = usage["completion_tokens"].as_u64().unwrap_or(0),
+                prompt_tokens = pt,
+                completion_tokens = ct,
                 total_tokens = usage["total_tokens"].as_u64().unwrap_or(0),
                 "OpenAI usage"
             );
@@ -1191,6 +1209,9 @@ async fn parse_openai_stream(
             let tc_vals: Vec<Value> = tool_calls.iter().map(|tc| tc.to_value()).collect();
             let _ = tx.try_send(LlmEvent::Done {
                 message: json!({"text": full_text, "tool_calls": tc_vals}),
+                input_tokens: acc_input_tokens,
+                output_tokens: acc_output_tokens,
+                cache_read_tokens: 0,
             });
             return false;
         }
@@ -1682,16 +1703,23 @@ async fn parse_codex_stream(
             }
             "response.completed" => {
                 // Extract usage from the completed response
+                let mut codex_input: u64 = 0;
+                let mut codex_output: u64 = 0;
                 if let Some(usage) = event.pointer("/response/usage") {
+                    codex_input  = usage["input_tokens"].as_u64().unwrap_or(0);
+                    codex_output = usage["output_tokens"].as_u64().unwrap_or(0);
                     tracing::info!(
-                        input_tokens = usage["input_tokens"].as_u64().unwrap_or(0),
-                        output_tokens = usage["output_tokens"].as_u64().unwrap_or(0),
-                        total_tokens = usage["total_tokens"].as_u64().unwrap_or(0),
+                        input_tokens  = codex_input,
+                        output_tokens = codex_output,
+                        total_tokens  = usage["total_tokens"].as_u64().unwrap_or(0),
                         "Codex usage"
                     );
                 }
                 let _ = tx.try_send(LlmEvent::Done {
                     message: json!({"text": full_text, "tool_calls": completed_tool_calls}),
+                    input_tokens: codex_input,
+                    output_tokens: codex_output,
+                    cache_read_tokens: 0,
                 });
                 return false;
             }

@@ -457,7 +457,20 @@ pub enum IpcEventPayload {
 
     /// Emitted when a turn completes. Always follows all tool and message events.
     #[serde(rename = "turn.ended")]
-    TurnEnded { turn: u32, estimated_tokens: usize },
+    TurnEnded {
+        turn: u32,
+        /// Estimate from local heuristic (chars/4). Always set.
+        estimated_tokens: usize,
+        /// Actual input tokens billed by the provider this turn. 0 = not reported.
+        #[serde(default)]
+        actual_input_tokens: u64,
+        /// Actual output tokens billed by the provider this turn. 0 = not reported.
+        #[serde(default)]
+        actual_output_tokens: u64,
+        /// Provider-reported cache-read tokens (Anthropic). 0 if not applicable.
+        #[serde(default)]
+        cache_read_tokens: u64,
+    },
 
     // ── Message streaming ──────────────────────────────────────────────────
     /// Streaming text delta. Every delta is in-order; do not drop.
@@ -874,6 +887,12 @@ pub enum AgentEvent {
         turn: u32,
         /// Real token estimate from conversation history. Zero on early-exit paths.
         estimated_tokens: usize,
+        /// Actual input tokens reported by the provider. 0 = not available.
+        actual_input_tokens: u64,
+        /// Actual output tokens reported by the provider. 0 = not available.
+        actual_output_tokens: u64,
+        /// Cache-read tokens (Anthropic). 0 if not applicable.
+        cache_read_tokens: u64,
     },
     AgentEnd,
     PhaseChanged {

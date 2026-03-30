@@ -126,6 +126,15 @@ pub enum LlmEvent {
     Done {
         /// The complete assistant message in Omegon's format
         message: Value,
+        /// Actual input tokens billed by the provider (0 = not reported)
+        #[serde(default)]
+        input_tokens: u64,
+        /// Actual output tokens billed by the provider (0 = not reported)
+        #[serde(default)]
+        output_tokens: u64,
+        /// Cache-read tokens (Anthropic prompt caching; 0 if not applicable)
+        #[serde(default)]
+        cache_read_tokens: u64,
     },
     #[serde(rename = "error")]
     Error { message: String },
@@ -316,7 +325,7 @@ mod tests {
         let done = r#"{"type":"done","message":{"text":"done"}}"#;
         let event: LlmEvent = serde_json::from_str(done).unwrap();
         match event {
-            LlmEvent::Done { message } => assert!(message.is_object()),
+            LlmEvent::Done { message, .. } => assert!(message.is_object()),
             _ => panic!("expected Done"),
         }
 

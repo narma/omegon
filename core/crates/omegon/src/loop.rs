@@ -106,6 +106,9 @@ pub async fn run(
             let _ = events.send(AgentEvent::TurnEnd {
                 turn,
                 estimated_tokens: conversation.estimate_tokens(),
+                actual_input_tokens: 0,
+                actual_output_tokens: 0,
+                cache_read_tokens: 0,
             });
             break;
         }
@@ -292,10 +295,19 @@ pub async fn run(
             _ = cancel.cancelled() => {
                 tracing::info!("Agent loop cancelled during LLM streaming");
                 bus.emit(&omegon_traits::BusEvent::TurnEnd { turn });
-                let _ = events.send(AgentEvent::TurnEnd { turn, estimated_tokens: conversation.estimate_tokens() });
+                let _ = events.send(AgentEvent::TurnEnd {
+                    turn,
+                    estimated_tokens: conversation.estimate_tokens(),
+                    actual_input_tokens: 0,
+                    actual_output_tokens: 0,
+                    cache_read_tokens: 0,
+                });
                 break;
             }
         };
+
+        // Real provider token counts for this turn (0 if provider didn't report them)
+        let (act_in, act_out, act_cr) = assistant_msg.provider_tokens;
 
         // ─── Parse ambient capture blocks (omg: tags) ───────────────
         let captured =
@@ -325,6 +337,9 @@ pub async fn run(
                 let _ = events.send(AgentEvent::TurnEnd {
                     turn,
                     estimated_tokens: conversation.estimate_tokens(),
+                    actual_input_tokens: act_in,
+                    actual_output_tokens: act_out,
+                    cache_read_tokens: act_cr,
                 });
                 continue; // give it one more turn to commit
             }
@@ -332,6 +347,9 @@ pub async fn run(
             let _ = events.send(AgentEvent::TurnEnd {
                 turn,
                 estimated_tokens: conversation.estimate_tokens(),
+                actual_input_tokens: act_in,
+                actual_output_tokens: act_out,
+                cache_read_tokens: act_cr,
             });
             break;
         }
@@ -421,6 +439,9 @@ pub async fn run(
         let _ = events.send(AgentEvent::TurnEnd {
             turn,
             estimated_tokens: conversation.estimate_tokens(),
+            actual_input_tokens: act_in,
+            actual_output_tokens: act_out,
+            cache_read_tokens: act_cr,
         });
     }
 
@@ -670,6 +691,7 @@ async fn consume_llm_stream(
     let mut thinking_parts: Vec<String> = Vec::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut final_raw: Value = Value::Null;
+    let mut provider_tokens: (u64, u64, u64) = (0, 0, 0); // (input, output, cache_read)
 
     let _ = events.send(AgentEvent::MessageStart {
         role: "assistant".into(),
@@ -727,8 +749,9 @@ async fn consume_llm_stream(
                     arguments: tool_call.arguments,
                 });
             }
-            LlmEvent::Done { message } => {
+            LlmEvent::Done { message, input_tokens, output_tokens, cache_read_tokens } => {
                 final_raw = message.get("raw").cloned().unwrap_or(message);
+                provider_tokens = (input_tokens, output_tokens, cache_read_tokens);
                 break;
             }
             LlmEvent::Error { message } => {
@@ -767,6 +790,7 @@ async fn consume_llm_stream(
         thinking,
         tool_calls,
         raw: final_raw,
+        provider_tokens,
     })
 }
 

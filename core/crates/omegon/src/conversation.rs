@@ -38,6 +38,20 @@ pub struct AssistantMessage {
     pub tool_calls: Vec<ToolCall>,
     /// The complete provider response — opaque, preserved for multi-turn continuity
     pub raw: Value,
+    /// Actual billing tokens reported by the provider. (0,0,0) = not reported.
+    pub provider_tokens: (u64, u64, u64), // (input, output, cache_read)
+}
+
+impl Default for AssistantMessage {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            thinking: None,
+            tool_calls: Vec::new(),
+            raw: Value::Null,
+            provider_tokens: (0, 0, 0),
+        }
+    }
 }
 
 impl AssistantMessage {
@@ -777,6 +791,7 @@ impl ConversationState {
                                 })
                                 .collect(),
                             raw: raw.unwrap_or(Value::Null),
+                            provider_tokens: (0, 0, 0),
                         },
                         turn,
                     ),
@@ -1071,6 +1086,7 @@ mod tests {
                 arguments: serde_json::json!({}),
             }],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
     }
 
@@ -1085,6 +1101,7 @@ mod tests {
             thinking: Some("very long internal thinking...".repeat(100)),
             tool_calls: vec![],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
         conv.intent.stats.turns = 1; // Advance turn so the message is old
 
@@ -1107,6 +1124,7 @@ mod tests {
             thinking: None,
             tool_calls: vec![],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
         conv.intent.stats.turns = 1;
 
@@ -1173,6 +1191,7 @@ mod tests {
             thinking: Some("detailed thinking here...".repeat(50)),
             tool_calls: vec![],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
@@ -1217,6 +1236,7 @@ mod tests {
                 arguments: serde_json::json!({"path": "src/foo.rs"}),
             }],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
         conv.push_tool_result(ToolResultEntry {
             call_id: "tc1".into(),
@@ -1296,6 +1316,7 @@ mod tests {
             thinking: None,
             tool_calls: vec![],
             raw: Value::Null,
+            provider_tokens: (0, 0, 0),
         });
 
         // Advance to turn 5 so turn-0 messages are outside decay window
@@ -1323,6 +1344,7 @@ mod tests {
             thinking: None,
             tool_calls: vec![],
             raw: Value::Null,
+            provider_tokens: (0, 0, 0),
         });
 
         // Advance and add recent
@@ -1583,6 +1605,7 @@ mod tests {
             thinking: None,
             tool_calls: vec![],
             raw: Value::Null,
+            provider_tokens: (0, 0, 0),
         });
 
         // Turn 1's tool result should now be in referenced_turns
@@ -1737,6 +1760,7 @@ mod tests {
             thinking: Some("deep reasoning here".into()),
             tool_calls: vec![],
             raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
         });
 
         let tmp = std::env::temp_dir().join("omegon-test-decay-session.json");
@@ -1767,6 +1791,7 @@ mod tests {
                 thinking: None,
                 tool_calls: vec![],
                 raw: serde_json::Value::Null,
+            provider_tokens: (0, 0, 0),
             });
         }
 

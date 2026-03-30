@@ -338,6 +338,9 @@ mod tests {
             AgentEvent::TurnEnd {
                 turn: 1,
                 estimated_tokens: 0,
+                actual_input_tokens: 0,
+                actual_output_tokens: 0,
+                cache_read_tokens: 0,
             },
             AgentEvent::MessageStart {
                 role: "assistant".into(),

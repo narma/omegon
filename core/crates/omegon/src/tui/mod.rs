@@ -3155,11 +3155,17 @@ impl App {
             AgentEvent::TurnEnd {
                 turn,
                 estimated_tokens,
+                actual_input_tokens,
+                actual_output_tokens: _,
+                cache_read_tokens: _,
             } => {
                 self.turn = turn;
                 let ctx_window = self.footer_data.context_window;
                 if ctx_window > 0 {
-                    let tokens = if estimated_tokens > 0 {
+                    // Prefer actual provider-reported tokens; fall back to local estimate.
+                    let tokens = if actual_input_tokens > 0 {
+                        actual_input_tokens as usize
+                    } else if estimated_tokens > 0 {
                         estimated_tokens
                     } else {
                         (turn as usize) * 2000 + (self.tool_calls as usize) * 500
