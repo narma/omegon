@@ -202,7 +202,7 @@
     "opened": "2026-03-29T16:13:57Z",
     "nodes": [],
     "frozen": false,
-    "rc_count": 13,
+    "rc_count": 14,
     "notes": [
       "feat(auth): restructure /login by company=api-key / product=subscription paradigm",
       "feat(auth): support headless OAuth login via paste-back flow",
@@ -231,9 +231,10 @@
       "fix(tui): process harness status during splash event drain",
       "fix(tui): revert overzealous provider filtering, add /model list command",
       "fix(tui,providers): dynamic Ollama catalog, auth-gated cloud providers, expanded routing",
+      "fix: D2 render timing, MCP per-server timeout, stale Esc mouse hint",
       "refactor(providers): remove MLX as dedicated provider — use Ollama instead"
     ],
-    "last_rc": "2026-03-30T20:35:46Z",
-    "rc_version": "0.15.5-rc.15"
+    "last_rc": "2026-03-30T21:20:21Z",
+    "rc_version": "0.15.5-rc.16"
   }
 }
