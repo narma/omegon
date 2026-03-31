@@ -546,7 +546,9 @@ impl SplashScreen {
         );
 
         // Vertically center
-        let content_height = logo_frame.len() + 4; // logo + checklist + prompt + spacers
+        // 1 blank + ceil(items/3) grid rows + 1 blank + 1 prompt = items/3 + 3 extra;
+        // use +6 to match the select_tier minimum so centering never overflows.
+        let content_height = logo_frame.len() + 6; // logo + grid(3 rows) + blank + prompt + spacers
         let top_pad = (area.height as usize).saturating_sub(content_height) / 2;
         for _ in 0..top_pad {
             lines.push(Line::from(""));

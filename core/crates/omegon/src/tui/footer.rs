@@ -226,11 +226,9 @@ impl FooterData {
                 format!("{} {:.0}%", self.context_class.short(), self.context_percent.min(100.0))
             };
             let tier_text = format!(
-                "{} · ◎ {} · {} {}",
+                "{} · think {}",
                 capitalize(&self.model_tier),
                 capitalize(&self.thinking_level),
-                self.context_mode.icon(),
-                self.context_mode.as_str()
             );
             let session_text = format!("T·{} · ⚙ {} · ↻ {}", self.turn, self.tool_calls, self.compactions);
             let next_ver = env!("OMEGON_NEXT_VERSION");
