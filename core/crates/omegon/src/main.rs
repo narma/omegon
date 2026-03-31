@@ -765,6 +765,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // ─── Event channel ──────────────────────────────────────────────────
     let (events_tx, events_rx) = broadcast::channel::<AgentEvent>(256);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<tui::TuiCommand>(16);
+    
+    // Wire command_tx to ContextProvider for tool dispatch
+    if let Ok(mut shared_tx) = agent.command_tx.lock() {
+        *shared_tx = Some(command_tx.clone());
+    }
+    
     let pending_compact = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let web_command_tx = command_tx.clone(); // For forwarding web dashboard commands
     let ipc_command_tx = command_tx.clone(); // For forwarding IPC commands
@@ -1043,6 +1049,17 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             let est = agent.conversation.estimate_tokens();
                             if let Ok(s) = shared_settings.lock() {
                                 let ctx_window = s.context_window;
+                                
+                                // Update metrics
+                                if let Ok(mut metrics) = agent.context_metrics.lock() {
+                                    metrics.update(
+                                        est,
+                                        ctx_window,
+                                        &s.context_class.label(),
+                                        s.thinking.as_str(),
+                                    );
+                                }
+                                
                                 if ctx_window > 0 {
                                     let _ = events_tx.send(AgentEvent::TurnEnd {
                                         turn: agent.conversation.intent.stats.turns,
@@ -1112,6 +1129,18 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         Ok(summary) => {
                             agent.conversation.apply_compaction(summary);
                             let est = agent.conversation.estimate_tokens();
+                            
+                            // Update metrics
+                            let settings = shared_settings.lock().unwrap();
+                            if let Ok(mut metrics) = agent.context_metrics.lock() {
+                                metrics.update(
+                                    est,
+                                    settings.context_window,
+                                    &settings.context_class.label(),
+                                    settings.thinking.as_str(),
+                                );
+                            }
+                            
                             let _ = events_tx.send(AgentEvent::SystemNotification {
                                 message: format!("Context compressed. Now using {est} tokens."),
                             });
@@ -1131,11 +1160,23 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::ContextClear => {
                 tracing::info!("context clear requested via /context clear");
-                // TODO: archive current session, reset conversation history
-                // For now, just notify
+                // Same as /new: save session, reset conversation
+                if !cli.no_session {
+                    let rid = agent.resume_info.as_ref().map(|r| r.session_id.as_str());
+                    let _ = session::save_session(&agent.conversation, &agent.cwd, rid);
+                }
+                agent.conversation = crate::conversation::ConversationState::new();
+                agent.resume_info = None;
+                
+                // Reset metrics
+                if let Ok(mut metrics) = agent.context_metrics.lock() {
+                    metrics.update(0, agent.context_metrics.lock().unwrap().context_window, "Squad", "off");
+                }
+                
                 let _ = events_tx.send(AgentEvent::SystemNotification {
-                    message: "Context clear: NOT YET IMPLEMENTED. Use /new to start a fresh session.".into(),
+                    message: "Context cleared. Starting fresh conversation.".into(),
                 });
+                let _ = events_tx.send(AgentEvent::SessionReset);
             }
 
             tui::TuiCommand::ListSessions => {
@@ -1579,6 +1620,20 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     tracing::error!("Agent loop error: {e}");
                     let _ = events_tx.send(AgentEvent::SystemNotification { message: user_msg });
                     let _ = events_tx.send(AgentEvent::AgentEnd);
+                }
+
+                // Update context metrics for status tools
+                {
+                    let est = agent.conversation.estimate_tokens();
+                    let settings = shared_settings.lock().unwrap();
+                    if let Ok(mut metrics) = agent.context_metrics.lock() {
+                        metrics.update(
+                            est,
+                            settings.context_window,
+                            &settings.context_class.label(),
+                            settings.thinking.as_str(),
+                        );
+                    }
                 }
 
                 if let Ok(mut guard) = shared_cancel.lock() {

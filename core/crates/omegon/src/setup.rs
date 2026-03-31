@@ -33,6 +33,8 @@ pub struct AgentSetup {
     pub bus: EventBus,
     /// Shared context metrics — updated each turn, read by ContextProvider
     pub context_metrics: std::sync::Arc<std::sync::Mutex<crate::features::context::SharedContextMetrics>>,
+    /// Shared command channel — set by main after TUI init
+    pub command_tx: crate::features::context::SharedCommandTx,
     pub context_manager: ContextManager,
     pub conversation: ConversationState,
     pub cwd: PathBuf,
@@ -369,7 +371,8 @@ impl AgentSetup {
 
         // ─── Context management provider ───────────────────────────────
         let context_metrics = features::context::SharedContextMetrics::new();
-        bus.register(Box::new(features::context::ContextProvider::new(context_metrics.clone())));
+        let command_tx = features::context::new_shared_command_tx();
+        bus.register(Box::new(features::context::ContextProvider::new(context_metrics.clone(), command_tx.clone())));
 
         // ─── External plugins (TOML manifests) ────────────────────────
         let plugins = crate::plugins::discover_plugins(&cwd).await;
@@ -529,6 +532,7 @@ impl AgentSetup {
         Ok(Self {
             bus,
             context_metrics,
+            command_tx,
             context_manager,
             conversation,
             cwd,

@@ -48,22 +48,21 @@ impl SharedContextMetrics {
     }
 }
 
+/// Shared command channel — created in main, set after TUI init
+pub type SharedCommandTx = Arc<Mutex<Option<mpsc::Sender<TuiCommand>>>>;
+
+pub fn new_shared_command_tx() -> SharedCommandTx {
+    Arc::new(Mutex::new(None))
+}
+
 pub struct ContextProvider {
-    command_tx: Option<mpsc::Sender<TuiCommand>>,
+    command_tx: SharedCommandTx,
     metrics: Arc<Mutex<SharedContextMetrics>>,
 }
 
 impl ContextProvider {
-    pub fn new(metrics: Arc<Mutex<SharedContextMetrics>>) -> Self {
-        Self {
-            command_tx: None,
-            metrics,
-        }
-    }
-
-    pub fn with_command_tx(mut self, tx: mpsc::Sender<TuiCommand>) -> Self {
-        self.command_tx = Some(tx);
-        self
+    pub fn new(metrics: Arc<Mutex<SharedContextMetrics>>, command_tx: SharedCommandTx) -> Self {
+        Self { command_tx, metrics }
     }
 }
 
@@ -129,8 +128,10 @@ impl Feature for ContextProvider {
                 );
 
                 // Also dispatch to TUI
-                if let Some(ref tx) = self.command_tx {
-                    let _ = tx.try_send(TuiCommand::ContextStatus);
+                if let Ok(guard) = self.command_tx.lock() {
+                    if let Some(ref tx) = *guard {
+                        let _ = tx.try_send(TuiCommand::ContextStatus);
+                    }
                 }
 
                 Ok(ToolResult {
@@ -147,8 +148,10 @@ impl Feature for ContextProvider {
 
             "context_compact" => {
                 // Dispatch to TUI
-                if let Some(ref tx) = self.command_tx {
-                    let _ = tx.try_send(TuiCommand::ContextCompact);
+                if let Ok(guard) = self.command_tx.lock() {
+                    if let Some(ref tx) = *guard {
+                        let _ = tx.try_send(TuiCommand::ContextCompact);
+                    }
                 }
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
@@ -160,8 +163,10 @@ impl Feature for ContextProvider {
 
             "context_clear" => {
                 // Dispatch to TUI
-                if let Some(ref tx) = self.command_tx {
-                    let _ = tx.try_send(TuiCommand::ContextClear);
+                if let Ok(guard) = self.command_tx.lock() {
+                    if let Some(ref tx) = *guard {
+                        let _ = tx.try_send(TuiCommand::ContextClear);
+                    }
                 }
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
