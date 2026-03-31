@@ -374,6 +374,15 @@ impl AgentSetup {
         let command_tx = features::context::new_shared_command_tx();
         bus.register(Box::new(features::context::ContextProvider::new(context_metrics.clone(), command_tx.clone())));
 
+        // ─── Scribe RPC integration (engagement tracking) ─────────────
+        let scribe_feature = features::scribe::ScribeFeature::new(cwd.clone());
+        if let Err(e) = scribe_feature.spawn().await {
+            tracing::warn!("scribe-rpc spawn failed: {}", e);
+            // Continue without scribe — it's optional
+        } else {
+            bus.register(Box::new(scribe_feature));
+        }
+
         // ─── External plugins (TOML manifests) ────────────────────────
         let plugins = crate::plugins::discover_plugins(&cwd).await;
         for plugin in plugins {

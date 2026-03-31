@@ -31,6 +31,7 @@ pub mod manage_tools;
 pub mod memory;
 pub mod model_budget;
 pub mod persona;
+pub mod scribe;
 pub mod session_log;
 pub mod terminal_title;
 pub mod version_check;

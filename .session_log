@@ -422,4 +422,49 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   89998a18 feat: SharedContextMetrics for real-time status collection
   6f5890d0 feat: /context subcommand interface for organic context management
   44a60a5b feat(scribe): implement first Rust-native extension
+## 2026-03-31 — main (14t 6785tc 1m30s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  4615aea2 feat: wire command_tx to ContextProvider for tool dispatch
+  89998a18 feat: SharedContextMetrics for real-time status collection
+  6f5890d0 feat: /context subcommand interface for organic context management
+## 2026-03-31 — main (9t 6793tc 9m29s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  c88e0e4b chore(release): 0.15.6-rc.2
+  4615aea2 feat: wire command_tx to ContextProvider for tool dispatch
+  89998a18 feat: SharedContextMetrics for real-time status collection
+## 2026-03-31 — main (51t 6843tc 3m13s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  c88e0e4b chore(release): 0.15.6-rc.2
+  4615aea2 feat: wire command_tx to ContextProvider for tool dispatch
+  89998a18 feat: SharedContextMetrics for real-time status collection
 
