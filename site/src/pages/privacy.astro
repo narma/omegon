@@ -1,0 +1,21 @@
+---
+import Docs from "../layouts/Docs.astro";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const privacyPath = join(process.cwd(), "..", "PRIVACY.md");
+let raw = "";
+try {
+  raw = readFileSync(privacyPath, "utf-8");
+} catch {
+  raw = "# Privacy Policy\n\n*Not available during this build.*";
+}
+
+const { default: markdownit } = await import("markdown-it");
+const md = markdownit({ html: true, linkify: true });
+const html = md.render(raw);
+---
+
+<Docs title="Privacy Policy" description="Privacy policy for the Omegon software and omegon.styrene.dev website.">
+  <Fragment set:html={html} />
+</Docs>
