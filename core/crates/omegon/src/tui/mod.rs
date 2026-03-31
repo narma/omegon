@@ -206,6 +206,8 @@ pub struct App {
     widget_receivers: Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>,
     /// Active ephemeral modal from extension widget (widget_id, data, auto_dismiss_ms, spawn_time).
     active_modal: Option<(String, serde_json::Value, Option<u64>, std::time::Instant)>,
+    /// Active action prompt from extension widget (widget_id, actions).
+    active_action_prompt: Option<(String, Vec<String>)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -324,6 +326,7 @@ impl App {
             extension_widgets: std::collections::HashMap::new(),
             widget_receivers: Vec::new(),
             active_modal: None,
+            active_action_prompt: None,
         }
     }
 
@@ -1898,6 +1901,11 @@ impl App {
                 self.render_modal(frame, widget_id, data);
             }
         }
+
+        // Render action prompt if active
+        if let Some((widget_id, actions)) = &self.active_action_prompt {
+            self.render_action_prompt(frame, widget_id, actions);
+        }
     }
 
     /// Render an ephemeral modal from an extension widget.
@@ -1935,6 +1943,50 @@ impl App {
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         frame.render_widget(para, modal_area);
+    }
+
+    /// Render an action prompt from an extension widget.
+    /// Shows numbered buttons for each action.
+    fn render_action_prompt(&self, frame: &mut Frame, widget_id: &str, actions: &[String]) {
+        let area = frame.area();
+        
+        // Center prompt in viewport (50% of width, 30% of height)
+        let prompt_width = (area.width as f32 * 0.5) as u16;
+        let prompt_height = (area.height as f32 * 0.3) as u16;
+        let x = (area.width.saturating_sub(prompt_width)) / 2;
+        let y = (area.height.saturating_sub(prompt_height)) / 2;
+        let prompt_area = Rect {
+            x,
+            y,
+            width: prompt_width,
+            height: prompt_height,
+        };
+
+        // Clear overlay
+        let overlay = ratatui::widgets::Clear;
+        frame.render_widget(&overlay, prompt_area);
+
+        // Build action list
+        let mut lines = vec![ratatui::text::Line::from("Choose an action:")];
+        lines.push(ratatui::text::Line::from(""));
+        for (idx, action) in actions.iter().enumerate().take(9) {
+            lines.push(ratatui::text::Line::from(
+                ratatui::text::Span::styled(
+                    format!("  {} {} ", idx + 1, action),
+                    ratatui::style::Style::default()
+                        .fg(ratatui::style::Color::Yellow)
+                        .bold(),
+                ),
+            ));
+        }
+
+        let block = ratatui::widgets::Block::default()
+            .title(format!(" {} ", widget_id))
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_style(ratatui::style::Style::default().fg(ratatui::style::Color::Green));
+
+        let para = ratatui::widgets::Paragraph::new(lines).block(block);
+        frame.render_widget(para, prompt_area);
     }
 
     /// Show a transient toast notification.
@@ -4422,8 +4474,11 @@ pub async fn run_tui(
                     } => {
                         app.active_modal = Some((widget_id, data, auto_dismiss_ms, std::time::Instant::now()));
                     }
-                    _ => {
-                        // Ignore ActionRequired for now (future enhancement)
+                    crate::extensions::WidgetEvent::ActionRequired {
+                        widget_id,
+                        actions,
+                    } => {
+                        app.active_action_prompt = Some((widget_id, actions));
                     }
                 }
             }
