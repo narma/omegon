@@ -182,4 +182,64 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   b9443c2e feat(ci): integrate THIRD_PARTY_NOTICES with SBOM in release workflow
   593448df docs(legal): add Privacy Policy and Third-Party Notices
   b81c2cca docs(legal): add Terms of Use aligned with BSL 1.1 license
+## 2026-03-31 — main (36t 6609tc 7m59s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  cca5101c Revert "test: trigger site build"
+  c32fcb2b test: trigger site build
+  5de07e98 fix(ci): direct git push to vanderlyn instead of polling
+## 2026-03-31 — main (1t 6609tc 3s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  cca5101c Revert "test: trigger site build"
+  c32fcb2b test: trigger site build
+  5de07e98 fix(ci): direct git push to vanderlyn instead of polling
+## 2026-03-31 — main (11t 6619tc 1m26s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  cca5101c Revert "test: trigger site build"
+  c32fcb2b test: trigger site build
+  5de07e98 fix(ci): direct git push to vanderlyn instead of polling
+## 2026-03-31 — main (5t 6623tc 43s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  cca5101c Revert "test: trigger site build"
+  c32fcb2b test: trigger site build
+  5de07e98 fix(ci): direct git push to vanderlyn instead of polling
 
