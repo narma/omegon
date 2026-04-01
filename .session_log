@@ -1067,4 +1067,19 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   928e64e4 chore(release): 0.15.6-rc.17
   6ea87624 fix(startup): consolidate dual keychain prompts into single OS request
   3d454a71 chore(release): 0.15.6-rc.16
+## 2026-04-01 — main (20t 7777tc 7m12s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  c580b7ce chore(release): 0.15.6-rc.18
+  634e424c fix(inference): reflect actual context breakdown, not heuristic caps
+  928e64e4 chore(release): 0.15.6-rc.17
 

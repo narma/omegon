@@ -166,7 +166,9 @@ impl AgentSetup {
         secrets.preflight_session_cache(preflight);
         let session_secret_env = secrets.session_env();
         
-        // Extract web auth secret from already-loaded cache instead of re-querying keychain
+        // Extract web auth secret from already-loaded cache.
+        // Since we included OMEGON_WEB_AUTH_SECRET in preflight, it's warmed
+        // in the same keychain call as LLM provider creds — no second prompt.
         let web_auth_state = if let Some((_, secret)) = session_secret_env
             .iter()
             .find(|(name, _)| name == crate::web::WEB_AUTH_SECRET_NAME)
@@ -176,7 +178,9 @@ impl AgentSetup {
                 crate::web::WebAuthSource::Keyring,
             )
         } else {
-            crate::web::resolve_web_auth_state(&secrets, "".into()).await
+            // Preflight didn't provide it — generate ephemeral for this session
+            // (fallback to avoid hitting keychain a second time)
+            crate::web::WebAuthState::ephemeral_generated("session-generated".into())
         };
         let session_secret_diag = secrets.session_diagnostics();
         tracing::info!(
