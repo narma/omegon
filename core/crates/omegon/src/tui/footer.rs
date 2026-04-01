@@ -8,6 +8,7 @@ use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
 use super::theme::Theme;
 use super::widgets::{self, GaugeConfig};
+use super::model_catalog::ModelCatalog;
 
 use crate::settings::{ContextClass, ContextMode};
 use crate::status::HarnessStatus;
@@ -234,18 +235,12 @@ impl FooterData {
                 capitalize(&self.model_tier),
                 capitalize(&self.thinking_level),
             );
-            let session_text = if self.session_input_tokens > 0 || self.session_output_tokens > 0 {
-                format!(
-                    "T·{} · ⚙ {} · ↻ {} · ↑ {} ↓ {}",
-                    self.turn,
-                    self.tool_calls,
-                    self.compactions,
-                    widgets::format_tokens_compact(self.session_input_tokens as usize),
-                    widgets::format_tokens_compact(self.session_output_tokens as usize),
-                )
-            } else {
-                format!("T·{} · ⚙ {} · ↻ {}", self.turn, self.tool_calls, self.compactions)
-            };
+            let session_text = format_session_text(
+                &self.model_id,
+                self.turn,
+                self.session_input_tokens,
+                self.session_output_tokens,
+            );
             let next_ver = env!("OMEGON_NEXT_VERSION");
             let version_text = format!("v{} → v{next_ver}", env!("CARGO_PKG_VERSION"));
 
@@ -786,6 +781,45 @@ fn short_model(model_id: &str) -> String {
     crate::settings::humanize_model_id(model_id)
 }
 
+fn format_session_text(model_id: &str, turn: u32, session_input_tokens: u64, session_output_tokens: u64) -> String {
+    let mut parts = vec![format!("T{turn}")];
+
+    if session_input_tokens > 0 || session_output_tokens > 0 {
+        parts.push(format!(
+            "{}/{}",
+            widgets::format_tokens_compact(session_input_tokens as usize),
+            widgets::format_tokens_compact(session_output_tokens as usize)
+        ));
+    }
+
+    if let Some(cost) = estimate_session_cost_usd(model_id, session_input_tokens, session_output_tokens)
+    {
+        parts.push(format_cost_usd(cost));
+    }
+
+    parts.join(" ")
+}
+
+fn estimate_session_cost_usd(model_id: &str, session_input_tokens: u64, session_output_tokens: u64) -> Option<f64> {
+    let catalog = ModelCatalog::new();
+    let model = catalog.find_by_id(model_id)?;
+    let pricing = model.pricing?;
+    Some(pricing.estimate_cost_usd(session_input_tokens, session_output_tokens))
+}
+
+fn format_cost_usd(cost_usd: f64) -> String {
+    if cost_usd <= 0.0 {
+        return "$0".to_string();
+    }
+    if cost_usd < 0.01 {
+        format!("${cost_usd:.3}")
+    } else if cost_usd < 1.0 {
+        format!("${cost_usd:.2}")
+    } else {
+        format!("${cost_usd:.2}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -891,5 +925,22 @@ mod tests {
         let path = format!("{home}/workspace/black-meridian/omegon");
         let shortened = shorten_cwd(&path, 128);
         assert!(shortened.starts_with("~/"), "expected ~ prefix: {shortened}");
+    }
+
+    #[test]
+    fn session_text_is_compact_and_includes_cost_when_priced() {
+        let text = format_session_text("anthropic:claude-sonnet-4-6", 1, 12_000, 3_000);
+        assert!(text.starts_with("T1 "), "got {text}");
+        assert!(text.contains("12k/3k"), "got {text}");
+        assert!(text.contains('$'), "got {text}");
+        assert!(!text.contains('⚙'), "got {text}");
+        assert!(!text.contains('↻'), "got {text}");
+        assert!(!text.contains('·'), "got {text}");
+    }
+
+    #[test]
+    fn session_text_omits_cost_when_pricing_unknown() {
+        let text = format_session_text("openai:gpt-5", 2, 12_000, 3_000);
+        assert_eq!(text, "T2 12k/3k");
     }
 }

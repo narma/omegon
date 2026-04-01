@@ -10,6 +10,28 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct TokenPricing {
+    /// USD per 1M input/prompt tokens.
+    pub input_per_million_usd: f64,
+    /// USD per 1M output/completion tokens.
+    pub output_per_million_usd: f64,
+}
+
+impl TokenPricing {
+    pub const fn new(input_per_million_usd: f64, output_per_million_usd: f64) -> Self {
+        Self {
+            input_per_million_usd,
+            output_per_million_usd,
+        }
+    }
+
+    pub fn estimate_cost_usd(&self, input_tokens: u64, output_tokens: u64) -> f64 {
+        (input_tokens as f64 / 1_000_000.0) * self.input_per_million_usd
+            + (output_tokens as f64 / 1_000_000.0) * self.output_per_million_usd
+    }
+}
+
 /// A model's availability tier and cost characteristics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum CostTier {
@@ -76,6 +98,9 @@ pub struct ModelInfo {
     pub context_output: usize,
     /// Cost tier
     pub cost_tier: CostTier,
+    /// Explicit token pricing when known. This is the authoritative source for
+    /// footer/session cost calculations; `cost_tier` is only a coarse UX bucket.
+    pub pricing: Option<TokenPricing>,
     /// Capability tags
     pub capabilities: Vec<Capability>,
     /// Brief description
@@ -112,6 +137,13 @@ pub struct ModelCatalog {
 }
 
 impl ModelCatalog {
+    pub fn find_by_id(&self, model_id: &str) -> Option<&ModelInfo> {
+        self.providers
+            .values()
+            .flat_map(|models| models.iter())
+            .find(|model| model.id == model_id)
+    }
+
     /// Discover the live model catalog.
     ///
     /// - Ollama section is populated by running `ollama list` — only models
@@ -175,6 +207,7 @@ impl ModelCatalog {
                 context_input: 128_000,
                 context_output: 32_768,
                 cost_tier: CostTier::Local,
+                pricing: Some(TokenPricing::new(0.0, 0.0)),
                 capabilities: vec![Capability::Instruction, Capability::Coding],
                 description,
                 available: true,
@@ -205,6 +238,7 @@ impl ModelCatalog {
                 context_input: 32768,
                 context_output: 8192,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.20, 0.20)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding],
                 description: "Qwen's reasoning model — fast, cheap, excellent for problem-solving".to_string(),
                 available: true,
@@ -216,6 +250,7 @@ impl ModelCatalog {
                 context_input: 131072,
                 context_output: 8192,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.35, 0.40)),
                 capabilities: vec![Capability::Instruction, Capability::Coding, Capability::Multilingual],
                 description: "Qwen's latest instruct model — long context, multilingual".to_string(),
                 available: true,
@@ -227,6 +262,7 @@ impl ModelCatalog {
                 context_input: 8192,
                 context_output: 4096,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.28, 1.10)),
                 capabilities: vec![Capability::Instruction, Capability::Coding],
                 description: "MiniMax M 2.7 — fast, low-cost inference".to_string(),
                 available: true,
@@ -239,6 +275,7 @@ impl ModelCatalog {
                 context_input: 128000,
                 context_output: 8192,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.27, 1.10)),
                 capabilities: vec![Capability::Instruction, Capability::Coding],
                 description: "DeepSeek Chat — long context, very affordable".to_string(),
                 available: true,
@@ -251,6 +288,7 @@ impl ModelCatalog {
                 context_input: 4096,
                 context_output: 2048,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.90, 0.90)),
                 capabilities: vec![Capability::Instruction],
                 description: "Meta's Llama 2 via OpenRouter — solid baseline".to_string(),
                 available: true,
@@ -268,6 +306,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 131072,
                 cost_tier: CostTier::Premium,
+                pricing: Some(TokenPricing::new(15.0, 75.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding, Capability::Vision],
                 description: "Claude Opus 4.6 — frontier reasoning, coding, and vision".to_string(),
                 available: true,
@@ -279,6 +318,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 65536,
                 cost_tier: CostTier::StandardAPI,
+                pricing: Some(TokenPricing::new(3.0, 15.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding, Capability::Vision],
                 description: "Claude Sonnet 4.6 — balanced performance and cost".to_string(),
                 available: true,
@@ -290,6 +330,7 @@ impl ModelCatalog {
                 context_input: 200000,
                 context_output: 65536,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.8, 4.0)),
                 capabilities: vec![Capability::Fast, Capability::Instruction],
                 description: "Claude Haiku 4.5 — fastest, cheapest Claude".to_string(),
                 available: true,
@@ -307,6 +348,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 32768,
                 cost_tier: CostTier::Premium,
+                pricing: None,
                 capabilities: vec![Capability::Reasoning, Capability::Vision, Capability::Coding],
                 description: "GPT-5.4 — OpenAI's latest frontier model, 1M context, tool search".to_string(),
                 available: true,
@@ -318,6 +360,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 32768,
                 cost_tier: CostTier::Premium,
+                pricing: None,
                 capabilities: vec![Capability::Reasoning, Capability::Vision, Capability::Coding],
                 description: "GPT-5 — flagship reasoning, replaces GPT-4o / o3 / o4-mini".to_string(),
                 available: true,
@@ -329,6 +372,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 32768,
                 cost_tier: CostTier::CheapAPI,
+                pricing: None,
                 capabilities: vec![Capability::Fast, Capability::Instruction, Capability::Coding],
                 description: "GPT-5 Mini — fast, cost-effective, 1M context".to_string(),
                 available: true,
@@ -340,6 +384,7 @@ impl ModelCatalog {
                 context_input: 1000000,
                 context_output: 32768,
                 cost_tier: CostTier::StandardAPI,
+                pricing: Some(TokenPricing::new(2.0, 8.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Vision, Capability::Coding],
                 description: "GPT-4.1 — 1M context (legacy, superseded by GPT-5)".to_string(),
                 available: true,
@@ -351,6 +396,7 @@ impl ModelCatalog {
                 context_input: 200000,
                 context_output: 16384,
                 cost_tier: CostTier::StandardAPI,
+                pricing: Some(TokenPricing::new(1.1, 4.4)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding],
                 description: "o4-mini — efficient o-series reasoning (succeeded by GPT-5 mini)".to_string(),
                 available: true,
@@ -368,6 +414,7 @@ impl ModelCatalog {
                 context_input: 131072,
                 context_output: 8192,
                 cost_tier: CostTier::Free,
+                pricing: Some(TokenPricing::new(0.0, 0.0)),
                 capabilities: vec![Capability::Fast, Capability::Instruction, Capability::Coding],
                 description: "Llama 3.3 70B on Groq — fast inference, free tier".to_string(),
                 available: true,
@@ -385,6 +432,7 @@ impl ModelCatalog {
                 context_input: 256000,
                 context_output: 32768,
                 cost_tier: CostTier::Premium,
+                pricing: Some(TokenPricing::new(3.0, 15.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding, Capability::Vision],
                 description: "Grok 4 — xAI flagship reasoning and coding model".to_string(),
                 available: true,
@@ -396,6 +444,7 @@ impl ModelCatalog {
                 context_input: 131072,
                 context_output: 16384,
                 cost_tier: CostTier::StandardAPI,
+                pricing: Some(TokenPricing::new(2.0, 10.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Fast],
                 description: "Grok 3 — fast reasoning, 131k context".to_string(),
                 available: true,
@@ -413,6 +462,7 @@ impl ModelCatalog {
                 context_input: 128000,
                 context_output: 16384,
                 cost_tier: CostTier::StandardAPI,
+                pricing: Some(TokenPricing::new(2.0, 6.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Coding],
                 description: "Mistral Large 3 — 128k context, open-weight MoE flagship".to_string(),
                 available: true,
@@ -424,6 +474,7 @@ impl ModelCatalog {
                 context_input: 32000,
                 context_output: 8192,
                 cost_tier: CostTier::CheapAPI,
+                pricing: Some(TokenPricing::new(0.2, 0.6)),
                 capabilities: vec![Capability::Fast, Capability::Instruction],
                 description: "Mistral Small — lightweight, cost-effective".to_string(),
                 available: true,
@@ -441,6 +492,7 @@ impl ModelCatalog {
                 context_input: 1_000_000,
                 context_output: 32_768,
                 cost_tier: CostTier::Premium,
+                pricing: None,
                 capabilities: vec![Capability::Reasoning, Capability::Vision, Capability::Coding],
                 description: "GPT-5.4 via ChatGPT/Codex OAuth — frontier, 1M context".to_string(),
                 available: true,
@@ -452,6 +504,7 @@ impl ModelCatalog {
                 context_input: 200_000,
                 context_output: 16_384,
                 cost_tier: CostTier::StandardAPI,
+                pricing: None,
                 capabilities: vec![Capability::Coding, Capability::Fast],
                 description: "Codex Mini via ChatGPT/Codex OAuth — fast, coding-optimised".to_string(),
                 available: true,
@@ -558,10 +611,25 @@ mod tests {
             context_input: 128000,
             context_output: 8192,
             cost_tier: CostTier::Local,
+            pricing: Some(TokenPricing::new(0.0, 0.0)),
             capabilities: vec![],
             description: "test".to_string(),
             available: true,
         };
         assert_eq!(model.context_str(), "128k in / 8k out");
+    }
+
+    #[test]
+    fn pricing_estimates_cost() {
+        let pricing = TokenPricing::new(3.0, 15.0);
+        let usd = pricing.estimate_cost_usd(100_000, 20_000);
+        assert!((usd - 0.6).abs() < 0.000_001, "got {usd}");
+    }
+
+    #[test]
+    fn find_by_id_returns_model() {
+        let cat = ModelCatalog::new();
+        let model = cat.find_by_id("anthropic:claude-sonnet-4-6");
+        assert!(model.is_some());
     }
 }

@@ -1502,4 +1502,49 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   1282dc3a fix(model-catalog): add openai-codex section to ModelCatalog
   e3cd2a8b feat: deploy omegon.styrene.io via Cloudflare Pages
   07a6340c fix(justfile): push specific tag only in rc/publish to avoid GitHub Actions trigger drops
+## 2026-04-01 — main (11t 60tc 7m6s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  577d6261 chore(release): 0.15.7-rc.1
+  1c95899e docs(changelog): add 0.15.7 release notes for Codex bridge fixes
+  1b829fdd fix(codex): harden parse_codex_stream against bridge crash false-positives
+## 2026-04-01 — main (1t 60tc 5s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  577d6261 chore(release): 0.15.7-rc.1
+  1c95899e docs(changelog): add 0.15.7 release notes for Codex bridge fixes
+  1b829fdd fix(codex): harden parse_codex_stream against bridge crash false-positives
+## 2026-04-01 — main (7t 76tc 1m12s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  577d6261 chore(release): 0.15.7-rc.1
+  1c95899e docs(changelog): add 0.15.7 release notes for Codex bridge fixes
+  1b829fdd fix(codex): harden parse_codex_stream against bridge crash false-positives
 
