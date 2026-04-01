@@ -3,6 +3,41 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.15.6] - 2026-04-01
+
+### Added
+
+- **Extension widget system** — stateful tab panels and ephemeral modals for Rust-native extensions. Schema-aware rendering supports `timeline`, `table`, and `tree` layouts. `Alt+N` / `Alt+P` cycle tabs. Action prompts accept numeric key selection. Widgets auto-fetch initial data on extension spawn.
+- **BYOM (Bring Your Own Mind) — Phases 1–3** — extensions can declare a custom inference mind in `manifest.toml`; manifest types, state management, and persistence are fully wired. Extensions that supply their own inference layer are isolated from the global model selector.
+- **`omegon-extension` SDK** — first-party Rust crate for third-party extension authors. Typed RPC primitives, manifest schema, and widget contracts published as a stable API surface.
+- **Scribe Rust-native extension** — reference implementation: timeline widget emits formatted session events; manifest declares a `timeline` widget; RPC sidecar integration replaces the previous TypeScript bridge.
+- **Bootstrap secrets RPC** — the extension IPC protocol now delivers required secrets via a `bootstrap_secrets` RPC call at spawn, not through process environment variables. Extensions receive only the secrets they declare in `manifest.toml`; the values never appear in `argv` or `environ` of the subprocess.
+- **Extension secret preflight** — at startup, manifests are scanned for `required_secrets`; those names are added to the preflight set so vault/keyring-backed secrets are warmed before any extension subprocess spawns.
+- **Vault integration at startup** — `VAULT_ADDR` + `VAULT_ROLE_ID`/`VAULT_SECRET_ID` (AppRole) or `VAULT_TOKEN` are detected at startup; vault-recipe secrets are batch-resolved in the preflight phase so both extensions and MCP plugins receive their tokens without per-request vault calls.
+- **Plugin MCP env template preflight** — `collect_plugin_secret_requirements()` scans `~/.omegon/plugins/*/plugin.toml` and `.omegon/mcp.toml` for `{VAR_NAME}` references and adds them to the preflight set, so vault-backed secrets used in MCP server `env` blocks are available before plugins connect.
+- **Session-long token counters in footer** — cumulative session input and output tokens shown in the engine block; compact `k`/`M` formatting prevents overflow on narrow terminals.
+- **`/context` subcommand interface** — `SharedContextMetrics` provides real-time token composition; `/context clear` and `/context compact` are exposed as slash commands with a deadlock-free implementation.
+
+### Fixed
+
+- **Dual macOS Keychain prompts at startup** — the original code called `keyring::get_password()` separately for each requested secret, triggering one OS dialog per secret. Secrets are now batch-resolved through the session cache; a single "Always Allow" covers the entire preflight batch.
+- **Web auth secret in preflight** — `OMEGON_WEB_AUTH_SECRET` was included in the startup preflight even though web search auth is only needed on-demand. Removed from preflight; resolved lazily on first web tool call.
+- **Keyring recipes shadowed by environment variables** — `resolve()` checked `std::env::var` before the keyring, making it impossible to override a leaked env value with a properly stored keyring secret. Order is now: session cache → keyring → env → recipe fallback.
+- **Redactor rebuilt per-secret** — the HMAC redactor was rebuilt after every individual secret resolution. It is now rebuilt once after the full preflight batch completes.
+- **`/context clear` deadlock** — the clear handler held the conversation lock while dispatching a TUI command that re-acquired it. Lock scope tightened; clear and compact commands now complete reliably.
+- **Footer token display overflow** — session input/output token counts used full decimal formatting (`1,234,567`); replaced with compact `format_tokens()` (`1.2M`).
+- **Context bar breakdown heuristics** — `cached_tokens` / `input_tokens` / `output_tokens` from the provider response are now used directly; the old `chars/4` character-count estimate is gone.
+- **Footer sync on compaction and clear** — `FooterData` was not updated after `/compact` or `/clear`; turn counter and token totals now reset correctly.
+- **Extension spawn blocked when required secrets absent** — extensions that declare `required_secrets` are refused spawn (with a clear error) if any declared secret cannot be resolved. Previously the extension spawned with missing env vars and failed silently.
+
+### Changed
+
+- **Scribe-rpc crate removed from workspace** — the TypeScript-bridge `scribe-rpc` crate is replaced by the Rust-native scribe extension. The workspace is smaller; the extension binary is self-contained.
+- **Legal surface** — Terms of Use, Privacy Policy, and `THIRD_PARTY_NOTICES` added. Contact address updated to `admin@styrene.io`.
+- **CI release workflow** — `workflow_dispatch` trigger added to `release.yml`; `RELEASE_TAG` env var used throughout for consistency. SBOM and `THIRD_PARTY_NOTICES` integrated into release artifacts.
+- **Site CI** — direct git push to vanderlyn on deploy; nginx location blocks for `/terms` and `/privacy`.
+- 1073 tests.
+
 ## [0.15.5] - 2026-03-31
 
 ### Added
