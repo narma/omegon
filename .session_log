@@ -1367,4 +1367,34 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   cbf1a876 chore(release): 0.15.6-rc.28
   4f36f7c3 feat(plugins): thread SecretsManager into MCP plugin auth
   25f675fb chore(release): 0.15.6-rc.27
+## 2026-04-01 — main (29t 8298tc 8m30s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  5209d233 test(tui): update footer snapshot for 0.15.6 stable version string
+  286cf985 docs(changelog): add 0.15.6 release notes
+  cbf1a876 chore(release): 0.15.6-rc.28
+## 2026-04-01 — main (3t 8300tc 20s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  5209d233 test(tui): update footer snapshot for 0.15.6 stable version string
+  286cf985 docs(changelog): add 0.15.6 release notes
+  cbf1a876 chore(release): 0.15.6-rc.28
 
