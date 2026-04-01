@@ -276,9 +276,13 @@ rc:
         echo "Ad-hoc signed (run 'just sign' to sign with Developer ID)"
     fi
 
+    # Push immediately — don't accumulate local tags. Pushing many tags at once
+    # causes GitHub Actions to silently drop workflow triggers.
+    echo "Pushing rc tag..."
+    git push origin main "v${NEW_VERSION}"
+
     echo ""
-    echo "✓ ${NEW_VERSION} — tested, committed, tagged, built."
-    echo "  To publish: git push origin main --tags"
+    echo "✓ ${NEW_VERSION} — tested, committed, tagged, built, pushed."
 
 # Cut a stable release: strip -rc.N, test, commit, tag, build.
 release:
@@ -358,7 +362,8 @@ release:
     git add core/Cargo.toml core/Cargo.lock .omegon/milestones.json
     git commit -m "chore(release): ${NEXT_RC}"
     echo "✓ Bumped to ${NEXT_RC} — branch is now open for the next cycle."
-    echo "  Publish stable: git push origin main v${NEW_VERSION}"
+    echo ""
+    echo "Stable release committed and tagged. Run 'just publish' to push and trigger CI."
     echo "  (RC tag is created by 'just rc' when there's something to release)"
 # Sign the release binary with Apple Developer ID (YubiKey).
 # Interactive — prompts for PIN and touch.
@@ -554,7 +559,10 @@ publish:
     # ── 2. Push to origin (triggers CI: release, npm, site) ──
     echo ""
     echo "Pushing to origin..."
-    git push origin main --tags
+    # Push main branch + the specific stable tag only.
+    # Do NOT use --tags: pushing many accumulated RC tags at once causes GitHub
+    # Actions to silently drop workflow triggers beyond ~3 ref changes per push.
+    git push origin main "$TAG"
 
     echo ""
     echo "CI workflows triggered:"
