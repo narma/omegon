@@ -3,6 +3,16 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
+## [0.15.7] - unreleased
+
+### Fixed
+
+- **Codex models missing from `/model`** — `ModelCatalog` had no `openai-codex` section; users authenticated via ChatGPT/Codex OAuth saw an empty model picker. GPT-5.4 and Codex Mini now appear under "ChatGPT / Codex" when an `openai-codex` token is present.
+- **"LLM bridge may have crashed" false-positive on Codex** — three bugs in `parse_codex_stream` caused the agent loop to surface this error spuriously:
+  1. `try_send` for terminal events (`Done`/`Error`) could silently drop on a full channel (cap 256). Terminal events are now sent with `.send().await` after `process_sse` returns, guaranteeing delivery.
+  2. When the Codex SSE stream closed cleanly without emitting `response.completed` (network drop, server restart), no signal was sent to the consumer. Partial content now synthesises a `Done`; an empty stream surfaces a clear `Error`.
+  3. Some Codex endpoint variants emit `response.done` instead of `response.completed`. Both are now handled.
+
 ## [0.15.6] - 2026-04-01
 
 ### Added
