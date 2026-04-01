@@ -3,6 +3,14 @@
 //! Handles both native (binary) and OCI (container) extensions.
 //! All extensions communicate via JSON-RPC 2.0 over stdin/stdout.
 //! Stateful widgets stream updates via separate TCP connection.
+//!
+//! # Secret delivery
+//!
+//! Extension subprocesses are spawned with `env_clear()` — no secret inheritance
+//! from the parent process environment. Declared secrets are delivered via the
+//! `bootstrap_secrets` RPC method immediately after the `get_tools` handshake.
+//! This prevents plain-text secrets from appearing in `/proc/<pid>/environ`,
+//! `ps` output, crash dumps, or child processes of the extension.
 
 use omegon_traits::{Feature, ToolDefinition, ToolResult, ContentBlock};
 use anyhow::{anyhow, Result};
@@ -23,20 +31,86 @@ pub use mind::{ExtensionMind, MindStats};
 pub use state::{ExtensionState, StabilityMetrics};
 pub use widgets::{WidgetDeclaration, WidgetEvent, ExtensionTabWidget};
 
+/// Environment variables that are safe to inherit from the parent process.
+/// Everything else is stripped via env_clear() — secrets never leak via env.
+const SAFE_INHERIT_ENVS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "TERM",
+    "SHELL",
+    // Dynamic linker paths — needed on some systems for compiled binaries
+    "DYLD_LIBRARY_PATH",          // macOS
+    "DYLD_FALLBACK_LIBRARY_PATH", // macOS
+    "LD_LIBRARY_PATH",            // Linux
+    // Rust runtime
+    "RUST_LOG",
+    "RUST_BACKTRACE",
+];
+
 /// Handles for communicating with an extension process.
 pub struct ProcessHandles {
     stdin: tokio::process::ChildStdin,
     reader: BufReader<tokio::process::ChildStdout>,
+    next_id: u64,
 }
 
 impl ProcessHandles {
-    fn new(
-        stdin: tokio::process::ChildStdin,
-        stdout: tokio::process::ChildStdout,
-    ) -> Self {
+    fn new(stdin: tokio::process::ChildStdin, stdout: tokio::process::ChildStdout) -> Self {
         Self {
             stdin,
             reader: BufReader::new(stdout),
+            next_id: 1,
+        }
+    }
+
+    /// Send a JSON-RPC request and receive the response.
+    /// Standalone so the handshake sequence can run before ExtensionFeature is constructed.
+    async fn rpc_call(&mut self, method: &str, params: Value) -> Result<Value> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        self.stdin
+            .write_all(format!("{}\n", request).as_bytes())
+            .await?;
+        self.stdin.flush().await?;
+
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let n = self.reader.read_line(&mut line).await?;
+            if n == 0 {
+                return Err(anyhow!("extension closed connection"));
+            }
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let resp: Value = serde_json::from_str(trimmed)?;
+            if resp.get("id").and_then(|v| v.as_u64()) == Some(id) {
+                return if let Some(result) = resp.get("result") {
+                    Ok(result.clone())
+                } else if let Some(error) = resp.get("error") {
+                    Err(anyhow!("RPC error: {}", error))
+                } else {
+                    Err(anyhow!("invalid RPC response: no result or error"))
+                };
+            }
+            // Continue reading (may be out-of-order notifications or prior responses)
         }
     }
 }
@@ -55,24 +129,24 @@ pub struct ExtensionFeature {
 }
 
 impl ExtensionFeature {
-    /// Create a new extension feature from process handles and pre-fetched tools.
+    /// Create a new extension feature from already-handshaked process handles.
     pub fn new(
         name: String,
         ext_dir: PathBuf,
         tools: Vec<ToolDefinition>,
         widgets: Vec<WidgetDeclaration>,
-        stdin: tokio::process::ChildStdin,
-        stdout: tokio::process::ChildStdout,
+        handles: ProcessHandles,
         state: ExtensionState,
     ) -> (Self, broadcast::Receiver<WidgetEvent>) {
         let (widget_tx, widget_rx) = broadcast::channel::<WidgetEvent>(100);
+        let next_id = handles.next_id;
         (
             Self {
                 name,
                 ext_dir,
                 tools,
-                handles: Arc::new(Mutex::new(Some(ProcessHandles::new(stdin, stdout)))),
-                request_id: Arc::new(AtomicU64::new(1)),
+                handles: Arc::new(Mutex::new(Some(handles))),
+                request_id: Arc::new(AtomicU64::new(next_id)),
                 widgets,
                 widget_tx,
                 state: Arc::new(Mutex::new(state)),
@@ -83,8 +157,8 @@ impl ExtensionFeature {
 
     /// Send a JSON-RPC request and receive the response.
     async fn rpc_call(&self, method: &str, params: Value) -> Result<Value> {
-        let mut handles = self.handles.lock().await;
-        let handles = handles.as_mut().ok_or_else(|| anyhow!("extension process not running"))?;
+        let mut guard = self.handles.lock().await;
+        let handles = guard.as_mut().ok_or_else(|| anyhow!("extension process not running"))?;
 
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = json!({
@@ -93,15 +167,12 @@ impl ExtensionFeature {
             "method": method,
             "params": params,
         });
-
-        // Write request
         handles
             .stdin
-            .write_all(format!("{}\n", request.to_string()).as_bytes())
+            .write_all(format!("{}\n", request).as_bytes())
             .await?;
         handles.stdin.flush().await?;
 
-        // Read response
         let mut line = String::new();
         loop {
             line.clear();
@@ -109,26 +180,20 @@ impl ExtensionFeature {
             if n == 0 {
                 return Err(anyhow!("extension closed connection"));
             }
-
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue;
             }
-
             let resp: Value = serde_json::from_str(trimmed)?;
-            if let Some(resp_id) = resp.get("id").and_then(|v| v.as_u64()) {
-                if resp_id == id {
-                    // Found our response
-                    if let Some(result) = resp.get("result") {
-                        return Ok(result.clone());
-                    } else if let Some(error) = resp.get("error") {
-                        return Err(anyhow!("RPC error: {}", error));
-                    } else {
-                        return Err(anyhow!("invalid RPC response"));
-                    }
-                }
+            if resp.get("id").and_then(|v| v.as_u64()) == Some(id) {
+                return if let Some(result) = resp.get("result") {
+                    Ok(result.clone())
+                } else if let Some(error) = resp.get("error") {
+                    Err(anyhow!("RPC error: {}", error))
+                } else {
+                    Err(anyhow!("invalid RPC response"))
+                };
             }
-            // Continue reading (may be out-of-order notifications)
         }
     }
 
@@ -180,11 +245,12 @@ impl Feature for ExtensionFeature {
         args: Value,
         _cancel: CancellationToken,
     ) -> Result<ToolResult> {
-        let output = self.rpc_call("execute_tool", json!({
-            "name": tool_name,
-            "args": args,
-        }))
-        .await?;
+        let output = self
+            .rpc_call(
+                "execute_tool",
+                json!({ "name": tool_name, "args": args }),
+            )
+            .await?;
 
         Ok(ToolResult {
             content: vec![ContentBlock::Text {
@@ -203,17 +269,23 @@ pub struct SpawnedExtension {
 }
 
 /// Spawn an extension from its manifest directory.
-pub async fn spawn_from_manifest(ext_dir: &PathBuf) -> Result<SpawnedExtension> {
+///
+/// `resolved_secrets` contains pre-resolved (name, value) pairs for all secrets
+/// declared in `manifest.secrets`. These are delivered via `bootstrap_secrets`
+/// RPC — never via subprocess environment variables.
+pub async fn spawn_from_manifest(
+    ext_dir: &PathBuf,
+    resolved_secrets: &[(String, String)],
+) -> Result<SpawnedExtension> {
     let manifest = ExtensionManifest::from_extension_dir(ext_dir)?;
 
     // Enforce required secrets before spending any resources on spawning.
-    // By this point, preflight_session_cache() + hydrate_process_env() have run,
-    // so any resolved keyring/recipe secret is already in the process environment.
+    // Check against the pre-resolved pairs rather than process env.
     let missing: Vec<&str> = manifest
         .secrets
         .required
         .iter()
-        .filter(|name| std::env::var(name).map(|v| v.is_empty()).unwrap_or(true))
+        .filter(|name| !resolved_secrets.iter().any(|(k, _)| k == *name))
         .map(|s| s.as_str())
         .collect();
     if !missing.is_empty() {
@@ -228,7 +300,7 @@ pub async fn spawn_from_manifest(ext_dir: &PathBuf) -> Result<SpawnedExtension> 
 
     // Log optional secrets that are absent — extension will degrade gracefully.
     for name in &manifest.secrets.optional {
-        if std::env::var(name).map(|v| v.is_empty()).unwrap_or(true) {
+        if !resolved_secrets.iter().any(|(k, _)| k == name) {
             tracing::debug!(
                 extension = %manifest.extension.name,
                 secret = %name,
@@ -237,10 +309,7 @@ pub async fn spawn_from_manifest(ext_dir: &PathBuf) -> Result<SpawnedExtension> 
         }
     }
 
-    // Load extension state
     let state = ExtensionState::load(ext_dir)?;
-
-    // Parse widgets from manifest
     let widgets: Vec<WidgetDeclaration> = manifest
         .widgets
         .iter()
@@ -256,23 +325,72 @@ pub async fn spawn_from_manifest(ext_dir: &PathBuf) -> Result<SpawnedExtension> 
     match manifest.runtime {
         RuntimeConfig::Native { .. } => {
             let binary = manifest.native_binary_path(ext_dir)?;
-            spawn_native(&manifest, ext_dir, &binary, widgets, state).await
+            spawn_native(&manifest, binary, widgets, state, resolved_secrets).await
         }
         RuntimeConfig::Oci { .. } => {
             let image = manifest.oci_image()?;
-            spawn_container(&manifest, ext_dir, &image, widgets, state).await
+            spawn_container(&manifest, &image, widgets, state, resolved_secrets).await
         }
     }
 }
 
+/// Build a `Command` with a clean environment — only safe non-secret vars inherited.
+/// Secrets are delivered via `bootstrap_secrets` RPC, never via env.
+fn clean_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.env_clear();
+    for var in SAFE_INHERIT_ENVS {
+        if let Ok(val) = std::env::var(var) {
+            cmd.env(var, val);
+        }
+    }
+    cmd
+}
+
+/// Run the extension handshake sequence on a single process:
+/// 1. `get_tools` — discover tools (required by contract)
+/// 2. `bootstrap_secrets` — deliver secrets over pipe (never via env)
+///
+/// Returns handles with `next_id` advanced past the handshake, and the tool list.
+async fn handshake(
+    handles: &mut ProcessHandles,
+    name: &str,
+    resolved_secrets: &[(String, String)],
+) -> Result<Vec<ToolDefinition>> {
+    // 1. Discover tools
+    let tools: Vec<ToolDefinition> = handles
+        .rpc_call("get_tools", json!({}))
+        .await
+        .ok()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+
+    // 2. Deliver secrets over pipe — never via env var
+    if !resolved_secrets.is_empty() {
+        let secrets_map: serde_json::Map<String, Value> = resolved_secrets
+            .iter()
+            .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+            .collect();
+        match handles
+            .rpc_call("bootstrap_secrets", Value::Object(secrets_map))
+            .await
+        {
+            Ok(_) => tracing::debug!(extension = name, secrets = resolved_secrets.len(), "bootstrap_secrets delivered"),
+            Err(e) => tracing::warn!(extension = name, error = %e, "bootstrap_secrets not acknowledged — extension may not support it"),
+        }
+    }
+
+    Ok(tools)
+}
+
 async fn spawn_native(
     manifest: &ExtensionManifest,
-    ext_dir: &PathBuf,
-    binary: &PathBuf,
+    binary: PathBuf,
     widgets: Vec<WidgetDeclaration>,
     state: ExtensionState,
+    resolved_secrets: &[(String, String)],
 ) -> Result<SpawnedExtension> {
-    let mut child = tokio::process::Command::new(binary)
+    let mut child = clean_command(&binary)
         .arg("--rpc")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -281,66 +399,39 @@ async fn spawn_native(
 
     let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
     let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
+    let mut handles = ProcessHandles::new(stdin, stdout);
 
-    // Create temporary feature to fetch tools
-    let (temp_feature, _) = ExtensionFeature::new(
-        manifest.extension.name.clone(),
-        ext_dir.clone(),
-        vec![],
-        vec![],
-        stdin,
-        stdout,
-        ExtensionState::default(),
-    );
-
-    // Fetch tools via RPC
-    let tools: Vec<ToolDefinition> = temp_feature
-        .rpc_call("get_tools", json!({}))
-        .await
-        .ok()
-        .and_then(|v| serde_json::from_value::<Vec<ToolDefinition>>(v).ok())
-        .unwrap_or_default();
+    let tools = handshake(&mut handles, &manifest.extension.name, resolved_secrets).await?;
 
     tracing::info!(
         name = %manifest.extension.name,
         binary = %binary.display(),
         tools = tools.len(),
         widgets = widgets.len(),
+        secrets = resolved_secrets.len(),
         "spawned native extension"
     );
 
-    // Create final feature with tools and widgets
-    // We need to re-spawn because we consumed the handles getting tools
-    let mut child = tokio::process::Command::new(binary)
-        .arg("--rpc")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()?;
-
-    let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-
     let (feature, widget_rx) = ExtensionFeature::new(
         manifest.extension.name.clone(),
-        ext_dir.clone(),
+        binary.parent().unwrap_or(std::path::Path::new(".")).to_path_buf(),
         tools,
         widgets.clone(),
-        stdin,
-        stdout,
+        handles,
         state,
     );
 
-    // Convert widget declarations to tab widgets with initial data
-    let mut tab_widgets: Vec<ExtensionTabWidget> = vec![];
+    let mut tab_widgets = vec![];
     for widget in widgets {
-        let mut tab_widget = ExtensionTabWidget::new(widget.id.clone(), widget.label, widget.renderer, widget.kind);
-        
-        // Fetch initial data for the widget
+        let mut tab_widget = ExtensionTabWidget::new(
+            widget.id.clone(),
+            widget.label,
+            widget.renderer,
+            widget.kind,
+        );
         if let Ok(data) = feature.rpc_call(&format!("get_{}", widget.id), json!({})).await {
             tab_widget.update(data);
         }
-        
         tab_widgets.push(tab_widget);
     }
 
@@ -353,13 +444,13 @@ async fn spawn_native(
 
 async fn spawn_container(
     manifest: &ExtensionManifest,
-    ext_dir: &PathBuf,
     image: &str,
     widgets: Vec<WidgetDeclaration>,
     state: ExtensionState,
+    resolved_secrets: &[(String, String)],
 ) -> Result<SpawnedExtension> {
-    let mut child = tokio::process::Command::new("podman")
-        .args(&["run", "--rm", "-i", image])
+    let mut child = clean_command("podman")
+        .args(["run", "--rm", "-i", image])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
@@ -367,65 +458,39 @@ async fn spawn_container(
 
     let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
     let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
+    let mut handles = ProcessHandles::new(stdin, stdout);
 
-    // Create temporary feature to fetch tools
-    let (temp_feature, _) = ExtensionFeature::new(
-        manifest.extension.name.clone(),
-        ext_dir.clone(),
-        vec![],
-        vec![],
-        stdin,
-        stdout,
-        ExtensionState::default(),
-    );
-
-    // Fetch tools via RPC
-    let tools: Vec<ToolDefinition> = temp_feature
-        .rpc_call("get_tools", json!({}))
-        .await
-        .ok()
-        .and_then(|v| serde_json::from_value::<Vec<ToolDefinition>>(v).ok())
-        .unwrap_or_default();
+    let tools = handshake(&mut handles, &manifest.extension.name, resolved_secrets).await?;
 
     tracing::info!(
         name = %manifest.extension.name,
         image = image,
         tools = tools.len(),
         widgets = widgets.len(),
+        secrets = resolved_secrets.len(),
         "spawned OCI extension"
     );
 
-    // Re-spawn to get fresh handles
-    let mut child = tokio::process::Command::new("podman")
-        .args(&["run", "--rm", "-i", image])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::inherit())
-        .spawn()?;
-
-    let stdin = child.stdin.take().ok_or_else(|| anyhow!("no stdin"))?;
-    let stdout = child.stdout.take().ok_or_else(|| anyhow!("no stdout"))?;
-
     let (feature, widget_rx) = ExtensionFeature::new(
         manifest.extension.name.clone(),
-        ext_dir.clone(),
+        PathBuf::new(),
         tools,
         widgets.clone(),
-        stdin,
-        stdout,
+        handles,
         state,
     );
 
-    // Convert widget declarations to tab widgets with initial data
-    let mut tab_widgets: Vec<ExtensionTabWidget> = vec![];
+    let mut tab_widgets = vec![];
     for widget in widgets {
-        let mut tab_widget = ExtensionTabWidget::new(widget.id.clone(), widget.label, widget.renderer, widget.kind);
-        
-        // Fetch initial data for the widget
+        let mut tab_widget = ExtensionTabWidget::new(
+            widget.id.clone(),
+            widget.label,
+            widget.renderer,
+            widget.kind,
+        );
         if let Ok(data) = feature.rpc_call(&format!("get_{}", widget.id), json!({})).await {
             tab_widget.update(data);
         }
-        
         tab_widgets.push(tab_widget);
     }
 
@@ -447,32 +512,38 @@ mod tests {
 
     #[test]
     fn required_secret_check_detects_missing() {
-        // Simulate the guard logic with a known-absent env var name.
-        // Uses a synthetic name that will never be set in the test environment.
-        let required = vec![
-            "__OMEGON_TEST_ABSENT_SECRET_XYZ__".to_string(),
-        ];
+        // Required secret not in resolved_secrets → missing
+        let required = vec!["GITHUB_TOKEN".to_string()];
+        let resolved: Vec<(String, String)> = vec![];
         let missing: Vec<&str> = required
             .iter()
-            .filter(|name| std::env::var(name).map(|v| v.is_empty()).unwrap_or(true))
+            .filter(|name| !resolved.iter().any(|(k, _)| k == *name))
             .map(|s| s.as_str())
             .collect();
-        assert_eq!(missing, vec!["__OMEGON_TEST_ABSENT_SECRET_XYZ__"]);
+        assert_eq!(missing, vec!["GITHUB_TOKEN"]);
     }
 
     #[test]
     fn required_secret_check_passes_when_present() {
-        // Simulate the guard logic with a secret that IS in the environment.
-        let key = "__OMEGON_TEST_PRESENT_SECRET_XYZ__";
-        // SAFETY: test-only env mutation, no concurrent env access in unit tests.
-        unsafe { std::env::set_var(key, "test-value") };
-        let required = vec![key.to_string()];
+        // Required secret is in resolved_secrets → no missing
+        let required = vec!["GITHUB_TOKEN".to_string()];
+        let resolved = vec![("GITHUB_TOKEN".to_string(), "ghp_test".to_string())];
         let missing: Vec<&str> = required
             .iter()
-            .filter(|name| std::env::var(name).map(|v| v.is_empty()).unwrap_or(true))
+            .filter(|name| !resolved.iter().any(|(k, _)| k == *name))
             .map(|s| s.as_str())
             .collect();
         assert!(missing.is_empty());
-        unsafe { std::env::remove_var(key) };
+    }
+
+    #[test]
+    fn clean_command_strips_secrets() {
+        // Verify SAFE_INHERIT_ENVS doesn't include any secret-like names
+        for var in SAFE_INHERIT_ENVS {
+            assert!(
+                !var.contains("KEY") && !var.contains("TOKEN") && !var.contains("SECRET") && !var.contains("PASSWORD"),
+                "SAFE_INHERIT_ENVS contains potentially secret var: {var}"
+            );
+        }
     }
 }

@@ -406,7 +406,7 @@ impl AgentSetup {
 
         // ─── Operator-installed extensions (RPC + OCI) ────────────────
         // All extensions, including bundled ones (scribe-rpc), are discovered here
-        let (extension_widgets, widget_receivers) = match discover_and_register_extensions(&mut bus).await {
+        let (extension_widgets, widget_receivers) = match discover_and_register_extensions(&mut bus, std::sync::Arc::clone(&secrets)).await {
             Ok((widgets, receivers)) => (widgets, receivers),
             Err(e) => {
                 tracing::warn!("extension discovery failed: {}", e);
@@ -640,9 +640,9 @@ pub fn find_project_root(cwd: &Path) -> PathBuf {
     cwd.to_path_buf()
 }
 
-/// Scan installed extension manifests and collect all `secrets.required` entries.
+/// Scan installed extension manifests and collect all declared secret names.
 /// Called during the startup preflight phase — before extensions are spawned —
-/// so keyring-backed secrets are resolved and in process env when subprocesses start.
+/// so keyring-backed secrets are warmed into the session cache in time.
 fn collect_extension_secret_requirements() -> Vec<String> {
     let ext_dir = match dirs::home_dir() {
         Some(h) => h.join(".omegon/extensions"),
@@ -683,7 +683,13 @@ fn collect_extension_secret_requirements() -> Vec<String> {
 /// Discover and spawn operator-installed extensions from ~/.omegon/extensions/.
 /// Each subdirectory with a manifest.toml is treated as an extension.
 /// Returns collected ExtensionTabWidgets and all widget event receivers.
-async fn discover_and_register_extensions(bus: &mut crate::bus::EventBus) -> anyhow::Result<(Vec<crate::extensions::ExtensionTabWidget>, Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>)> {
+///
+/// Resolves declared secrets from the session cache and delivers them to each
+/// extension via `bootstrap_secrets` RPC — never via subprocess environment.
+async fn discover_and_register_extensions(
+    bus: &mut crate::bus::EventBus,
+    secrets: std::sync::Arc<omegon_secrets::SecretsManager>,
+) -> anyhow::Result<(Vec<crate::extensions::ExtensionTabWidget>, Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>)> {
     let ext_dir = dirs::home_dir()
         .map(|h| h.join(".omegon/extensions"))
         .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -709,8 +715,22 @@ async fn discover_and_register_extensions(bus: &mut crate::bus::EventBus) -> any
             continue;
         }
 
+        // Resolve declared secrets from session cache — these were preflighted
+        // at startup so no new Keychain prompts happen here.
+        let resolved_secrets: Vec<(String, String)> = {
+            if let Ok(manifest) = crate::extensions::ExtensionManifest::from_extension_dir(&path) {
+                let all_names = manifest.secrets.required.iter()
+                    .chain(manifest.secrets.optional.iter());
+                all_names
+                    .filter_map(|name| secrets.resolve(name).map(|v| (name.clone(), v)))
+                    .collect()
+            } else {
+                vec![]
+            }
+        };
+
         // Try to spawn this extension
-        match crate::extensions::spawn_from_manifest(&path).await {
+        match crate::extensions::spawn_from_manifest(&path, &resolved_secrets).await {
             Ok(spawned) => {
                 let ext_name = path.file_name()
                     .and_then(|n| n.to_str())
