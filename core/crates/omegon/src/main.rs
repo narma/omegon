@@ -538,6 +538,20 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
     Ok(())
 }
 
+fn ensure_clean_cleave_repo(repo_path: &Path) -> anyhow::Result<()> {
+    let status = omegon_git::status::query_status(repo_path)?;
+    if status.is_clean {
+        return Ok(());
+    }
+
+    let mut paths: Vec<String> = status.entries.iter().map(|e| e.path.clone()).collect();
+    paths.sort();
+    anyhow::bail!(
+        "cleave preflight failed: repository has uncommitted changes. Commit, stash, or clean these paths before cleaving: {}",
+        paths.join(", ")
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_cleave_command(
     cli: &Cli,
@@ -550,6 +564,7 @@ async fn run_cleave_command(
     max_turns: u32,
 ) -> anyhow::Result<()> {
     let repo_path = std::fs::canonicalize(&cli.cwd)?;
+    ensure_clean_cleave_repo(&repo_path)?;
     let plan_json = std::fs::read_to_string(plan_path)?;
     let plan = cleave::CleavePlan::from_json(&plan_json)?;
 
@@ -2319,5 +2334,76 @@ mod tests {
         let resolved = cli.cwd.join(cli.prompt_file.as_ref().unwrap());
         let prompt = std::fs::read_to_string(resolved).unwrap();
         assert_eq!(prompt, "child prompt");
+    }
+
+    #[test]
+    fn cleave_preflight_allows_clean_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::fs::write(dir.path().join("README.md"), "hi\n").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "README.md"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-qm", "init"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+
+        let result = ensure_clean_cleave_repo(dir.path());
+        assert!(result.is_ok(), "clean repo should pass preflight: {result:?}");
+    }
+
+    #[test]
+    fn cleave_preflight_blocks_dirty_repo_and_lists_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test User"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::fs::write(dir.path().join("README.md"), "hi\n").unwrap();
+        std::process::Command::new("git")
+            .args(["add", "README.md"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["commit", "-qm", "init"])
+            .current_dir(dir.path())
+            .status()
+            .unwrap();
+
+        std::fs::write(dir.path().join("dirty.txt"), "nope\n").unwrap();
+
+        let err = ensure_clean_cleave_repo(dir.path()).unwrap_err().to_string();
+        assert!(err.contains("cleave preflight failed"), "unexpected error: {err}");
+        assert!(err.contains("dirty.txt"), "missing dirty path in error: {err}");
     }
 }
