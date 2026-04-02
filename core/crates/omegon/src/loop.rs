@@ -653,7 +653,8 @@ async fn stream_with_retry(
         };
 
         let err_msg = err.to_string();
-        let is_transient = is_transient_error(&err_msg);
+        let transient_kind = classify_transient_error(&err_msg);
+        let is_transient = transient_kind.is_some();
 
         if !is_transient {
             if attempt > 1 {
@@ -668,14 +669,19 @@ async fn stream_with_retry(
         // max_retries == 0 means retry indefinitely (interactive/TUI mode).
         if config.max_retries > 0 && attempt >= config.max_retries {
             let elapsed = started.elapsed();
+            let kind_label = transient_kind
+                .map(TransientFailureKind::label)
+                .unwrap_or("transient upstream failure");
             tracing::error!(
                 attempts = attempt,
                 elapsed_secs = elapsed.as_secs(),
+                kind = kind_label,
                 "upstream exhausted: {err_msg}"
             );
             return Err(anyhow::anyhow!(
-                "upstream exhausted: {} consecutive transient failures over {:.0}s: {}",
+                "upstream exhausted: {} consecutive {} failures over {:.0}s: {}",
                 attempt,
+                kind_label,
                 elapsed.as_secs_f64(),
                 err_msg
             ));
@@ -685,6 +691,9 @@ async fn stream_with_retry(
         tracing::warn!(
             attempt,
             delay_ms = delay,
+            kind = transient_kind
+                .map(TransientFailureKind::label)
+                .unwrap_or("transient upstream failure"),
             "Transient LLM error, retrying: {err_msg}"
         );
 
@@ -695,9 +704,12 @@ async fn stream_with_retry(
         if is_milestone {
             let provider = config.model.split(':').next().unwrap_or("upstream");
             let elapsed = started.elapsed();
+            let kind_label = transient_kind
+                .map(TransientFailureKind::label)
+                .unwrap_or("transient upstream failure");
             let _ = events.send(AgentEvent::SystemNotification {
                 message: format!(
-                    "⚠ {provider} degraded: {attempt} consecutive transient failures over {:.0}s — consider switching providers",
+                    "⚠ {provider} degraded: {attempt} consecutive {kind_label} failures over {:.0}s — consider switching providers",
                     elapsed.as_secs_f64()
                 ),
             });
@@ -705,17 +717,13 @@ async fn stream_with_retry(
 
         // Regular retry notification → toast (routed by TUI via "— retrying" substring).
         let short_err = crate::util::truncate_str(&err_msg, 300);
-        let msg = if err_msg.contains("stream idle for") || err_msg.contains("connection may be stalled") {
-            format!(
-                "⚠ Upstream stalled — retrying (attempt {attempt}, delay {}ms): {short_err}",
-                delay
-            )
-        } else {
-            format!(
-                "⚠ Upstream transient failure — retrying (attempt {attempt}, delay {}ms): {short_err}",
-                delay
-            )
-        };
+        let kind_label = transient_kind
+            .map(TransientFailureKind::label)
+            .unwrap_or("transient upstream failure");
+        let msg = format!(
+            "⚠ Upstream {kind_label} — retrying (attempt {attempt}, delay {}ms): {short_err}",
+            delay
+        );
         let _ = events.send(AgentEvent::SystemNotification { message: msg });
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         delay = (delay * 2).min(15_000); // exponential backoff, cap at 15s
@@ -764,55 +772,109 @@ pub fn is_upstream_exhausted(e: &anyhow::Error) -> bool {
 ///
 /// Matches known transient error patterns. HTTP status codes use word-boundary
 /// matching to avoid false positives (e.g. "model gpt-500" shouldn't match).
-fn is_transient_error(msg: &str) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransientFailureKind {
+    RateLimited,
+    ProviderOverloaded,
+    Upstream5xx,
+    Timeout,
+    StalledStream,
+    NetworkConnect,
+    NetworkReset,
+    Dns,
+    BridgeDropped,
+    GenericTransient,
+}
+
+impl TransientFailureKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::RateLimited => "rate-limited",
+            Self::ProviderOverloaded => "provider overloaded",
+            Self::Upstream5xx => "upstream 5xx",
+            Self::Timeout => "timeout",
+            Self::StalledStream => "stalled stream",
+            Self::NetworkConnect => "connection failure",
+            Self::NetworkReset => "connection reset",
+            Self::Dns => "dns failure",
+            Self::BridgeDropped => "bridge dropped stream",
+            Self::GenericTransient => "transient upstream failure",
+        }
+    }
+}
+
+fn classify_transient_error(msg: &str) -> Option<TransientFailureKind> {
     let lower = msg.to_lowercase();
 
     // Context overflow and malformed history errors are NOT transient —
     // they need structural repair (compaction/decay), not blind retries.
     if is_context_overflow(&lower) || is_malformed_history(&lower) {
-        return false;
+        return None;
     }
 
-    // Semantic patterns — safe as substring matches
-    if lower.contains("overloaded")
-        || lower.contains("rate limit")
+    if lower.contains("rate limit")
         || lower.contains("rate_limit")
-        || lower.contains("timeout")
-        || lower.contains("server_error")
-        || lower.contains("capacity")
+        || lower.contains("too many requests")
+        || contains_word(&lower, "429")
+    {
+        return Some(TransientFailureKind::RateLimited);
+    }
+
+    if lower.contains("overloaded") || lower.contains("capacity") || contains_word(&lower, "529") {
+        return Some(TransientFailureKind::ProviderOverloaded);
+    }
+
+    if lower.contains("stream idle for") || lower.contains("connection may be stalled") {
+        return Some(TransientFailureKind::StalledStream);
+    }
+
+    if lower.contains("timeout") || lower.contains("timed out") {
+        return Some(TransientFailureKind::Timeout);
+    }
+
+    if lower.contains("connection refused") || lower.contains("connection closed") {
+        return Some(TransientFailureKind::NetworkConnect);
+    }
+
+    if lower.contains("connection reset")
+        || lower.contains("reset by peer")
+        || lower.contains("broken pipe")
+        || lower.contains("unexpected eof")
+    {
+        return Some(TransientFailureKind::NetworkReset);
+    }
+
+    if lower.contains("dns error") || lower.contains("name resolution") {
+        return Some(TransientFailureKind::Dns);
+    }
+
+    if lower.contains("stream ended without") || lower.contains("bridge may have crashed") {
+        return Some(TransientFailureKind::BridgeDropped);
+    }
+
+    if lower.contains("server_error")
         || lower.contains("temporarily")
         || lower.contains("try again")
-        || lower.contains("too many requests")
         || lower.contains("service unavailable")
         || lower.contains("bad gateway")
         || lower.contains("internal server error")
-        || lower.contains("connection may be stalled")
-        || lower.contains("stream idle for")
-        // Network-level failures — transient by nature
-        || lower.contains("connection refused")
-        || lower.contains("connection reset")
-        || lower.contains("reset by peer")
-        || lower.contains("broken pipe")
-        || lower.contains("connection closed")
-        || lower.contains("unexpected eof")
-        || lower.contains("dns error")
-        || lower.contains("name resolution")
-        // Bridge/stream dropped mid-response — worth retrying
-        || lower.contains("stream ended without")
-        || lower.contains("bridge may have crashed")
     {
-        return true;
+        return Some(TransientFailureKind::Upstream5xx);
     }
 
     // HTTP status codes — require word boundary (space, punctuation, or start/end)
     // to avoid matching model names like "gpt-500" or version strings
-    for code in ["500", "502", "503", "529"] {
+    for code in ["500", "502", "503"] {
         if contains_word(&lower, code) {
-            return true;
+            return Some(TransientFailureKind::Upstream5xx);
         }
     }
 
-    false
+    None
+}
+
+fn is_transient_error(msg: &str) -> bool {
+    classify_transient_error(msg).is_some()
 }
 
 /// Check if `text` contains `word` as a standalone token.
@@ -1526,6 +1588,52 @@ mod tests {
         assert!(!is_transient_error("model gpt-500 not found"));
         assert!(!is_transient_error("using port 5029"));
         assert!(!is_transient_error("version 5.0.3 released"));
+    }
+
+    #[test]
+    fn transient_error_classification_is_specific() {
+        assert_eq!(
+            classify_transient_error("429 Too Many Requests: rate limit exceeded"),
+            Some(TransientFailureKind::RateLimited)
+        );
+        assert_eq!(
+            classify_transient_error("error 529: capacity exceeded"),
+            Some(TransientFailureKind::ProviderOverloaded)
+        );
+        assert_eq!(
+            classify_transient_error("LLM stream idle for 30s — connection may be stalled"),
+            Some(TransientFailureKind::StalledStream)
+        );
+        assert_eq!(
+            classify_transient_error("connection refused (os error 111)"),
+            Some(TransientFailureKind::NetworkConnect)
+        );
+        assert_eq!(
+            classify_transient_error("connection reset by peer"),
+            Some(TransientFailureKind::NetworkReset)
+        );
+        assert_eq!(
+            classify_transient_error("dns error: failed to lookup address"),
+            Some(TransientFailureKind::Dns)
+        );
+        assert_eq!(
+            classify_transient_error(
+                "LLM stream ended without a completion event — the bridge may have crashed"
+            ),
+            Some(TransientFailureKind::BridgeDropped)
+        );
+        assert_eq!(
+            classify_transient_error("503 Service Unavailable"),
+            Some(TransientFailureKind::Upstream5xx)
+        );
+        assert_eq!(classify_transient_error("401 Unauthorized"), None);
+    }
+
+    #[test]
+    fn transient_failure_kind_labels_are_operator_facing() {
+        assert_eq!(TransientFailureKind::RateLimited.label(), "rate-limited");
+        assert_eq!(TransientFailureKind::StalledStream.label(), "stalled stream");
+        assert_eq!(TransientFailureKind::Dns.label(), "dns failure");
     }
 
     #[test]
