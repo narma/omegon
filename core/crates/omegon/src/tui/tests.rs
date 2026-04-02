@@ -1333,6 +1333,15 @@ fn handled_commands_are_in_commands_table() {
 }
 
 #[test]
+fn slash_plugin_list_returns_display() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/plugin list", &tx);
+    assert!(matches!(result, SlashResult::Display(_)));
+}
+
+#[test]
 fn slash_skills_returns_display() {
     let mut app = test_app();
     let tx = test_tx();

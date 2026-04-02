@@ -2171,6 +2171,11 @@ impl App {
         ("memory", "memory stats", &[]),
         ("skills", "list or install bundled skills", &["list", "install"]),
         (
+            "plugin",
+            "manage installed plugins",
+            &["list", "install", "remove", "update"],
+        ),
+        (
             "cleave",
             "show cleave status or trigger decomposition",
             &["status"],
@@ -2391,6 +2396,39 @@ impl App {
                 },
                 _ => SlashResult::Display("Usage: /skills [list|install]".into()),
             },
+
+            "plugin" => {
+                if args.is_empty() || args == "list" {
+                    match Self::format_plugin_list() {
+                        Ok(text) => SlashResult::Display(text),
+                        Err(err) => SlashResult::Display(format!("/plugin list failed: {err}")),
+                    }
+                } else if let Some(uri) = args.strip_prefix("install ") {
+                    match crate::plugin_cli::install(uri.trim()) {
+                        Ok(()) => SlashResult::Display(format!("Installed plugin from {}", uri.trim())),
+                        Err(err) => SlashResult::Display(format!("/plugin install failed: {err}")),
+                    }
+                } else if let Some(name) = args.strip_prefix("remove ") {
+                    match crate::plugin_cli::remove(name.trim()) {
+                        Ok(()) => SlashResult::Display(format!("Removed plugin {}", name.trim())),
+                        Err(err) => SlashResult::Display(format!("/plugin remove failed: {err}")),
+                    }
+                } else if args == "update" {
+                    match crate::plugin_cli::update(None) {
+                        Ok(()) => SlashResult::Display("Updated installed plugins.".into()),
+                        Err(err) => SlashResult::Display(format!("/plugin update failed: {err}")),
+                    }
+                } else if let Some(name) = args.strip_prefix("update ") {
+                    match crate::plugin_cli::update(Some(name.trim())) {
+                        Ok(()) => SlashResult::Display(format!("Updated plugin {}", name.trim())),
+                        Err(err) => SlashResult::Display(format!("/plugin update failed: {err}")),
+                    }
+                } else {
+                    SlashResult::Display(
+                        "Usage: /plugin [list|install <uri>|remove <name>|update [name]]".into(),
+                    )
+                }
+            }
 
             "stats" => {
                 let s = self.settings();
@@ -3267,6 +3305,68 @@ impl App {
 
     fn is_hidden_bus_command(name: &str) -> bool {
         matches!(name, "opus" | "sonnet" | "haiku")
+    }
+
+    fn format_plugin_list() -> anyhow::Result<String> {
+        let plugins_dir = dirs::home_dir()
+            .map(|h| h.join(".omegon").join("plugins"))
+            .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
+
+        if !plugins_dir.exists() {
+            return Ok("No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into());
+        }
+
+        let entries: Vec<_> = std::fs::read_dir(&plugins_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir() || e.path().is_symlink())
+            .collect();
+
+        if entries.is_empty() {
+            return Ok("No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into());
+        }
+
+        let mut lines = vec![
+            format!("Plugins in {}\n", plugins_dir.display()),
+            format!("{:<20} {:<12} {:<10} DESCRIPTION", "NAME", "TYPE", "VERSION"),
+            "─".repeat(72),
+        ];
+
+        for entry in entries {
+            let dir = entry.path();
+            let resolved = if dir.is_symlink() {
+                std::fs::read_link(&dir).unwrap_or(dir.clone())
+            } else {
+                dir.clone()
+            };
+            let manifest_path = resolved.join("plugin.toml");
+            if !manifest_path.exists() {
+                let name = dir.file_name().unwrap_or_default().to_string_lossy();
+                lines.push(format!("{:<20} {:<12} {:<10} (no plugin.toml)", name, "?", "?"));
+                continue;
+            }
+            match std::fs::read_to_string(&manifest_path)
+                .ok()
+                .and_then(|content| crate::plugins::armory::ArmoryManifest::parse(&content).ok())
+            {
+                Some(manifest) => {
+                    let symlink_marker = if dir.is_symlink() { " →" } else { "" };
+                    lines.push(format!(
+                        "{:<20} {:<12} {:<10} {}{}",
+                        manifest.plugin.name,
+                        manifest.plugin.plugin_type,
+                        manifest.plugin.version,
+                        manifest.plugin.description,
+                        symlink_marker
+                    ));
+                }
+                None => {
+                    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+                    lines.push(format!("{:<20} {:<12} {:<10} (invalid manifest)", name, "?", "?"));
+                }
+            }
+        }
+
+        Ok(lines.join("\n"))
     }
 
     /// Palette: matching commands + subcommands for the current editor text.
