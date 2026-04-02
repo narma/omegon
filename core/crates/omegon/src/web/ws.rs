@@ -214,6 +214,9 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
         AgentEvent::MessageEnd => json!({
             "type": "message_end",
         }),
+        AgentEvent::MessageAbort => json!({
+            "type": "message_abort",
+        }),
         AgentEvent::ToolStart { id, name, args } => json!({
             "type": "tool_start",
             "id": id,

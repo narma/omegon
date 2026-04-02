@@ -3622,6 +3622,9 @@ impl App {
                     self.effects.ping_footer(self.theme.as_ref());
                 }
             }
+            AgentEvent::MessageAbort => {
+                self.conversation.abort_streaming();
+            }
             _ => {}
         }
     }

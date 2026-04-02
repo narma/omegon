@@ -280,6 +280,11 @@ impl ConversationView {
         self.conv_state.auto_scroll_to_bottom();
     }
 
+    pub fn abort_streaming(&mut self) {
+        self.streaming = false;
+        self.conv_state.invalidate();
+    }
+
     /// Stamp metadata on the most recent segment (call after segment creation
     /// when model/provider info is available from the harness).
     pub fn stamp_meta(&mut self, meta: SegmentMeta) {

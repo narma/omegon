@@ -800,7 +800,7 @@ async fn consume_llm_stream(
     while let Some(event) = match tokio::time::timeout(stream_idle_timeout, rx.recv()).await {
         Ok(event) => event,
         Err(_) => {
-            let _ = events.send(AgentEvent::MessageEnd);
+            let _ = events.send(AgentEvent::MessageAbort);
             anyhow::bail!(
                 "LLM stream idle for {}s — connection may be stalled",
                 stream_idle_timeout.as_secs()
@@ -854,7 +854,7 @@ async fn consume_llm_stream(
                 break;
             }
             LlmEvent::Error { message } => {
-                let _ = events.send(AgentEvent::MessageEnd);
+                let _ = events.send(AgentEvent::MessageAbort);
                 anyhow::bail!("LLM error: {message}");
             }
         }

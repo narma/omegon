@@ -876,6 +876,7 @@ pub enum AgentEvent {
         text: String,
     },
     MessageEnd,
+    MessageAbort,
     ToolStart {
         id: String,
         name: String,
