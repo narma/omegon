@@ -574,6 +574,45 @@ fn summarize_cleave_child_statuses(
     (completed, failed, upstream_exhausted, unfinished)
 }
 
+fn format_cleave_merge_result(
+    child: Option<&cleave::state::ChildState>,
+    label: &str,
+    outcome: &cleave::orchestrator::MergeOutcome,
+) -> String {
+    match outcome {
+        cleave::orchestrator::MergeOutcome::Success => format!("  ✓ {label} merged"),
+        cleave::orchestrator::MergeOutcome::NoChanges => {
+            if let Some(child) = child {
+                match child.status {
+                    cleave::state::ChildStatus::UpstreamExhausted => {
+                        format!("  ⚡ {label} upstream exhausted (no repo changes to merge)")
+                    }
+                    cleave::state::ChildStatus::Failed => {
+                        format!("  ✗ {label} failed (no repo changes to merge)")
+                    }
+                    cleave::state::ChildStatus::Pending | cleave::state::ChildStatus::Running => {
+                        format!("  ○ {label} incomplete (no repo changes to merge)")
+                    }
+                    cleave::state::ChildStatus::Completed => {
+                        format!("  ○ {label} completed (no changes)")
+                    }
+                }
+            } else {
+                format!("  ○ {label} completed (no changes)")
+            }
+        }
+        cleave::orchestrator::MergeOutcome::Conflict(d) => {
+            format!("  ✗ {label} CONFLICT: {}", d.lines().next().unwrap_or(""))
+        }
+        cleave::orchestrator::MergeOutcome::Failed(d) => {
+            format!("  ✗ {label} FAILED: {}", d.lines().next().unwrap_or(""))
+        }
+        cleave::orchestrator::MergeOutcome::Skipped(reason) => {
+            format!("  ○ {label} skipped ({reason})")
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_cleave_command(
     cli: &Cli,
@@ -663,21 +702,8 @@ async fn run_cleave_command(
 
     eprintln!("\n### Merge Results");
     for (label, outcome) in &result.merge_results {
-        match outcome {
-            cleave::orchestrator::MergeOutcome::Success => eprintln!("  ✓ {} merged", label),
-            cleave::orchestrator::MergeOutcome::NoChanges => {
-                eprintln!("  ○ {} completed (no changes)", label)
-            }
-            cleave::orchestrator::MergeOutcome::Conflict(d) => {
-                eprintln!("  ✗ {} CONFLICT: {}", label, d.lines().next().unwrap_or(""))
-            }
-            cleave::orchestrator::MergeOutcome::Failed(d) => {
-                eprintln!("  ✗ {} FAILED: {}", label, d.lines().next().unwrap_or(""))
-            }
-            cleave::orchestrator::MergeOutcome::Skipped(reason) => {
-                eprintln!("  ○ {} skipped ({})", label, reason)
-            }
-        }
+        let child = result.state.children.iter().find(|c| c.label == *label);
+        eprintln!("{}", format_cleave_merge_result(child, label, outcome));
     }
 
     // Post-merge guardrails (CLI only — TS wrapper runs its own)
@@ -2418,6 +2444,36 @@ mod tests {
         let (completed, failed, upstream_exhausted, unfinished) =
             summarize_cleave_child_statuses(&children);
         assert_eq!((completed, failed, upstream_exhausted, unfinished), (1, 1, 1, 1));
+    }
+
+    #[test]
+    fn cleave_merge_result_reports_upstream_exhaustion_honestly() {
+        let child = cleave::state::ChildState {
+            child_id: 0,
+            label: "noop-docs".to_string(),
+            description: String::new(),
+            scope: vec![],
+            depends_on: vec![],
+            status: cleave::state::ChildStatus::UpstreamExhausted,
+            error: Some("429".to_string()),
+            branch: None,
+            worktree_path: None,
+            backend: "native".to_string(),
+            execute_model: None,
+            provider_id: None,
+            duration_secs: None,
+        };
+
+        let line = format_cleave_merge_result(
+            Some(&child),
+            "noop-docs",
+            &cleave::orchestrator::MergeOutcome::NoChanges,
+        );
+        assert!(line.contains("upstream exhausted"), "unexpected line: {line}");
+        assert!(
+            !line.contains("completed (no changes)"),
+            "line should not claim completion: {line}"
+        );
     }
 
     #[test]
