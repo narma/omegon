@@ -2372,4 +2372,19 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   ed4ca9c9 feat(skills): two-tier skill loading from ~/.omegon/skills/ and .omegon/skills/
   6b8b4131 feat(lex): add §VII Capabilities — harness sensoria baked into bedrock
   bdd81ffe test(cleave,tui,loop): add token accumulation, snapshot replacement, backoff cap tests
+## 2026-04-02 — main (24t 965tc 3m3s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  bd7b37f9 chore(skills): audit and prune bundled skill library
+  ed4ca9c9 feat(skills): two-tier skill loading from ~/.omegon/skills/ and .omegon/skills/
+  6b8b4131 feat(lex): add §VII Capabilities — harness sensoria baked into bedrock
 

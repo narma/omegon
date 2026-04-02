@@ -26,6 +26,7 @@ pub mod features;
 mod ipc;
 mod migrate;
 mod smoke;
+mod skills;
 mod switch;
 mod update;
 
@@ -310,6 +311,20 @@ enum Commands {
     /// Audit design-tree state for suspicious lifecycle drift.
     #[command(hide = true)]
     Doctor,
+
+    /// Manage bundled skills — list available skills and install them to ~/.omegon/skills/.
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsAction {
+    /// List bundled skills and their installation status.
+    List,
+    /// Install all bundled skills to ~/.omegon/skills/.
+    Install,
 }
 
 #[derive(Subcommand)]
@@ -493,6 +508,12 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Some(Commands::Doctor) => run_doctor_command(&cli).await,
+        Some(Commands::Skills { ref action }) => {
+            match action {
+                SkillsAction::List => skills::cmd_list().map_err(Into::into),
+                SkillsAction::Install => skills::cmd_install().map_err(Into::into),
+            }
+        }
         None => {
             // No subcommand: interactive if no --prompt, headless if --prompt given
             if cli.smoke {

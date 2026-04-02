@@ -82,20 +82,34 @@ link:
     just install-skills
 
 # Install bundled skills to ~/.omegon/skills/ so they are available to all projects.
+# Uses the binary itself (embedded assets) so this works for both source and brew installs.
 # Project-local skills go in .omegon/skills/ inside each repo.
 install-skills:
     #!/usr/bin/env bash
     set -euo pipefail
-    SKILLS_SRC="$(pwd)/skills"
-    SKILLS_DEST="$HOME/.omegon/skills"
-    if [ ! -d "$SKILLS_SRC" ]; then
-        echo "  no skills/ directory found — skipping"
-        exit 0
+    # Prefer the release binary; fall back to rsync from source if binary not yet built.
+    BINARY=""
+    for candidate in "$(pwd)/core/target/release/omegon" "$(pwd)/core/target/dev-release/omegon" "$(command -v omegon 2>/dev/null || true)"; do
+        if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+            BINARY="$candidate"
+            break
+        fi
+    done
+    if [ -n "$BINARY" ]; then
+        "$BINARY" skills install
+    else
+        # Binary not built yet — fall back to rsync from source tree
+        SKILLS_SRC="$(pwd)/skills"
+        SKILLS_DEST="$HOME/.omegon/skills"
+        if [ ! -d "$SKILLS_SRC" ]; then
+            echo "  no skills/ directory found — skipping"
+            exit 0
+        fi
+        mkdir -p "$SKILLS_DEST"
+        rsync -a --delete "$SKILLS_SRC/" "$SKILLS_DEST/"
+        count=$(find "$SKILLS_DEST" -name "SKILL.md" | wc -l | tr -d ' ')
+        echo "✓ $count skill(s) → $SKILLS_DEST  (rsync fallback — build binary for embedded install)"
     fi
-    mkdir -p "$SKILLS_DEST"
-    rsync -a --delete "$SKILLS_SRC/" "$SKILLS_DEST/"
-    count=$(find "$SKILLS_DEST" -name "SKILL.md" | wc -l | tr -d ' ')
-    echo "✓ $count skill(s) → $SKILLS_DEST"
 
 # Pull latest and build (handles Cargo.lock conflicts from version bumps)
 # Uses dev-release profile: optimized but fast link (~90% perf, ~10% link time)
