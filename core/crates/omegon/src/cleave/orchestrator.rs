@@ -551,7 +551,8 @@ async fn dispatch_child(
         .context(format!("Failed to write prompt file for child '{label}'"))?;
 
     let max_turns_str = config.max_turns.to_string();
-    let cwd_arg = cwd.to_string_lossy().to_string();
+    let canonical_cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    let cwd_arg = canonical_cwd.to_string_lossy().to_string();
     let prompt_arg = prompt_file.to_string_lossy().to_string();
     // Don't pass --bridge by default — let children auto-detect native providers.
     // Forcing --bridge bypasses native providers entirely, which breaks children
@@ -1084,16 +1085,17 @@ mod tests {
     }
 
     #[test]
-    fn child_prompt_path_is_absolute_to_survive_cwd_switches() {
+    fn child_dispatch_paths_are_absolute_to_survive_cwd_switches() {
         let temp = tempfile::tempdir().unwrap();
         let worktree = temp.path().join("child-worktree");
         std::fs::create_dir_all(&worktree).unwrap();
 
-        let prompt_file = std::fs::canonicalize(&worktree)
-            .unwrap_or_else(|_| worktree.clone())
-            .join(".cleave-prompt.md");
+        let canonical_cwd = std::fs::canonicalize(&worktree).unwrap_or_else(|_| worktree.clone());
+        let prompt_file = canonical_cwd.join(".cleave-prompt.md");
 
+        assert!(canonical_cwd.is_absolute());
         assert!(prompt_file.is_absolute());
+        assert_eq!(prompt_file.parent(), Some(canonical_cwd.as_path()));
         assert_eq!(prompt_file.file_name().and_then(|s| s.to_str()), Some(".cleave-prompt.md"));
     }
 }
