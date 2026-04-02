@@ -349,7 +349,7 @@
     {
       "id": "skill-location-architecture",
       "title": "Skill location standard and bundled skill distribution",
-      "state": "exploring",
+      "state": "resolved",
       "parent": null,
       "tags": [],
       "priority": null,
@@ -359,7 +359,7 @@
       "overview": "",
       "bound_change": null,
       "created_at": "2026-04-02T20:37:12Z",
-      "updated_at": "2026-04-02T20:37:24Z"
+      "updated_at": "2026-04-02T20:39:11Z"
     }
   ],
   "changes": [],
@@ -731,6 +731,15 @@
       "entity_id": "skill-location-architecture",
       "from_state": "seed",
       "to_state": "exploring",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-02T20:39:11Z",
+      "entity_type": "node",
+      "entity_id": "skill-location-architecture",
+      "from_state": "exploring",
+      "to_state": "resolved",
       "reason": null,
       "forced": false
     }

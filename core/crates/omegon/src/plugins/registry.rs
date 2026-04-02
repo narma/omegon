@@ -93,6 +93,10 @@ pub struct PluginRegistry {
     active_persona: Option<LoadedPersona>,
     active_tone: Option<LoadedTone>,
     memory: MemoryLayers,
+    /// Skill directives loaded from ~/.omegon/skills/ and .omegon/skills/.
+    /// Project-local (.omegon/skills/) entries follow bundled ones; last writer on
+    /// same name wins, so project-local overrides bundled.
+    loaded_skills: Vec<String>,
 }
 
 impl PluginRegistry {
@@ -103,7 +107,47 @@ impl PluginRegistry {
             active_persona: None,
             active_tone: None,
             memory: MemoryLayers::default(),
+            loaded_skills: Vec::new(),
         }
+    }
+
+    /// Load skills from the two canonical locations:
+    ///   1. `~/.omegon/skills/<name>/SKILL.md`  — bundled / user-installed
+    ///   2. `<cwd>/.omegon/skills/<name>/SKILL.md` — project-local (appended last,
+    ///      so project-local content follows bundled in the prompt)
+    ///
+    /// Call once at session start. Silently skips missing directories.
+    pub fn load_skills(&mut self, cwd: &std::path::Path) {
+        let mut skills: Vec<String> = Vec::new();
+
+        let bundled = dirs::home_dir().map(|h| h.join(".omegon").join("skills"));
+        let project = cwd.join(".omegon").join("skills");
+
+        for dir in bundled.iter().chain(std::iter::once(&project)) {
+            if !dir.is_dir() {
+                continue;
+            }
+            let mut entries: Vec<_> = match std::fs::read_dir(dir) {
+                Ok(e) => e.filter_map(|e| e.ok()).collect(),
+                Err(_) => continue,
+            };
+            entries.sort_by_key(|e| e.file_name());
+            for entry in entries {
+                let skill_file = entry.path().join("SKILL.md");
+                if let Ok(content) = std::fs::read_to_string(&skill_file) {
+                    if !content.trim().is_empty() {
+                        skills.push(content);
+                    }
+                }
+            }
+        }
+
+        self.loaded_skills = skills;
+    }
+
+    /// Return the number of loaded skills.
+    pub fn skill_count(&self) -> usize {
+        self.loaded_skills.len()
     }
 
     /// Activate a persona. Replaces any previously active persona.
@@ -177,9 +221,13 @@ impl PluginRegistry {
     }
 
     /// Assemble the system prompt from all active layers.
-    /// Order: Lex Imperialis → Tone → Persona.
+    /// Order: Lex Imperialis → Skills → Tone → Persona.
     pub fn build_system_prompt(&self) -> String {
         let mut layers = vec![self.lex_imperialis.as_str()];
+
+        for skill in &self.loaded_skills {
+            layers.push(skill.as_str());
+        }
 
         if let Some(ref tone) = self.active_tone {
             layers.push(&tone.directive);
@@ -648,5 +696,59 @@ mod tests {
         ] {
             assert!(prompt.contains(directive), "missing directive: {directive}");
         }
+    }
+
+    #[test]
+    fn load_skills_from_project_local_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join(".omegon").join("skills").join("my-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "# My Skill\nDo the thing.").unwrap();
+
+        let mut reg = PluginRegistry::new(LEX.into());
+        reg.load_skills(tmp.path());
+
+        assert_eq!(reg.skill_count(), 1);
+        assert!(reg.build_system_prompt().contains("Do the thing."));
+    }
+
+    #[test]
+    fn skills_appear_between_lex_and_persona() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join(".omegon").join("skills").join("test-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "SKILL_MARKER").unwrap();
+
+        let mut reg = PluginRegistry::new(LEX.into());
+        reg.load_skills(tmp.path());
+        reg.activate_persona(engineer_persona());
+
+        let prompt = reg.build_system_prompt();
+        let lex_pos = prompt.find("Lex Imperialis").unwrap();
+        let skill_pos = prompt.find("SKILL_MARKER").unwrap();
+        let persona_pos = prompt.find("You are a systems engineering harness.").unwrap();
+        assert!(lex_pos < skill_pos, "skill should follow lex");
+        assert!(skill_pos < persona_pos, "persona should follow skill");
+    }
+
+    #[test]
+    fn empty_skill_files_not_loaded() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skill_dir = tmp.path().join(".omegon").join("skills").join("empty-skill");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(skill_dir.join("SKILL.md"), "   \n   ").unwrap();
+
+        let mut reg = PluginRegistry::new(LEX.into());
+        reg.load_skills(tmp.path());
+        assert_eq!(reg.skill_count(), 0);
+    }
+
+    #[test]
+    fn missing_skills_dir_is_silent() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No .omegon/skills/ directory created
+        let mut reg = PluginRegistry::new(LEX.into());
+        reg.load_skills(tmp.path());
+        assert_eq!(reg.skill_count(), 0);
     }
 }

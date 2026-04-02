@@ -400,8 +400,9 @@ impl AgentSetup {
 
         // ─── Native features ────────────────────────────────────────────
         // ─── Persona system ────────────────────────────────────────────
-        let persona_registry =
+        let mut persona_registry =
             crate::plugins::registry::PluginRegistry::new(crate::prompt::load_lex_imperialis());
+        persona_registry.load_skills(&cwd);
         bus.register(Box::new(features::persona::PersonaFeature::new(
             persona_registry,
         )));

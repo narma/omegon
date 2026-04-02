@@ -1,7 +1,7 @@
 ---
 id: skill-location-architecture
 title: "Skill location standard and bundled skill distribution"
-status: exploring
+status: resolved
 tags: [skills, architecture, distribution, dx]
 open_questions:
   - "What is the lookup mechanism for bundled skills? Options: (a) a `~/.config/omegon/skills/index.json` manifest generated at install time, (b) filesystem glob at startup, (c) skills compiled into the binary as `include_str!`. Which wins on startup cost vs. updateability?"
@@ -30,6 +30,38 @@ The desired architecture has three tiers:
 The current `skills/` directory in this repo becomes the canonical upstream skill library — source of truth for bundled skills. Installation copies them to `~/.config/omegon/skills/`.
 
 Existing skills to migrate/evaluate: git, rust, typescript, python, openspec, oci, style, security, vault, pi-extensions, pi-tui.
+
+## Decisions
+
+### Bundled skills install to ~/.omegon/skills/, consistent with harness convention
+
+**Status:** accepted
+
+**Rationale:** ~/.omegon/ is already the user-level harness home (same pattern as other harnesses using this convention). No special index or manifest needed — just a standard subdirectory. The harness discovers skills via filesystem at two locations: ~/.omegon/skills/ (bundled/user) and .omegon/skills/ (project-local). Project-local wins on name collision.
+
+### Skills inject into system prompt at session start via registry.build_system_prompt()
+
+**Status:** accepted
+
+**Rationale:** Consistent with Lex Imperialis philosophy: capabilities are always-present identity, not on-demand reads. The registry already assembles the system prompt; skills are an additional layer appended after Lex/Tone/Persona. Load order: glob ~/.omegon/skills/*/SKILL.md first, then .omegon/skills/*/SKILL.md (project-local wins on name collision by overwriting).
+
+### Install step: `just install` copies skills/ to ~/.omegon/skills/
+
+**Status:** accepted
+
+**Rationale:** Simple rsync/cp in the Justfile install recipe. Brew formula post-install hook does the same. No manifest or index file needed — the directory structure is the index.
+
+### Existing skills audit: review remaining 10 skills before migrating
+
+**Status:** deferred
+
+**Rationale:** Each remaining skill (git, rust, typescript, python, openspec, oci, style, security, vault, pi-extensions, pi-tui) needs review — same question as cleave: is the content still accurate or stale? Deferred to implementation phase so migration doesn't copy junk to ~/.omegon/skills/.
+
+### Plugin system: add skill loading to PluginRegistry, not armory TOML system
+
+**Status:** accepted
+
+**Rationale:** The armory system requires plugin.toml manifests and a separate omegon-armory repo — overkill for simple markdown directives. Skills are just files: glob ~/.omegon/skills/*/SKILL.md and .omegon/skills/*/SKILL.md, load content, append to system prompt. PluginRegistry gets a loaded_skills: Vec<String> field. The armory's existing skill plugin type remains available for richer plugin authors who want manifests.
 
 ## Open Questions
 

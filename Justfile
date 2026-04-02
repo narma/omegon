@@ -79,6 +79,23 @@ link:
     echo "✓ omegon → $DEST"
     echo "  run 'hash -d omegon 2>/dev/null || true' if your shell cached the old path"
     "$DEST" --version
+    just install-skills
+
+# Install bundled skills to ~/.omegon/skills/ so they are available to all projects.
+# Project-local skills go in .omegon/skills/ inside each repo.
+install-skills:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    SKILLS_SRC="$(pwd)/skills"
+    SKILLS_DEST="$HOME/.omegon/skills"
+    if [ ! -d "$SKILLS_SRC" ]; then
+        echo "  no skills/ directory found — skipping"
+        exit 0
+    fi
+    mkdir -p "$SKILLS_DEST"
+    rsync -a --delete "$SKILLS_SRC/" "$SKILLS_DEST/"
+    count=$(find "$SKILLS_DEST" -name "SKILL.md" | wc -l | tr -d ' ')
+    echo "✓ $count skill(s) → $SKILLS_DEST"
 
 # Pull latest and build (handles Cargo.lock conflicts from version bumps)
 # Uses dev-release profile: optimized but fast link (~90% perf, ~10% link time)

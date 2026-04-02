@@ -4248,6 +4248,10 @@ pub async fn run_tui(
     }
     app.history = App::load_history(&config.cwd);
     app.footer_data.cwd = config.cwd.clone();
+    // Load skills from ~/.omegon/skills/ (bundled) and .omegon/skills/ (project-local).
+    if let Some(ref mut registry) = app.plugin_registry {
+        registry.load_skills(std::path::Path::new(&config.cwd));
+    }
     app.footer_data.is_oauth = config.is_oauth;
     app.bus_commands = config.bus_commands;
     app.dashboard_handles = config.dashboard_handles;
