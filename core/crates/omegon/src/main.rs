@@ -1782,8 +1782,20 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
     // Resolve prompt from --prompt or --prompt-file
     let prompt_text = match (&cli.prompt, &cli.prompt_file) {
         (Some(p), _) => p.clone(),
-        (None, Some(path)) => std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read prompt file {}: {}", path.display(), e))?,
+        (None, Some(path)) => {
+            let resolved = if path.is_absolute() {
+                path.clone()
+            } else {
+                cli.cwd.join(path)
+            };
+            std::fs::read_to_string(&resolved).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to read prompt file {}: {}",
+                    resolved.display(),
+                    e
+                )
+            })?
+        }
         (None, None) => {
             eprintln!("Usage: omegon-agent --prompt \"<task>\" [--cwd <path>]");
             eprintln!("       omegon-agent --prompt-file <path> [--cwd <path>]");
@@ -2250,5 +2262,54 @@ mod tests {
             }
             _ => panic!("Expected Embedded command"),
         }
+    }
+
+    #[test]
+    fn relative_prompt_file_is_resolved_from_cwd() {
+        let cwd = tempfile::tempdir().unwrap();
+        let prompts = cwd.path().join("prompts");
+        std::fs::create_dir_all(&prompts).unwrap();
+        let prompt_path = prompts.join("task.md");
+        std::fs::write(&prompt_path, "hello from prompt file").unwrap();
+
+        let cli = Cli::try_parse_from(vec![
+            "omegon",
+            "--cwd",
+            cwd.path().to_str().unwrap(),
+            "--prompt-file",
+            "prompts/task.md",
+        ])
+        .unwrap();
+
+        let resolved = if cli.prompt_file.as_ref().unwrap().is_absolute() {
+            cli.prompt_file.as_ref().unwrap().clone()
+        } else {
+            cli.cwd.join(cli.prompt_file.as_ref().unwrap())
+        };
+
+        let prompt = std::fs::read_to_string(resolved).unwrap();
+        assert_eq!(prompt, "hello from prompt file");
+    }
+
+    #[test]
+    fn relative_prompt_file_under_child_worktree_can_be_read() {
+        let root = tempfile::tempdir().unwrap();
+        let worktree = root.path().join("child-worktree");
+        std::fs::create_dir_all(&worktree).unwrap();
+        let prompt_path = worktree.join(".cleave-prompt.md");
+        std::fs::write(&prompt_path, "child prompt").unwrap();
+
+        let cli = Cli::try_parse_from(vec![
+            "omegon",
+            "--cwd",
+            worktree.to_str().unwrap(),
+            "--prompt-file",
+            ".cleave-prompt.md",
+        ])
+        .unwrap();
+
+        let resolved = cli.cwd.join(cli.prompt_file.as_ref().unwrap());
+        let prompt = std::fs::read_to_string(resolved).unwrap();
+        assert_eq!(prompt, "child prompt");
     }
 }
