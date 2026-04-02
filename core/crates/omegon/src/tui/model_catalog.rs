@@ -137,6 +137,49 @@ pub struct ModelCatalog {
 }
 
 impl ModelCatalog {
+    pub fn pricing_for_model(model_id: &str) -> Option<TokenPricing> {
+        match model_id {
+            // Ollama / local
+            id if id.starts_with("ollama:") => Some(TokenPricing::new(0.0, 0.0)),
+
+            // OpenRouter
+            "openrouter:qwen/qwen-qwq-32b" => Some(TokenPricing::new(0.20, 0.20)),
+            "openrouter:qwen/qwen-2.5-72b-instruct" => Some(TokenPricing::new(0.35, 0.40)),
+            "openrouter:minimax/minimax-m2.7" => Some(TokenPricing::new(0.28, 1.10)),
+            "openrouter:deepseek/deepseek-chat" => Some(TokenPricing::new(0.27, 1.10)),
+            "openrouter:meta-llama/llama-2-70b-chat" => Some(TokenPricing::new(0.90, 0.90)),
+
+            // Anthropic
+            "anthropic:claude-opus-4-6" => Some(TokenPricing::new(15.0, 75.0)),
+            "anthropic:claude-sonnet-4-6" => Some(TokenPricing::new(3.0, 15.0)),
+            "anthropic:claude-haiku-4-5-20251001" => Some(TokenPricing::new(0.8, 4.0)),
+
+            // OpenAI API
+            "openai:gpt-5.4" => Some(TokenPricing::new(2.5, 15.0)),
+            "openai:gpt-5" => Some(TokenPricing::new(2.5, 15.0)),
+            "openai:gpt-5-mini" => Some(TokenPricing::new(0.750, 4.500)),
+            "openai:gpt-4.1" => Some(TokenPricing::new(2.0, 8.0)),
+            "openai:o4-mini" => Some(TokenPricing::new(1.1, 4.4)),
+
+            // Groq / free
+            "groq:llama-3.3-70b-versatile" => Some(TokenPricing::new(0.0, 0.0)),
+
+            // xAI
+            "xai:grok-4-0709" => Some(TokenPricing::new(3.0, 15.0)),
+            "xai:grok-3" => Some(TokenPricing::new(2.0, 10.0)),
+
+            // Mistral
+            "mistral:mistral-large-latest" => Some(TokenPricing::new(2.0, 6.0)),
+            "mistral:mistral-small-latest" => Some(TokenPricing::new(0.2, 0.6)),
+
+            // ChatGPT / Codex OAuth
+            "openai-codex:gpt-5.4" => Some(TokenPricing::new(2.5, 15.0)),
+            "openai-codex:gpt-5.4-mini" => Some(TokenPricing::new(0.750, 4.500)),
+
+            _ => None,
+        }
+    }
+
     pub fn find_by_id(&self, model_id: &str) -> Option<&ModelInfo> {
         self.providers
             .values()
@@ -631,5 +674,11 @@ mod tests {
         let cat = ModelCatalog::new();
         let model = cat.find_by_id("anthropic:claude-sonnet-4-6");
         assert!(model.is_some());
+    }
+
+    #[test]
+    fn pricing_for_model_is_not_auth_gated() {
+        let pricing = ModelCatalog::pricing_for_model("openai:gpt-5.4");
+        assert_eq!(pricing, Some(TokenPricing::new(2.5, 15.0)));
     }
 }

@@ -801,9 +801,7 @@ fn format_session_text(model_id: &str, turn: u32, session_input_tokens: u64, ses
 }
 
 fn estimate_session_cost_usd(model_id: &str, session_input_tokens: u64, session_output_tokens: u64) -> Option<f64> {
-    let catalog = ModelCatalog::new();
-    let model = catalog.find_by_id(model_id)?;
-    let pricing = model.pricing?;
+    let pricing = ModelCatalog::pricing_for_model(model_id)?;
     Some(pricing.estimate_cost_usd(session_input_tokens, session_output_tokens))
 }
 
@@ -939,8 +937,14 @@ mod tests {
     }
 
     #[test]
-    fn session_text_falls_back_to_tokens_when_model_is_not_in_catalog() {
-        let text = format_session_text("groq:llama-3.3-70b-versatile", 2, 12_000, 3_000);
+    fn session_text_falls_back_to_tokens_when_pricing_unknown() {
+        let text = format_session_text("unknown:custom-model", 2, 12_000, 3_000);
         assert_eq!(text, "T2 12k/3k");
+    }
+
+    #[test]
+    fn session_text_shows_cost_for_priced_models_even_without_catalog_availability() {
+        let text = format_session_text("openai:gpt-5.4", 2, 12_000, 3_000);
+        assert!(text.contains('$'), "got {text}");
     }
 }
