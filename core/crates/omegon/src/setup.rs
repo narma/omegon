@@ -165,8 +165,14 @@ impl AgentSetup {
         for name in collect_plugin_secret_requirements(&cwd) {
             preflight.insert(name);
         }
+        // Web search API keys — preflight so hydrate_process_env() populates them
+        // and available_providers() sees them via env::var(). No keychain prompt
+        // if no recipe is configured for a given key.
+        for key in &["BRAVE_API_KEY", "TAVILY_API_KEY", "SERPER_API_KEY"] {
+            preflight.insert((*key).to_string());
+        }
         // NOTE: OMEGON_WEB_AUTH_SECRET is NOT preflighted here.
-        // Web auth (Brave, Google, etc.) is only needed on-demand during web search.
+        // Web browsing auth is only needed on-demand during web search.
         // Resolving it lazily avoids an extra keychain prompt at startup.
         tracing::info!(
             requested = preflight.len(),
