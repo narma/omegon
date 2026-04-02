@@ -914,6 +914,45 @@ mod tests {
     }
 
     #[test]
+    fn apply_progress_event_accumulates_tokens() {
+        let shared = Arc::new(Mutex::new(CleaveProgress {
+            active: true,
+            run_id: "run-1".into(),
+            total_children: 1,
+            completed: 0,
+            failed: 0,
+            children: vec![ChildProgress {
+                label: "alpha".into(),
+                status: "pending".into(),
+                duration_secs: None,
+                last_tool: None,
+                last_turn: None,
+                started_at: None,
+                tokens_in: 0,
+                tokens_out: 0,
+            }],
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+        }));
+
+        apply_progress_event(
+            &shared,
+            &ProgressEvent::ChildTokens {
+                child: "alpha".into(),
+                input_tokens: 100,
+                output_tokens: 50,
+            },
+        );
+
+        let progress = shared.lock().unwrap();
+        let child = &progress.children[0];
+        assert_eq!(child.tokens_in, 100);
+        assert_eq!(child.tokens_out, 50);
+        assert_eq!(progress.total_tokens_in, 100);
+        assert_eq!(progress.total_tokens_out, 50);
+    }
+
+    #[test]
     fn apply_progress_event_done_marks_run_inactive() {
         let shared = Arc::new(Mutex::new(CleaveProgress {
             active: true,

@@ -1568,6 +1568,35 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn set_cleave_progress_replaces_snapshot() {
+        let mut panel = InstrumentPanel::default();
+        panel.set_cleave_progress(Some(CleaveProgress {
+            active: true,
+            run_id: "r1".into(),
+            total_children: 2,
+            completed: 0,
+            failed: 0,
+            children: vec![],
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+        }));
+        assert_eq!(panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()), Some("r1"));
+
+        panel.set_cleave_progress(Some(CleaveProgress {
+            active: true,
+            run_id: "r2".into(),
+            total_children: 2,
+            completed: 0,
+            failed: 0,
+            children: vec![],
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+        }));
+        assert_eq!(panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()), Some("r2"));
+    }
+
     #[test]
     fn memory_fill_is_visually_capped() {
         let mut panel = InstrumentPanel::default();

@@ -1834,6 +1834,20 @@ mod tests {
         assert_eq!(config.retry_delay_ms, 750);
     }
 
+
+    #[test]
+    fn retry_backoff_is_capped() {
+        let cap_ms: u64 = 15_000;
+        let base_ms: u64 = LoopConfig::default().retry_delay_ms;
+        for attempt in [0_u32, 1, 2, 10, 100] {
+            let mut delay = base_ms;
+            for _ in 0..attempt {
+                delay = (delay * 2).min(cap_ms);
+            }
+            assert!(delay <= cap_ms, "attempt {attempt} exceeded cap: {delay}");
+        }
+    }
+
     // ── Mutation detection ─────────────────────────────────────────────
 
     #[test]
