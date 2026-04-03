@@ -2657,4 +2657,19 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   29bfcbf1 fix(tui): expose skills and hide model alias slash commands
   71a4ad39 chore(release): 0.15.7-rc.17
   bf2f7c48 feat(loop): persist transient upstream failures for provider audit
+## 2026-04-03 — main (2t 1261tc 23s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  aa8308f3 feat(tui): expose plugin management as slash commands
+  29bfcbf1 fix(tui): expose skills and hide model alias slash commands
+  71a4ad39 chore(release): 0.15.7-rc.17
 

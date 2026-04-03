@@ -729,12 +729,11 @@ async fn stream_with_retry(
         }
 
         // Regular retry notification → toast (routed by TUI via "— retrying" substring).
-        let short_err = crate::util::truncate_str(&err_msg, 300);
-        let kind_label = transient_kind
-            .map(TransientFailureKind::label)
-            .unwrap_or("transient upstream failure");
+        let operator_detail = transient_kind
+            .map(|kind| kind.operator_detail(&provider, &err_msg))
+            .unwrap_or_else(|| crate::util::truncate_str(&err_msg, 300).to_string());
         let msg = format!(
-            "⚠ Upstream {kind_label} — retrying (attempt {attempt}, delay {}ms): {short_err}",
+            "⚠ Upstream {kind_label} — retrying (attempt {attempt}, delay {}ms): {operator_detail}",
             delay
         );
         let _ = events.send(AgentEvent::SystemNotification { message: msg });
@@ -795,6 +794,7 @@ enum TransientFailureKind {
     NetworkConnect,
     NetworkReset,
     Dns,
+    DecodeBody,
     BridgeDropped,
     GenericTransient,
 }
@@ -821,8 +821,20 @@ impl TransientFailureKind {
             Self::NetworkConnect => "connection failure",
             Self::NetworkReset => "connection reset",
             Self::Dns => "dns failure",
+            Self::DecodeBody => "unreadable response body",
             Self::BridgeDropped => "bridge dropped stream",
             Self::GenericTransient => "transient upstream failure",
+        }
+    }
+}
+
+impl TransientFailureKind {
+    fn operator_detail(self, provider: &str, err_msg: &str) -> String {
+        match self {
+            Self::DecodeBody => format!(
+                "{provider} returned an unreadable response body"
+            ),
+            _ => crate::util::truncate_str(err_msg, 300).to_string(),
         }
     }
 }
@@ -900,6 +912,13 @@ fn classify_transient_error(msg: &str) -> Option<TransientFailureKind> {
 
     if lower.contains("dns error") || lower.contains("name resolution") {
         return Some(TransientFailureKind::Dns);
+    }
+
+    if lower.contains("error decoding response body")
+        || lower.contains("decode response body")
+        || lower.contains("failed to decode response body")
+    {
+        return Some(TransientFailureKind::DecodeBody);
     }
 
     if lower.contains("stream ended without") || lower.contains("bridge may have crashed") {
@@ -1671,6 +1690,10 @@ mod tests {
             Some(TransientFailureKind::Dns)
         );
         assert_eq!(
+            classify_transient_error("error decoding response body: expected value at line 1 column 1"),
+            Some(TransientFailureKind::DecodeBody)
+        );
+        assert_eq!(
             classify_transient_error(
                 "LLM stream ended without a completion event — the bridge may have crashed"
             ),
@@ -1688,6 +1711,19 @@ mod tests {
         assert_eq!(TransientFailureKind::RateLimited.label(), "rate-limited");
         assert_eq!(TransientFailureKind::StalledStream.label(), "stalled stream");
         assert_eq!(TransientFailureKind::Dns.label(), "dns failure");
+        assert_eq!(
+            TransientFailureKind::DecodeBody.label(),
+            "unreadable response body"
+        );
+    }
+
+    #[test]
+    fn decode_body_operator_detail_hides_transport_jargon() {
+        let detail = TransientFailureKind::DecodeBody.operator_detail(
+            "openai",
+            "error decoding response body: expected value at line 1 column 1",
+        );
+        assert_eq!(detail, "openai returned an unreadable response body");
     }
 
     #[test]
