@@ -1,15 +1,18 @@
 ---
 id: omega
-title: Omega — Rust execution engine and project intelligence daemon
+title: "Omega — Rust execution engine and project intelligence daemon"
 status: exploring
-related: [markdown-viewport, pikit-auspex-extension, a2a-protocol-integration]
 tags: [rust, architecture, cleave, lifecycle, dioxus, execution-engine, strategic]
 open_questions:
   - "What is the exact HTTP API surface between Omega and the auspex bridge — REST with typed request/response envelopes, or a more structured RPC protocol like JSON-RPC or Cap'n Proto?"
-  - "Does Omega subsume the mdserve fork binary directly (single Rust workspace with execution engine + HTTP server + Dioxus frontend), or are they separate crates/binaries composed at the Nix level?"
   - "How does Omega push cleave child progress back to Omegon's TUI dashboard in real time — WebSocket from Omega that the auspex bridge subscribes to and relays via pi.events, or does the bridge poll /api/cleave/status?"
-  - "What is the instance lifecycle model — does Omega terminate when no pi session is connected (ephemeral), or does it run as a persistent daemon that outlives individual sessions (persistent)? Persistent enables background cleave execution and cross-session state, but requires daemon management (launchd/systemd or self-managed PID file)."
-  - "For Ollama VRAM coordination across instances — cooperative catalog-based scheduling (each instance reads catalog before dispatching local children) vs. delegating all local inference to a single designated \"Ollama owner\" instance? Cooperative is simpler but relies on instances respecting the catalog; delegation is authoritative but asymmetric."
+  - "For Ollama VRAM coordination across instances — cooperative catalog-based scheduling (each instance reads catalog before dispatching local children) vs. delegating all local inference to a single designated \\\"Ollama owner\\\" instance? Cooperative is simpler but relies on instances respecting the catalog; delegation is authoritative but asymmetric."
+dependencies: []
+related:
+  - markdown-viewport
+  - conversation-rendering-engine
+  - pikit-auspex-extension
+  - a2a-protocol-integration
 ---
 
 # Omega — Rust execution engine and project intelligence daemon
@@ -37,8 +40,13 @@ Omega is a standalone Rust binary (and eventual library crate) that owns all det
 **The boundary:**
 Every tool handler in the auspex bridge is ~15 lines: deserialize params, POST to Omega, map response to pi tool result. Omega handles all business logic, state mutations, and process management. The TypeScript layer is a protocol adapter, not a logic layer.
 
-**Relationship to markdown-viewport:**
-Omega subsumes the markdown-viewport epic. The mdserve fork (~/workspace/ai/mdserve) is the starting point for Omega's HTTP server and document rendering. The lifecycle backend, Dioxus frontend, and Nix distribution work planned under markdown-viewport all become children of Omega.
+**Relationship to markdown-viewport and conversation-rendering-engine:**
+Omega is related to both tracks but does not subsume them into one concern.
+
+- `markdown-viewport` remains the browser/project-intelligence portal epic derived from the mdserve/Auspex line of work.
+- `conversation-rendering-engine` owns terminal-side conversation rendering inside Omegon: segment-based rendering, inline images, and display artifacts.
+
+Omega's direct intersection is the execution boundary: an auspex bridge in Omegon can forward lifecycle and tool requests to Omega, while browser-facing intelligence surfaces may consume Omega APIs. That makes Omega adjacent to both the browser portal and terminal rendering work, but not a replacement parent for either.
 
 ## Research
 
@@ -147,22 +155,23 @@ Current child pi processes inherit the full Omegon extension set — including t
 ### Decision: Each cleave child is a pi+Omega agent unit, not a bare pi subprocess
 
 **Status:** decided
+
 **Rationale:** A bare pi subprocess inherits the full Omegon extension set — dashboard, memory, inference management — none of which are appropriate in a child task context. The pi+Omega pair gives each child a clean, minimal execution environment: pi handles LLM inference, child Omega handles tool execution and workspace management via the auspex bridge. This also enables k8s deployment as a natural pod spec (two containers, one volume).
 
 ### Decision: WorkspaceBackend trait abstracts local worktrees from k8s pod workspaces
 
 **Status:** decided
+
 **Rationale:** Git worktrees and k8s pod workspaces have the same logical contract (create branch, expose to child, harvest result, merge back, cleanup) but different physical implementations. A trait boundary keeps the orchestration layer backend-agnostic. Local worktree is the default backend; k8s backends (shared PVC, branch clone, git bundle) are swappable without changing the wave planner or dispatcher.
 
 ### Decision: Omega runs in two modes: server (full daemon) and worker (child execution only)
 
 **Status:** decided
+
 **Rationale:** The server mode is what the auspex bridge connects to — full HTTP API, Dioxus frontend, lifecycle management. The worker mode is what each cleave child runs — no HTTP server, no dashboard, no Dioxus, just the execution engine and a result channel back to the parent Omega. Same binary, different startup path: `omega serve` vs `omega worker --parent-url http://parent:PORT --workspace /path`.
 
 ## Open Questions
 
 - What is the exact HTTP API surface between Omega and the auspex bridge — REST with typed request/response envelopes, or a more structured RPC protocol like JSON-RPC or Cap'n Proto?
-- Does Omega subsume the mdserve fork binary directly (single Rust workspace with execution engine + HTTP server + Dioxus frontend), or are they separate crates/binaries composed at the Nix level?
 - How does Omega push cleave child progress back to Omegon's TUI dashboard in real time — WebSocket from Omega that the auspex bridge subscribes to and relays via pi.events, or does the bridge poll /api/cleave/status?
-- What is the instance lifecycle model — does Omega terminate when no pi session is connected (ephemeral), or does it run as a persistent daemon that outlives individual sessions (persistent)? Persistent enables background cleave execution and cross-session state, but requires daemon management (launchd/systemd or self-managed PID file).
-- For Ollama VRAM coordination across instances — cooperative catalog-based scheduling (each instance reads catalog before dispatching local children) vs. delegating all local inference to a single designated "Ollama owner" instance? Cooperative is simpler but relies on instances respecting the catalog; delegation is authoritative but asymmetric.
+- For Ollama VRAM coordination across instances — cooperative catalog-based scheduling (each instance reads catalog before dispatching local children) vs. delegating all local inference to a single designated \\"Ollama owner\\" instance? Cooperative is simpler but relies on instances respecting the catalog; delegation is authoritative but asymmetric.

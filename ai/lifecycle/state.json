@@ -360,6 +360,36 @@
       "bound_change": null,
       "created_at": "2026-04-02T20:37:12Z",
       "updated_at": "2026-04-02T20:39:11Z"
+    },
+    {
+      "id": "display-tool-artifacts",
+      "title": "Display tool — agent-driven visual artifacts in the conversation",
+      "state": "resolved",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-04-03T19:03:52Z",
+      "updated_at": "2026-04-03T19:08:59Z"
+    },
+    {
+      "id": "conversation-rendering-engine",
+      "title": "Conversation Rendering Engine",
+      "state": "exploring",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-04-03T19:09:39Z",
+      "updated_at": "2026-04-03T19:17:41Z"
     }
   ],
   "changes": [],
@@ -740,6 +770,51 @@
       "entity_id": "skill-location-architecture",
       "from_state": "exploring",
       "to_state": "resolved",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-03T19:03:52Z",
+      "entity_type": "node",
+      "entity_id": "display-tool-artifacts",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-03T19:08:14Z",
+      "entity_type": "node",
+      "entity_id": "display-tool-artifacts",
+      "from_state": "seed",
+      "to_state": "exploring",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-03T19:08:59Z",
+      "entity_type": "node",
+      "entity_id": "display-tool-artifacts",
+      "from_state": "exploring",
+      "to_state": "resolved",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-03T19:09:39Z",
+      "entity_type": "node",
+      "entity_id": "conversation-rendering-engine",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-03T19:17:41Z",
+      "entity_type": "node",
+      "entity_id": "conversation-rendering-engine",
+      "from_state": "seed",
+      "to_state": "exploring",
       "reason": null,
       "forced": false
     }

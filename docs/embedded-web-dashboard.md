@@ -15,6 +15,10 @@ The TUI dashboard panel is constrained to ~36 columns of text. For complex lifec
 
 ## Research
 
+### Scope note — embedded dashboard versus browser portal
+
+This node is the Omegon-local `/dash` surface served from the omegon binary. It should not be conflated with the broader browser/project-intelligence portal tracked by `markdown-viewport`.
+
 ### Approach survey — 6 options evaluated
 
 **Option A: Axum + Dioxus WASM SPA**

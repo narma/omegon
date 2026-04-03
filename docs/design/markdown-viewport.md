@@ -15,7 +15,9 @@ priority: 2
 
 Pi-kit has organically grown ~75% of a software engineering and project management platform: a design exploration tree, a spec-driven implementation layer (OpenSpec), a parallel execution engine (cleave), a memory system, and a dashboard. The missing piece is a **rendering and visualization layer** — a browser-based surface that turns the code-native lifecycle artifacts (markdown docs, facts.jsonl, tasks.md, specs) into a navigable, queryable, visually rich project intelligence view.
 
-This is not a markdown previewer. It is the **project intelligence portal** for Omegon-powered workflows. The scope spans three levels:
+This is not a markdown previewer. It is the **project intelligence portal** for Omegon-powered workflows. It is also distinct from the terminal-side `conversation-rendering-engine` node: `markdown-viewport` owns the browser/Auspex/mdserve track, while conversation rendering inside the Omegon TUI is tracked separately.
+
+The scope spans three levels:
 
 1. **Document layer** — render design nodes, OpenSpec specs, tasks.md, memory facts as interlinked pages with wikilink navigation and live-reload
 2. **Lifecycle layer** — visualize the state of the design tree and OpenSpec pipeline as interactive graphs and kanban-style boards; surface open questions, blocked nodes, spec coverage, and verification status

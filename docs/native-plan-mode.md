@@ -2,7 +2,7 @@
 id: native-plan-mode
 title: Native plan mode — structured task decomposition with TUI widget and web dashboard integration
 status: exploring
-parent: markdown-viewport
+parent: conversation-rendering-engine
 dependencies: [embedded-web-dashboard]
 related: [mdserve-dioxus-frontend]
 tags: [rust, tui, planning, web-dashboard, openspec, design-tree]

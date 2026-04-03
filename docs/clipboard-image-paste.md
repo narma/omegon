@@ -2,7 +2,7 @@
 id: clipboard-image-paste
 title: "Clipboard image paste into chat/messages"
 status: implemented
-parent: markdown-viewport
+parent: conversation-rendering-engine
 tags: [ux, clipboard, images, attachments, chat]
 open_questions: []
 issue_type: bug
