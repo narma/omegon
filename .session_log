@@ -2957,4 +2957,19 @@ Edited: core/crates/omegon/src/providers.rs, core/crates/omegon/src/providers.rs
   ad91576f chore(release): 0.15.7
   2995b382 docs(release): prepare 0.15.7 release surfaces
   d85549f0 chore(release): 0.15.7-rc.19
+## 2026-04-03 — main (14t 1464tc 3m53s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  94dc6fd2 fix(tests): decouple CI-hostile test and snapshot coupling from auth/version state
+  ad91576f chore(release): 0.15.7
+  2995b382 docs(release): prepare 0.15.7 release surfaces
 
