@@ -417,6 +417,12 @@ pub struct IpcProviderSnapshot {
     pub authenticated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recent_failure_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_failure_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1052,6 +1058,9 @@ mod tests {
                         name: "Anthropic".into(),
                         authenticated: true,
                         model: Some("claude-sonnet-4-6".into()),
+                        runtime_status: None,
+                        recent_failure_count: None,
+                        last_failure_kind: None,
                     },
                 ],
                 mcp_server_count: 0,

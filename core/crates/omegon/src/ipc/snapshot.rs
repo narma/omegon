@@ -254,6 +254,9 @@ fn project_harness(handles: &DashboardHandles) -> IpcHarnessSnapshot {
                 name: p.name.clone(),
                 authenticated: p.authenticated,
                 model: p.model.clone(),
+                runtime_status: p.runtime_status.map(|s| format!("{:?}", s).to_lowercase()),
+                recent_failure_count: p.recent_failure_count,
+                last_failure_kind: p.last_failure_kind.clone(),
             })
             .collect(),
         mcp_server_count: h.mcp_servers.iter().filter(|s| s.connected).count(),
@@ -271,7 +274,13 @@ fn project_health(handles: &DashboardHandles) -> IpcHealthSnapshot {
             && let Ok(h) = h_lock.lock()
         {
             let mem_ok = h.memory_available || h.memory_warning.is_none();
-            let prov_ok = h.providers.iter().any(|p| p.authenticated);
+            let prov_ok = h.providers.iter().any(|p| {
+                p.authenticated
+                    && !matches!(
+                        p.runtime_status,
+                        Some(crate::status::ProviderRuntimeStatus::Degraded)
+                    )
+            });
             (mem_ok, prov_ok)
         } else {
             (true, false)

@@ -204,6 +204,11 @@ impl FooterData {
             let provider_label = crate::auth::provider_by_id(&self.model_provider)
                 .map(|p| p.display_name)
                 .unwrap_or(self.model_provider.as_str());
+            let provider_runtime = self
+                .harness
+                .providers
+                .iter()
+                .find(|p| p.name.eq_ignore_ascii_case(&self.model_provider));
             let provider_text = if self.model_provider == "ollama" {
                 format!("⚡ {provider_label}")
             } else {
@@ -245,6 +250,23 @@ impl FooterData {
             let version_text = format!("v{} → v{next_ver}", env!("CARGO_PKG_VERSION"));
 
             push_row(&mut lines, "provider", provider_text, t.border_dim(), t.fg(), true);
+            if let Some(provider) = provider_runtime
+                && matches!(provider.runtime_status, Some(crate::status::ProviderRuntimeStatus::Degraded))
+            {
+                let failures = provider.recent_failure_count.unwrap_or(0);
+                let kind = provider
+                    .last_failure_kind
+                    .as_deref()
+                    .unwrap_or("transient upstream failures");
+                push_row(
+                    &mut lines,
+                    "status",
+                    format!("≈ degraded · {failures}× {kind}"),
+                    t.border_dim(),
+                    t.warning(),
+                    false,
+                );
+            }
             push_row(
                 &mut lines,
                 "model",
