@@ -1,11 +1,15 @@
 ---
 id: design-tree-board-and-dashboard-views
-title: Add board and dashboard views for design-tree task workflows
-status: seed
+title: "Add board and dashboard views for design-tree task workflows"
+status: exploring
 parent: git-native-task-management
 tags: [tui, web, dashboard, task-management, ux]
-open_questions: []
-jj_change_id: urroornuzoyklopmyzxtuytzwknnxtqp
+open_questions:
+  - "What is the minimum first implementation surface: TUI dashboard only, web UI only, or both in the same change? The node overview currently promises both, which is too broad for a first implementation slice."
+  - "What canonical board columns should exist: the full node lifecycle (seed/exploring/resolved/decided/implementing/implemented/blocked/deferred/archived) or a collapsed workflow projection? Rendering every raw status may produce a useless board."
+  - "Should milestone summaries and overdue indicators be computed entirely from `design_tree(list)` results, or does this child require new aggregate/query endpoints first? The dependency on task-fields/query work needs to be made explicit in the UI contract."
+dependencies: []
+related: []
 issue_type: feature
 priority: 2
 ---
@@ -16,6 +20,16 @@ priority: 2
 
 Add workflow-oriented read views over the design tree: kanban/board grouping by status, milestone summaries, overdue indicators, and compact task-management surfaces in both the TUI dashboard and the web UI.
 
+## Decisions
+
+### Decision: Board/dashboard views are downstream read surfaces over the single-repo design-tree query model
+
+**Status:** decided
+
+**Rationale:** This child should not invent new storage or bespoke selection logic. It consumes the metadata and filtering/query surface defined by the task-fields child, then presents status-grouped and milestone-oriented read views in the TUI/web layers.
+
 ## Open Questions
 
-*No open questions.*
+- What is the minimum first implementation surface: TUI dashboard only, web UI only, or both in the same change? The node overview currently promises both, which is too broad for a first implementation slice.
+- What canonical board columns should exist: the full node lifecycle (seed/exploring/resolved/decided/implementing/implemented/blocked/deferred/archived) or a collapsed workflow projection? Rendering every raw status may produce a useless board.
+- Should milestone summaries and overdue indicators be computed entirely from `design_tree(list)` results, or does this child require new aggregate/query endpoints first? The dependency on task-fields/query work needs to be made explicit in the UI contract.

@@ -1,12 +1,16 @@
 ---
 id: chronos-native-ts
 title: "Rewrite chronos as pure TypeScript — eliminate BSD/GNU date dependency"
-status: implemented
+status: archived
 parent: lifecycle-gate-ergonomics
 tags: [chronos, portability, typescript, tools]
 open_questions: []
-branches: []
+dependencies: []
+related: []
 openspec_change: chronos-native-ts
+archive_reason: "superseded"
+superseded_by: "rust-agent-loop"
+archived_at: "1775246517"
 ---
 
 # Rewrite chronos as pure TypeScript — eliminate BSD/GNU date dependency
@@ -22,18 +26,17 @@ Rewrite chronos as pure TypeScript: delete chronos.sh, implement all subcommands
 ### Decision: Pure TypeScript with Date + Intl — no external date library
 
 **Status:** decided
+
 **Rationale:** All chronos subcommands are simple date arithmetic (add days, week boundaries, quarter math, epoch, ISO week). Node's built-in Date handles arithmetic, Intl.DateTimeFormat handles formatting, and day-of-week/ISO-week can be computed with standard formulas. No need for dayjs/luxon/date-fns — the scope is narrow enough for stdlib.
 
 ### Decision: Delete chronos.sh entirely — no fallback to shell
 
 **Status:** decided
+
 **Rationale:** The shell script exists only because chronos was originally a standalone skill. Once the logic is in TypeScript, the bash file is dead weight and a maintenance trap. Clean removal.
 
 ### Decision: Relative expression parsing: support the same expressions BSD handled plus GNU-style natural language via simple regex patterns
 
 **Status:** decided
+
 **Rationale:** The BSD handler covered: N days/weeks/months ago, yesterday, tomorrow, next/last Monday/Friday. The TS version should cover at least these plus all weekday names and 'N days from now'. Complex GNU expressions like 'third Thursday of next month' are out of scope — they've never been used.
-
-## Open Questions
-
-*No open questions.*

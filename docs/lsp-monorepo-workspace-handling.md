@@ -14,7 +14,7 @@ jj_change_id: ykqqlwnsttquosykvkzllqlnqkwqookt
 > Parent: [LSP integration — language server protocol for code-aware navigation and diagnostics](lsp-integration.md)
 > Spawned from: "How should LSP tools handle multi-root workspaces (monorepos with multiple Cargo.toml files at different depths)?"
 
-*To be explored.*
+This node resolved the monorepo root-selection question for LSP server spawning: walk up from the repo path to the highest workspace manifest per language and cache one server instance per resolved root for the session.
 
 ## Research
 

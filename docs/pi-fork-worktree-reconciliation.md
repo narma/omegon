@@ -1,9 +1,15 @@
 ---
 id: pi-fork-worktree-reconciliation
-title: pi-mono local fork worktree reconciliation
-status: implemented
+title: "pi-mono local fork worktree reconciliation"
+status: archived
 parent: singular-package-update-lifecycle
+tags: []
 open_questions: []
+dependencies: []
+related: []
+archive_reason: "historical"
+superseded_by: "rust-agent-loop"
+archived_at: "1775246736"
 ---
 
 # pi-mono local fork worktree reconciliation
@@ -26,8 +32,5 @@ The previously stashed local pi-mono work mostly reapplied cleanly onto the fork
 ### Decision: Prefer the richer local diff renderer over the simplified upstream variant during unstash reconciliation
 
 **Status:** decided
+
 **Rationale:** The stashed local version preserves enhanced Omegon/Alpharius diff rendering behavior: syntax-highlighted context lines, line-level added/removed background tinting, and dedicated highlight colors for intra-line changes. The conflict was isolated to the comment/import region, so reconciling in favor of the richer implementation keeps intended fork behavior without discarding the rest of the recovered local work.
-
-## Open Questions
-
-*No open questions.*

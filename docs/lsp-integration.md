@@ -1,12 +1,13 @@
 ---
 id: lsp-integration
-title: LSP integration — language server protocol for code-aware navigation and diagnostics
+title: "LSP integration — language server protocol for code-aware navigation and diagnostics"
 status: decided
-dependencies: [lsp-monorepo-workspace-handling]
-related: [codebase-search]
 tags: [architecture, lsp, code-intelligence, tools, navigation]
 open_questions: []
-jj_change_id: xutzpkqvuomsqvzqkmttqyvltonzxvyw
+dependencies:
+  - lsp-monorepo-workspace-handling
+related:
+  - codebase-search
 issue_type: feature
 priority: 1
 ---
@@ -114,30 +115,35 @@ For Rust (the primary use case): rust-analyzer is present in almost every Rust d
 ### Decision: Auto-detect LSP servers from project files, with optional .omegon/lsp.toml override
 
 **Status:** decided
+
 **Rationale:** validate.rs already does project-type auto-detection from Cargo.toml/tsconfig.json/requirements.txt and it works well. The LSP selection should follow the same pattern: Cargo.toml → rust-analyzer, tsconfig.json or package.json → typescript-language-server, go.mod → gopls, pyproject.toml/setup.py → pyright. An optional .omegon/lsp.toml allows operators to override the server path, add custom args, or add servers for additional languages. The default path must require zero configuration for the happy case (Rust projects get rust-analyzer without any setup).
 
 ### Decision: Build omegon-codescan (tree-sitter + BM25) before the LSP JSON-RPC client
 
 **Status:** decided
+
 **Rationale:** Both lsp-integration and codebase-search need tree-sitter AST parsing. Factoring a shared omegon-codescan crate first avoids duplication and delivers codebase_search (discovery mode) at lower complexity than a full LSP client. codebase_search works on any project without external process requirements, while LSP requires language servers to be present. The stack is: omegon-codescan → codebase_search tool → LSP client → LSP navigation tools. Each layer adds value independently.
 
 ### Decision: MVP tool set is find_references + workspace_symbols + document_symbols first, goto_definition second, diagnostics third
 
 **Status:** decided
+
 **Rationale:** find_references answers "where is this used?" — the most expensive question the agent currently answers by brute-force grep across files. workspace_symbols answers "where is anything named X?" without requiring the agent to know a file path first. document_symbols replaces full-file reads for understanding structure. goto_definition is precise but less frequently the bottleneck. diagnostics overlaps with validate.rs (post-mutation cargo check) but would give pre-mutation type checking — useful but a tier-2 priority.
 
-## Open Questions
+### Decision: With omegon-codescan and codebase_search shipped, LSP is the next code-intelligence precision layer rather than a prerequisite exploration
 
-*No open questions.*
+**Status:** decided
+
+**Rationale:** The earlier sequencing decision has now paid off: omegon-codescan exists and codebase_search is implemented. That means the discovery layer is in place and LSP work can focus on precise symbol navigation and diagnostics, not on shared parsing infrastructure. The parent node no longer depends on speculative shared-code groundwork.
 
 ## Implementation Notes
 
 ### File Scope
 
-- `core/crates/omegon-codescan/` (new) — New shared crate — tree-sitter AST parsing, BM25 indexing, structural fact seeding. Shared dependency for both codebase_search and LSP.
-- `core/crates/omegon/src/tools/lsp.rs` (new) — LSP client feature — JSON-RPC over stdio to language servers. find_references, workspace_symbols, document_symbols, goto_definition, diagnostics tools.
-- `core/crates/omegon/src/tools/codebase_search.rs` (new) — codebase_search and codebase_index tools backed by omegon-codescan.
-- `core/crates/omegon/src/tools/validate.rs` (modified) — Existing post-mutation validator — auto-detection pattern is the LSP server selection model. Read-only reference.
+- `core/crates/omegon-codescan/` (new)` — New shared crate — tree-sitter AST parsing, BM25 indexing, structural fact seeding. Shared dependency for both codebase_search and LSP.
+- `core/crates/omegon/src/tools/lsp.rs` (new)` — LSP client feature — JSON-RPC over stdio to language servers. find_references, workspace_symbols, document_symbols, goto_definition, diagnostics tools.
+- `core/crates/omegon/src/tools/codebase_search.rs` (new)` — codebase_search and codebase_index tools backed by omegon-codescan.
+- `core/crates/omegon/src/tools/validate.rs` (modified)` — Existing post-mutation validator — auto-detection pattern is the LSP server selection model. Read-only reference.
 
 ### Constraints
 
@@ -147,63 +153,3 @@ For Rust (the primary use case): rust-analyzer is present in almost every Rust d
 - graceful fallback: if rust-analyzer is not installed, LSP tools return an actionable error rather than panicking.
 - LSP tools must not assume a persistent daemon — each session starts fresh and server state is rebuilt.
 - Token budget awareness: LSP tool results must be truncatable to a configured limit (find_references can return thousands of hits).
-
-## OpenCode has, Omegon has equivalent or better
-
-| Feature | OpenCode | Omegon | Assessment |
-|---|---|---|---|
-| MCP servers (stdio + remote) | ✅ stdio + remote + OAuth | ✅ 4 modes: local, OCI container, Docker Gateway, Styrene mesh | **Omegon ahead** (OCI sandboxing, mesh transport) |
-| TUI + Web dashboard | ✅ TUI + desktop app + web | ✅ ratatui TUI + embedded axum web dashboard | Parity (OpenCode has desktop app) |
-| Multi-provider | ✅ 75+ via Models.dev | ✅ via pi-ai bridge (15+) + local Ollama | OpenCode has more providers |
-| Custom commands | ✅ markdown prompt files | ✅ prompt templates + slash commands | Parity |
-| Session management | ✅ multi-session, resume, share | ✅ session save/load/resume | OpenCode has sharing + multi-session |
-| Auto-compact | ✅ built-in | ✅ continuous decay + LLM fallback | **Omegon ahead** (two-tier decay) |
-| Headless/CI mode | ✅ `--prompt` flag | ✅ `--prompt` flag + cleave children | **Omegon ahead** (parallel children) |
-| Plugin/extension system | ✅ MCP servers + ecosystem | ✅ armory plugins (persona/tone/skill/extension) + MCP + script/OCI tools | **Omegon ahead** (unified plugin.toml, 5 runner types) |
-| Serve mode (HTTP backend) | ✅ `opencode serve` + `opencode web` | ✅ embedded axum + WebSocket (`/dash open`) | Parity |
-| File watcher | ✅ experimental | ❌ Not implemented | **Gap** |
-| Git copilot auth | ✅ native | ✅ via pi-ai OAuth | Parity |
-
-## OpenCode has, Omegon doesn't
-
-| Feature | OpenCode | Omegon Status | Priority |
-|---|---|---|---|
-| **LSP integration** | Built-in: Go, TS, Python, Rust, C/C++, Java, PHP, YAML. Auto-detection. goto-definition, references, hover, call hierarchy. Custom LSP config. | `lsp-integration` node (exploring, P2) | **P1 — critical gap** |
-| **Granular permissions** | per-tool allow/deny/prompt, path-based patterns, wildcard matching, `external_directory` policy, per-agent permissions | `granular-permissions` node (exploring, P2) | **P1 — critical gap** |
-| **Multi-session** | Multiple parallel agents on same project | `multi-instance-coordination` (decided) | P2 |
-| **Background agents** | Community plugin (`opencode-background-agents`) | Not designed | P3 |
-| **Desktop app** | Electron/Tauri desktop wrapper | Not planned — TUI + web is the target | N/A |
-| **Session sharing** | Share via URL | Not designed | P3 |
-| **File watcher** | Watch project for external changes | Not designed | P2 |
-| **Task tool** (sub-agents) | Primary agents invoke sub-agents via Task tool | Cleave children are parallel, not sub-agent invocable | P2 |
-| **PTY sessions** | Full PTY for background processes | Bash tool only, no persistent PTY | P3 |
-| **Patch tool** | Apply unified diffs | edit tool (exact match), no patch | P3 |
-
-## Omegon has, OpenCode doesn't
-
-| Feature | Omegon | OpenCode |
-|---|---|---|
-| **Design tree** | 203-node exploration DAG with status machine, decisions, research | Nothing comparable |
-| **OpenSpec lifecycle** | Spec-driven dev: propose→spec→plan→implement→verify→archive | Nothing comparable |
-| **Cleave decomposition** | Parallel child agents with git worktrees, merge policies, adversarial review | No built-in parallel decomposition |
-| **Persona system** | Domain-expert identities with mind stores, tone axis, Lex Imperialis | Basic agent config (model + prompt) |
-| **Memory system** | 2,500+ facts, episodes, edges, semantic search, decay, schema v6 | No persistent memory system |
-| **Encrypted secrets** | SQLite + AES-256-GCM + Argon2id, 3 backends | No secret store (env vars only) |
-| **HarnessStatus** | Unified status surface (TUI footer + bootstrap + web) | No comparable status contract |
-| **Context class routing** | Squad/Maniple/Clan/Legion with three-axis model | Basic model selection |
-| **jj VCS binding** | Change IDs on facts, episodes, design nodes | Git only |
-| **OCI container tools** | Sandboxed tool execution in podman/docker | No container tool runner |
-| **Speculative execution** | speculate_start/check/commit/rollback | No built-in speculation |
-
-## Gap closure priority (revised)
-
-**P1 — Must close (competitive table stakes):**
-1. **LSP integration** — OpenCode auto-detects and configures LSP for 8+ languages. Without this, Omegon's code navigation relies entirely on grep/read. The `understand` tool vision from the rust-agent-loop design is the Omegon-native answer but LSP is the pragmatic step.
-2. **Granular permissions** — OpenCode has per-tool, per-path allow/deny/prompt with wildcard patterns. Omegon has guards (path-based blocking) but no operator-facing permission config.
-
-**P2 — Should close (differentiation erosion):**
-3. **File watcher** — detect external changes (IDE edits, git operations) during session
-4. **Multi-session** — parallel agents on same project (Omegon has multi-instance-coordination designed but not built)
-
-**P3 — Nice to have:**
-5. Session sharing, PTY sessions, patch tool, desktop app

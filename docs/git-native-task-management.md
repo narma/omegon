@@ -4,7 +4,9 @@ title: "Git-native task management — extend design tree into a full in-repo is
 status: decided
 tags: [architecture, task-management, git, design-tree, workflow, strategic]
 open_questions: []
-jj_change_id: urroornuzoyklopmyzxtuytzwknnxtqp
+dependencies:
+  - design-tree-task-fields-and-filters
+related: []
 issue_type: epic
 priority: 2
 ---
@@ -432,6 +434,7 @@ This parent node is now chiefly an umbrella architecture/strategy decision, with
 ### Decision: Design tree IS the task system — extend, don't replace or add a parallel tracker
 
 **Status:** exploring
+
 **Rationale:** The temptation is to build a separate "issues" subsystem alongside the design tree. This would be wrong — it creates two competing sources of truth for "what work exists."
 
 The design tree already has richer semantics than any issue tracker: research, decisions, acceptance criteria, readiness scoring, lifecycle doctor. Adding issue-tracker fields (assignee, milestone, due date, estimate) to the EXISTING design node format gives us the best of both worlds: structured design exploration AND operational task management in one system.
@@ -443,6 +446,7 @@ Adding 6 optional fields to DesignNode (milestone, assignee, estimate, actual, d
 ### Decision: Extract design tree to omegon-design crate — zero external dependencies beyond serde, reusable across binaries
 
 **Status:** exploring
+
 **Rationale:** The extraction boundary is already clean. The core design tree code has ZERO agent/TUI/provider dependencies:
 
 ```
@@ -475,32 +479,37 @@ Three consumers:
 ### Decision: No platform bridge in v1 — sovereign git (Forgejo) is the primary path, bridge is a future optional add-on
 
 **Status:** exploring
+
 **Rationale:** The design tree's value proposition is that it lives IN the repo, not in a platform's database. Building a GitHub Issues bridge first would optimize for platform dependence. The sovereign path (Forgejo + omegon-pm) keeps the data portable and platform-independent. A bridge crate (omegon-bridge-github) can come later for teams that want it, but the architecture shouldn't assume or require it.
 
 ### Decision: Index is gitignored — local cache rebuilt on startup, no merge conflicts
 
 **Status:** exploring
+
 **Rationale:** The index is a derivative of the markdown files. Tracking it in git creates merge conflicts when multiple agents or sessions mutate nodes concurrently (which happens during cleave runs). Rebuilding from 255 markdown files on startup is sub-100ms in Rust — no perceptible cost. The markdown files are the source of truth; the index is a read optimization. .gitignore it.
 
 ### Decision: Both tree and board views — hierarchy answers scope, kanban answers workflow
 
 **Status:** exploring
+
 **Rationale:** They answer different questions. The tree view (existing sidebar) shows what belongs to what — project structure. The board view shows what's in what state — operational status. Both are read views over the same DesignStore. The web dashboard gets both as tabs. The TUI gets `/board` as a command that replaces the sidebar with a status-grouped compact view. Since the data model is the same, this is a rendering decision, not a data model decision.
 
-## Open Questions
+### Decision: Sequence git-native task management as single-repo metadata first, views second, crate extraction third, multi-repo last
 
-*No open questions.*
+**Status:** decided
+
+**Rationale:** The current parent mixes four scopes with different risk profiles. The lowest-risk, highest-value work is making the existing single-repo design tree usable as a task tracker via metadata, filtering, and history. Board/dashboard views are read surfaces over that metadata and should follow once the query contract exists. Crate extraction should wait until the single-repo domain API stabilizes, otherwise we freeze the wrong boundary. Sovereign multi-repo PM is explicitly downstream of a proven reusable crate and should not drive the first storage/query design.
 
 ## Implementation Notes
 
 ### File Scope
 
-- `core/crates/omegon/src/lifecycle/types.rs` (modified) — Add 6 fields to DesignNode: milestone, assignee, estimate, actual, due, archived. All Option<String>.
-- `core/crates/omegon/src/lifecycle/design.rs` (modified) — Parse new frontmatter fields. Add index rebuild. Add git-log-based history query.
-- `core/crates/omegon/src/features/lifecycle.rs` (modified) — Add filter params to list action. Add set_milestone/set_assignee/set_estimate/set_due actions to design_tree_update. Add history action to design_tree.
-- `core/crates/omegon/src/lifecycle/doctor.rs` (modified) — Add overdue-node finding. Add milestone-without-nodes finding.
-- `.omegon/design/` (new) — NEW directory — migration target for docs/*.md design nodes.
-- `.omegon/design/index.json` (new) — NEW — lightweight queryable index rebuilt on startup and after mutations.
+- `core/crates/omegon/src/lifecycle/types.rs` (modified)` — Add 6 fields to DesignNode: milestone, assignee, estimate, actual, due, archived. All Option<String>.
+- `core/crates/omegon/src/lifecycle/design.rs` (modified)` — Parse new frontmatter fields. Add index rebuild. Add git-log-based history query.
+- `core/crates/omegon/src/features/lifecycle.rs` (modified)` — Add filter params to list action. Add set_milestone/set_assignee/set_estimate/set_due actions to design_tree_update. Add history action to design_tree.
+- `core/crates/omegon/src/lifecycle/doctor.rs` (modified)` — Add overdue-node finding. Add milestone-without-nodes finding.
+- `.omegon/design/` (new)` — NEW directory — migration target for docs/*.md design nodes.
+- `.omegon/design/index.json` (new)` — NEW — lightweight queryable index rebuilt on startup and after mutations.
 
 ### Constraints
 

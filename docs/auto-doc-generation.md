@@ -1,11 +1,15 @@
 ---
 id: auto-doc-generation
-title: Automatic documentation generation — design tree and implementation drive site content
-status: seed
+title: "Automatic documentation generation — design tree and implementation drive site content"
+status: archived
 parent: markdown-viewport
 tags: [docs, site, automation, design-tree, openspec, changelog, astro]
 open_questions: []
-jj_change_id: vkkpypqrqvxrlwzylvskmkwyrzqkoory
+dependencies: []
+related: []
+archive_reason: "superseded"
+superseded_by: "omegon-site-docs"
+archived_at: "1775247150"
 ---
 
 # Automatic documentation generation — design tree and implementation drive site content
@@ -25,7 +29,3 @@ This feature would generate documentation pages from the existing structured art
 The CI pipeline already triggers on docs/ and site/ changes. The gap is a build step that reads structured repo data and emits Astro-compatible content before the site builds.
 
 Motivating incident: 15 RC releases shipped in a single session with major features (version switcher, tool registry, OAuth fixes, TUI hardening) but none of it appeared on the docs site because the Astro pages are manually authored.
-
-## Open Questions
-
-*No open questions.*

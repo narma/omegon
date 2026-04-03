@@ -1,9 +1,15 @@
 ---
 id: update-lifecycle-parity
-title: Update lifecycle parity and restart boundary
-status: implemented
+title: "Update lifecycle parity and restart boundary"
+status: archived
 parent: singular-package-update-lifecycle
+tags: []
 open_questions: []
+dependencies: []
+related: []
+archive_reason: "obsolete"
+superseded_by: "rust-agent-loop"
+archived_at: "1775246679"
 ---
 
 # Update lifecycle parity and restart boundary
@@ -34,13 +40,11 @@ On this machine `which pi` resolves to `/opt/homebrew/bin/pi`, which is a symlin
 ### Decision: Full-lifecycle parity should include relink/verification, but end at a deliberate restart boundary rather than in-process reexec
 
 **Status:** decided
+
 **Rationale:** Replacing Omegon's package files and forked pi runtime mutates the code currently executing the session. Installed mode already treats restart as the safe contract. Dev mode should become functionally equivalent to `./scripts/install-pi.sh` by pulling, syncing submodule, rebuilding, refreshing dependencies, relinking/verifying the active `pi` binary, and clearing caches, but it should then stop and instruct the operator to restart instead of attempting `ctx.reload()` inside the old process.
 
 ### Decision: Reload remains a lightweight cache refresh path, not the authoritative full update handoff
 
 **Status:** decided
+
 **Rationale:** `/refresh` or reload-like behavior is still useful for extension-only or transpilation-cache changes, but it is not semantically equivalent to reinstalling/relinking Omegon. Keeping `/refresh` lightweight avoids conflating hot-reload convenience with package lifecycle mutation.
-
-## Open Questions
-
-*No open questions.*

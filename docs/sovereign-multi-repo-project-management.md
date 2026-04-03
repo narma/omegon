@@ -1,11 +1,12 @@
 ---
 id: sovereign-multi-repo-project-management
-title: Sovereign multi-repo project management on top of omegon-design
+title: "Sovereign multi-repo project management on top of omegon-design"
 status: exploring
 parent: git-native-task-management
 tags: [forgejo, multi-repo, sovereign, project-management, web]
 open_questions: []
-jj_change_id: urroornuzoyklopmyzxtuytzwknnxtqp
+dependencies: []
+related: []
 issue_type: epic
 priority: 3
 ---
@@ -98,6 +99,10 @@ Minimum richness Omegon should emit across all providers/models:
 
 If Omegon emits this as a stable canonical schema, a claude-devtools-like inspector can work on Omegon directly, even while provider/projector internals differ underneath.
 
-## Open Questions
+## Decisions
 
-*No open questions.*
+### Decision: Sovereign multi-repo PM is intentionally last in sequence
+
+**Status:** decided
+
+**Rationale:** This node depends on a reusable crate and a validated single-repo task-management model. It should consume those abstractions rather than forcing premature generalization into the first implementation.

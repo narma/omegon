@@ -1,9 +1,15 @@
 ---
 id: singular-package-runtime-boundary
-title: Singular package runtime boundary and ownership
-status: implemented
+title: "Singular package runtime boundary and ownership"
+status: archived
 parent: singular-package-update-lifecycle
+tags: []
 open_questions: []
+dependencies: []
+related: []
+archive_reason: "obsolete"
+superseded_by: "rust-agent-loop"
+archived_at: "1775246679"
 ---
 
 # Singular package runtime boundary and ownership
@@ -38,8 +44,5 @@ Two seams remain visible: (1) README/install/update wording still references old
 ### Decision: Omegon should be treated as the single installed product boundary, with vendor/pi-mono as a dev-only implementation source
 
 **Status:** decided
+
 **Rationale:** Operators install and invoke Omegon, not a separately managed standalone pi package. `bin/pi.mjs` already centralizes runtime ownership at the Omegon root, preinstall removes conflicting standalone pi binaries, and the publish/install model excludes `vendor/` from the distributed artifact. Therefore the product contract should be one Omegon package that owns runtime/update management, while `vendor/pi-mono` remains a contributor-facing source of fork patches in development.
-
-## Open Questions
-
-*No open questions.*

@@ -2,9 +2,11 @@
 id: markdown-viewport
 title: "Omegon Rendering Engine — Lifecycle Visualization & Project Intelligence Layer"
 status: decided
-related: [omega]
 tags: [rendering, rust, visualization, design-tree, openspec, lifecycle, dashboard, project-intelligence]
 open_questions: []
+dependencies: []
+related:
+  - omega
 issue_type: epic
 priority: 2
 ---
@@ -137,62 +139,85 @@ This means a single `cargo build --release` produces the complete binary with WA
 ### Decision: Scope as project intelligence portal, not markdown previewer
 
 **Status:** decided
+
 **Rationale:** The narrow mdserve-fork framing undersells the opportunity. Pi-kit has enough structured lifecycle data to build a full project intelligence layer. The rendering engine should be designed from the start to consume all lifecycle artifacts, not retrofitted later.
 
 ### Decision: Rust binary, browser frontend, WebSocket push
 
 **Status:** decided
+
 **Rationale:** Rust gives us a single distributable binary with no runtime dependencies. The browser frontend handles the rich graph/board UI with existing JS graph libraries. WebSocket push enables live updates as the agent modifies lifecycle artifacts — the dashboard becomes a live view of agent work in progress.
 
 ### Decision: Three-layer architecture (document / lifecycle / intelligence)
 
 **Status:** decided
+
 **Rationale:** Document layer is the foundation and can ship first. Lifecycle layer (graph views, kanban, funnel) ships second. Intelligence layer (traceability, health scoring, memory graph) ships third. Each layer is independently useful.
 
 ### Decision: Standalone binary + Omegon extension bridge
 
 **Status:** decided
+
 **Rationale:** The binary lives in its own repo and is independently installable. Pi-kit gets a `/auspex open` extension command that spawns it and opens the browser. Clean separation — the viewer is useful beyond Omegon.
 
 ### Decision: Extend the existing mdserve fork — distribution model decided
 
 **Status:** decided
+
 **Rationale:** The fork at ~/workspace/ai/mdserve already has wikilinks, force-graph.js (vendored), recursive scanning, WebSocket live-reload, Styrene theme, and 2514 lines of working Rust. Document layer is ~80% done. No reason to start over — extend this fork for lifecycle and intelligence layers. The fork lives in its own repo and is independently distributable.
 
 ### Decision: Long-lived daemon with WebSocket push — already in the fork
 
 **Status:** decided
+
 **Rationale:** Interactivity requires a running server. The fork already implements this: tokio async runtime, notify file watcher, broadcast channel for WebSocket push to all connected clients. Static generation would break the live-update-while-agent-runs use case. Daemon mode is the only viable path for a live project intelligence view. Ephemeral by design: start during a session, kill when done.
 
 ### Decision: force-graph.js (already vendored) + fdg for Rust-native WASM layout
 
 **Status:** decided
+
 **Rationale:** force-graph.js is already vendored in the fork and working for the wikilink graph. For the Dioxus WASM lifecycle views, use `fdg` (Rust-native force-directed layout) so layout computation runs in WASM without JS interop. `petgraph` handles graph algorithms (cycle detection, blocking-chain traversal, subgraph extraction) on the axum backend. Two-tier: fdg/petgraph for Rust-native intelligence, force-graph.js for the legacy document graph view.
 
 ### Decision: Coexistence: TUI for ambient status, Dioxus Web + Desktop for deep inspection
 
 **Status:** decided
+
 **Rationale:** TUI dashboard stays — it's ambient, zero-friction, always visible in the terminal. The rendering engine is the "pull" surface: open it when you need to see the full graph, triage blocked nodes, trace spec coverage, or inspect cleave history. Dioxus targets both Web (WASM SPA at localhost) and Desktop (native webview window via `mdserve --app`) from the same codebase. Desktop target means the intelligence layer can sit alongside the terminal rather than requiring a browser tab. Both surfaces receive the same WebSocket push from the daemon — they stay in sync.
 
 ### Decision: Nix flake distribution following styrened pattern
 
 **Status:** decided
+
 **Rationale:** Nix flake with `flake-utils.lib.eachDefaultSystem` + `nix/package.nix` (buildRustPackage or crane) following styrened's exact structure. Version from a VERSION file, commitSha injected at build time, `cleanSource` to exclude target/. WASM bundle for Dioxus web target built as a separate derivation and embedded in the main binary via `include_bytes!` — single binary output, zero runtime deps, works on macOS + Linux. The Omegon extension (`/auspex open`) invokes the binary by name; it is the user's responsibility to have it on PATH (installed via Nix). Cargo install remains available for non-Nix users.
 
-## Open Questions
+### Decision: Auspex owns the mdserve browser portal and lifecycle/intelligence daemon work; embedded /dash and public docs automation stay outside it
 
-*No open questions.*
+**Status:** decided
+
+**Rationale:** The browser portal split is now clear enough to encode explicitly. `markdown-viewport` should own the Auspex/mdserve daemon: lifecycle backend APIs, rich browser frontend, packaging, and live project-intelligence views. It should not absorb Omegon-local `/dash` work, which serves live in-process state from the omegon binary, nor static docs-site generation, which belongs to the public site pipeline (`omegon-site-docs`). This keeps Auspex focused on the interactive browser portal instead of becoming a catch-all web bucket.
+
+### Decision: `embedded-web-dashboard` remains historical context under markdown-viewport but is architecturally Omegon-local, not Auspex-owned
+
+**Status:** decided
+
+**Rationale:** `embedded-web-dashboard` was originally explored under the broader rendering/browser umbrella, but its own node now explicitly states it is the Omegon-local `/dash` surface served from the omegon binary. Reparenting is unnecessary churn for a completed historical node. Keep it for lineage, but treat it as out-of-scope for future Auspex work.
+
+### Decision: Auspex/mdserve sequence is backend first, frontend second, distribution third, bridge integration alongside backend
+
+**Status:** decided
+
+**Rationale:** The portal track now has a clean internal order. First define and implement the lifecycle backend that reads repo-native state and exposes stable APIs/events. Then build the browser frontend against that contract. Then package/distribute the resulting daemon shape. The Omegon-side Auspex bridge can evolve in parallel with backend contract work because it defines launch and prompt-context integration rather than portal rendering internals.
 
 ## Implementation Notes
 
 ### File Scope
 
-- `src/lifecycle.rs` (new) — Lifecycle data model — parse design node frontmatter, OpenSpec change directories, tasks.md groups, facts.jsonl. Produces typed Rust structs for API serialization.
-- `src/api.rs` (new) — axum /api/ route group — GET /api/design-tree, /api/openspec, /api/memory-graph, /api/cleave-history. Serves lifecycle JSON to the Dioxus frontend.
-- `src/wasm/` (new) — Dioxus WASM frontend — components for kanban board, OpenSpec funnel, design tree graph (fdg layout), memory fact graph, cleave timeline. Built separately, embedded in binary via include_bytes!.
-- `src/app.rs` (modified) — Add /dashboard, /graph, /board routes that serve the Dioxus WASM SPA. Add lifecycle-aware frontmatter rendering for design nodes and OpenSpec docs.
-- `flake.nix` (new) — Nix flake — flake-utils.lib.eachDefaultSystem, packages.default = mdserve binary, devShell with cargo/rust-analyzer/wasm-pack/cargo-watch.
-- `nix/package.nix` (new) — buildRustPackage derivation — includes WASM build step for Dioxus web target, embeds bundle into binary.
+- `src/lifecycle.rs` (new)` — Lifecycle data model — parse design node frontmatter, OpenSpec change directories, tasks.md groups, facts.jsonl. Produces typed Rust structs for API serialization.
+- `src/api.rs` (new)` — axum /api/ route group — GET /api/design-tree, /api/openspec, /api/memory-graph, /api/cleave-history. Serves lifecycle JSON to the Dioxus frontend.
+- `src/wasm/` (new)` — Dioxus WASM frontend — components for kanban board, OpenSpec funnel, design tree graph (fdg layout), memory fact graph, cleave timeline. Built separately, embedded in binary via include_bytes!.
+- `src/app.rs` (modified)` — Add /dashboard, /graph, /board routes that serve the Dioxus WASM SPA. Add lifecycle-aware frontmatter rendering for design nodes and OpenSpec docs.
+- `flake.nix` (new)` — Nix flake — flake-utils.lib.eachDefaultSystem, packages.default = mdserve binary, devShell with cargo/rust-analyzer/wasm-pack/cargo-watch.
+- `nix/package.nix` (new)` — buildRustPackage derivation — includes WASM build step for Dioxus web target, embeds bundle into binary.
 
 ### Constraints
 

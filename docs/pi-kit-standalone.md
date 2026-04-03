@@ -1,10 +1,15 @@
 ---
 id: Omegon-standalone
-title: Make Omegon Standalone — Subsume the pi Harness
-status: implemented
-related: [rust-agent-loop]
+title: "Make Omegon Standalone — Subsume the pi Harness"
+status: archived
 tags: [architecture, fork, standalone, strategic]
 open_questions: []
+dependencies: []
+related:
+  - rust-agent-loop
+archive_reason: "superseded"
+superseded_by: "ts-to-rust-migration"
+archived_at: "1775246517"
 ---
 
 # Make Omegon Standalone — Subsume the pi Harness
@@ -58,8 +63,5 @@ Verdict: Option B is clearly right. Option A (standalone) solves a governance pr
 ### Decision: Patched fork over full standalone
 
 **Status:** decided
+
 **Rationale:** Full standalone absorption means owning 73k lines of infrastructure (15+ AI providers, TUI rendering engine, agent loop) to fix 2 isolated ~120-line files. The ongoing maintenance cost — porting new model providers, syncing TUI improvements, picking up upstream security fixes — dwarfs the governance benefit. The patched fork (Option B) gives identical control over the specific files that cause problems while getting upstream AI/TUI improvements for free via periodic sync. Publish as @styrene-lab/pi-coding-agent from cwilson613/pi-mono. Migration cost is a one-time import path change in Omegon.
-
-## Open Questions
-
-*No open questions.*
