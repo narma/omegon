@@ -3602,7 +3602,17 @@ impl App {
                     "bash" => args
                         .get("command")
                         .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
+                        .map(|cmd| {
+                            // Strip `cd /path && ` wrapper so the card header shows
+                            // the actual command, not a misleading `cd`.
+                            if let Some(rest) = cmd.strip_prefix("cd ") {
+                                rest.split_once(" && ")
+                                    .map(|(_, after)| after.to_string())
+                                    .unwrap_or_else(|| cmd.to_string())
+                            } else {
+                                cmd.to_string()
+                            }
+                        }),
                     "read" | "edit" | "write" | "view" => args
                         .get("path")
                         .and_then(|v| v.as_str())

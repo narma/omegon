@@ -56,8 +56,11 @@ pub async fn execute(
         full_output.push_str(&stderr);
     }
 
+    // Strip terminal control noise (mouse reports, bracketed paste, etc.)
+    let clean_output = strip_terminal_noise(&full_output);
+
     // Tail-truncate if needed
-    let truncated = truncate_tail(&full_output);
+    let truncated = truncate_tail(&clean_output);
     let mut text = truncated.content;
 
     if exit_code != 0 {
@@ -74,6 +77,74 @@ pub async fn execute(
             "totalBytes": truncated.total_bytes,
         }),
     })
+}
+
+/// Strip CSI terminal control sequences that aren't SGR color codes.
+///
+/// Piped stdout/stderr shouldn't contain these, but they can leak through
+/// when programs detect a pseudo-tty or when terminal multiplexers inject
+/// mouse-tracking reports, bracketed-paste markers, or cursor positioning.
+///
+/// We preserve SGR (Select Graphic Rendition, ending with 'm') because
+/// the TUI renderer converts those to styled spans via `ansi_to_tui`.
+fn strip_terminal_noise(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i < len {
+        if bytes[i] == b'\x1b' && i + 1 < len && bytes[i + 1] == b'[' {
+            // CSI sequence: ESC [ ... <final byte>
+            let start = i;
+            i += 2; // skip ESC [
+            // Skip parameter bytes (0x30–0x3F) and intermediate bytes (0x20–0x2F)
+            while i < len && bytes[i] >= 0x20 && bytes[i] <= 0x3F {
+                i += 1;
+            }
+            // Final byte (0x40–0x7E)
+            if i < len && bytes[i] >= 0x40 && bytes[i] <= 0x7E {
+                let final_byte = bytes[i];
+                i += 1;
+                if final_byte == b'm' {
+                    // SGR — keep it for color rendering, BUT the SGR mouse
+                    // protocol also ends with 'm' (button release). Distinguish
+                    // by the leading '<' parameter byte that SGR mouse always has.
+                    let params = &input[start + 2..i - 1]; // between ESC[ and final byte
+                    if !params.starts_with('<') {
+                        result.push_str(&input[start..i]);
+                    }
+                    // else: SGR mouse release — drop
+                }
+                // All other CSI sequences (mouse reports, cursor movement, etc.) — drop
+            } else {
+                // Malformed CSI — drop the whole thing
+                if i < len {
+                    i += 1;
+                }
+            }
+        } else if bytes[i] == b'\x1b' && i + 1 < len && bytes[i + 1] == b']' {
+            // OSC sequence: ESC ] ... (ST or BEL)
+            i += 2;
+            while i < len {
+                if bytes[i] == b'\x07' {
+                    i += 1;
+                    break;
+                }
+                if bytes[i] == b'\x1b' && i + 1 < len && bytes[i + 1] == b'\\' {
+                    i += 2;
+                    break;
+                }
+                i += 1;
+            }
+            // OSC sequences (title changes, hyperlinks) — drop entirely
+        } else {
+            result.push(input[i..].chars().next().unwrap());
+            i += input[i..].chars().next().unwrap().len_utf8();
+        }
+    }
+
+    result
 }
 
 struct Truncated {
@@ -162,6 +233,64 @@ mod tests {
         let result = truncate_tail("");
         assert!(!result.was_truncated);
         assert_eq!(result.total_lines, 0);
+    }
+
+    #[test]
+    fn strip_terminal_noise_preserves_sgr_colors() {
+        let input = "\x1b[32mhello\x1b[0m world";
+        let result = strip_terminal_noise(input);
+        assert_eq!(result, "\x1b[32mhello\x1b[0m world");
+    }
+
+    #[test]
+    fn strip_terminal_noise_removes_mouse_reports() {
+        // SGR mouse report: ESC [ < Ps ; Ps ; Ps M
+        let input = "before\x1b[<39;80;45Mafter";
+        let result = strip_terminal_noise(input);
+        assert_eq!(result, "beforeafter", "mouse report should be stripped");
+    }
+
+    #[test]
+    fn strip_terminal_noise_removes_cursor_movement() {
+        // Cursor up: ESC [ A
+        let input = "line1\x1b[Aline2";
+        let result = strip_terminal_noise(input);
+        assert_eq!(result, "line1line2");
+    }
+
+    #[test]
+    fn strip_terminal_noise_removes_bracketed_paste() {
+        // Bracketed paste mode: ESC [ ? 2004 h / l
+        let input = "before\x1b[?2004hpasted\x1b[?2004lafter";
+        let result = strip_terminal_noise(input);
+        assert_eq!(result, "beforepastedafter");
+    }
+
+    #[test]
+    fn strip_terminal_noise_removes_osc_sequences() {
+        // Title change: ESC ] 0 ; title BEL
+        let input = "before\x1b]0;window title\x07after";
+        let result = strip_terminal_noise(input);
+        assert_eq!(result, "beforeafter");
+    }
+
+    #[test]
+    fn strip_terminal_noise_plain_text_unchanged() {
+        let input = "just plain text\nwith newlines\n";
+        assert_eq!(strip_terminal_noise(input), input);
+    }
+
+    #[test]
+    fn strip_terminal_noise_mixed_sgr_and_mouse() {
+        let input = "\x1b[1;31merror:\x1b[0m failed\x1b[<0;10;20M\x1b[<0;10;20m";
+        let result = strip_terminal_noise(input);
+        // SGR (31m, 0m) preserved, mouse reports (M, m endings with <) stripped
+        assert_eq!(result, "\x1b[1;31merror:\x1b[0m failed");
+    }
+
+    #[test]
+    fn strip_terminal_noise_empty_input() {
+        assert_eq!(strip_terminal_noise(""), "");
     }
 
     #[tokio::test]
