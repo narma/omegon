@@ -182,4 +182,94 @@ Append-only record of development sessions. Read recent entries for context.
   fe959eed refactor(loop): add provider-specific upstream error matrix overrides
   a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
   8ea844f9 fix(status): require repeated failures before provider degradation
+## 2026-04-03 — main (7t 1681tc 7m28s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
+## 2026-04-03 — main (7t 1689tc 30m53s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
+## 2026-04-03 — main (1t 1689tc 29s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
+## 2026-04-03 — main (4t 1692tc 12m53s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
+## 2026-04-03 — main (11t 1704tc 6m46s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
+## 2026-04-03 — main (1t 1704tc 22s)
+
+**Active:**
+- knowledge-quadrant-lifecycle (0/8)
+- openai-provider-identity-and-routing-honesty (0/13)
+- orchestratable-provider-model (43/43)
+- splash-systems-integration (0/29)
+- styrene-identity-secrets (0/3)
+- tui-footer-engine-display (0/41)
+- tutorial-system (37/39)
+
+**Commits:**
+  3a0fb72b refactor(loop): make provider error mapping table-driven
+  fe959eed refactor(loop): add provider-specific upstream error matrix overrides
+  a9285d77 refactor(loop): classify upstream failures into explicit recovery classes
 

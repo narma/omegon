@@ -1,8 +1,8 @@
 {
   "lastUsedModel": {
-    "provider": "openai-codex",
-    "modelId": "gpt-5.4"
+    "provider": "anthropic",
+    "modelId": "claude-opus-4-6"
   },
-  "thinkingLevel": "low",
+  "thinkingLevel": "medium",
   "maxTurns": 50
 }
