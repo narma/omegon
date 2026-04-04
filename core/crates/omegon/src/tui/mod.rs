@@ -3549,6 +3549,7 @@ impl App {
                 actual_input_tokens,
                 actual_output_tokens,
                 cache_read_tokens,
+                provider_telemetry,
             } => {
                 self.turn = turn;
                 // Accumulate session-long token counts
@@ -3574,6 +3575,7 @@ impl App {
                     self.footer_data.context_percent =
                         (tokens as f32 / ctx_window as f32 * 100.0).min(100.0);
                 }
+                self.footer_data.provider_telemetry = provider_telemetry;
             }
             AgentEvent::MessageChunk { text } => {
                 let was_streaming = self.conversation.is_streaming();

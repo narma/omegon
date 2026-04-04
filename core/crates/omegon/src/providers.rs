@@ -312,6 +312,40 @@ pub async fn auto_detect_bridge(model_spec: &str) -> Option<Box<dyn LlmBridge>> 
 /// Extract and log rate limit headers from a provider's HTTP response.
 /// All major providers return quota/remaining/reset information on every
 /// response — this is the only source of subscription usage data.
+fn parse_rate_limit_snapshot(
+    provider: &str,
+    headers: &reqwest::header::HeaderMap,
+) -> Option<omegon_traits::ProviderTelemetrySnapshot> {
+    let get = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    let parse_pct = |name: &str| {
+        get(name).and_then(|v| v.trim().trim_end_matches('%').parse::<f32>().ok())
+    };
+    let parse_u64 = |name: &str| get(name).and_then(|v| v.trim().parse::<u64>().ok());
+
+    let snapshot = omegon_traits::ProviderTelemetrySnapshot {
+        provider: provider.to_string(),
+        source: "response_headers".into(),
+        unified_5h_utilization_pct: parse_pct("anthropic-ratelimit-unified-5h-utilization"),
+        unified_7d_utilization_pct: parse_pct("anthropic-ratelimit-unified-7d-utilization"),
+        requests_remaining: parse_u64("x-ratelimit-remaining-requests")
+            .or_else(|| parse_u64("ratelimit-remaining-requests")),
+        tokens_remaining: parse_u64("x-ratelimit-remaining-tokens")
+            .or_else(|| parse_u64("ratelimit-remaining-tokens")),
+        retry_after_secs: parse_u64("retry-after"),
+        request_id: get("x-request-id")
+            .or_else(|| get("request-id"))
+            .map(ToOwned::to_owned),
+    };
+
+    let has_any = snapshot.unified_5h_utilization_pct.is_some()
+        || snapshot.unified_7d_utilization_pct.is_some()
+        || snapshot.requests_remaining.is_some()
+        || snapshot.tokens_remaining.is_some()
+        || snapshot.retry_after_secs.is_some()
+        || snapshot.request_id.is_some();
+    has_any.then_some(snapshot)
+}
+
 fn log_rate_limit_headers(provider: &str, headers: &reqwest::header::HeaderMap) {
     // Collect all rate-limit-related headers into a structured log
     let mut limits: Vec<(String, String)> = Vec::new();
@@ -764,11 +798,12 @@ impl LlmBridge for AnthropicClient {
             return Ok(rx);
         }
         // Extract rate limit headers before consuming the response for SSE
+        let provider_telemetry = parse_rate_limit_snapshot("anthropic", response.headers());
         log_rate_limit_headers("anthropic", response.headers());
         tracing::debug!(status = %response.status(), "Anthropic response OK — starting SSE stream");
 
         tokio::spawn(async move {
-            if let Err(e) = parse_anthropic_stream(response, &tx).await {
+            if let Err(e) = parse_anthropic_stream(response, provider_telemetry, &tx).await {
                 let _ = tx
                     .send(LlmEvent::Error {
                         message: format!("{e}"),
@@ -783,6 +818,7 @@ impl LlmBridge for AnthropicClient {
 
 async fn parse_anthropic_stream(
     response: reqwest::Response,
+    provider_telemetry: Option<omegon_traits::ProviderTelemetrySnapshot>,
     tx: &mpsc::Sender<LlmEvent>,
 ) -> anyhow::Result<()> {
     let mut block_type: Option<String> = None;
@@ -799,6 +835,7 @@ async fn parse_anthropic_stream(
     let mut acc_cache_read_tokens: u64 = 0;
 
     tracing::debug!("parsing Anthropic SSE stream");
+    let provider_telemetry_done = provider_telemetry.clone();
     let mut event_count = 0u32;
 
     process_sse(response, |data| {
@@ -981,6 +1018,7 @@ async fn parse_anthropic_stream(
                     input_tokens: acc_input_tokens,
                     output_tokens: acc_output_tokens,
                     cache_read_tokens: acc_cache_read_tokens,
+                    provider_telemetry: provider_telemetry_done.clone(),
                 });
                 return false; // stop
             }
@@ -1114,10 +1152,11 @@ impl LlmBridge for OpenAIClient {
             return Ok(rx);
         }
 
+        let provider_telemetry = parse_rate_limit_snapshot("openai", response.headers());
         log_rate_limit_headers("openai", response.headers());
 
         tokio::spawn(async move {
-            if let Err(e) = parse_openai_stream(response, &tx).await {
+            if let Err(e) = parse_openai_stream(response, provider_telemetry, &tx).await {
                 let _ = tx
                     .send(LlmEvent::Error {
                         message: format!("{e}"),
@@ -1132,12 +1171,14 @@ impl LlmBridge for OpenAIClient {
 
 async fn parse_openai_stream(
     response: reqwest::Response,
+    provider_telemetry: Option<omegon_traits::ProviderTelemetrySnapshot>,
     tx: &mpsc::Sender<LlmEvent>,
 ) -> anyhow::Result<()> {
     let mut full_text = String::new();
     let mut tool_calls: Vec<ToolCallAccum> = Vec::new();
     let mut acc_input_tokens: u64 = 0;
     let mut acc_output_tokens: u64 = 0;
+    let provider_telemetry_done = provider_telemetry.clone();
 
     let _ = tx.try_send(LlmEvent::Start);
     let _ = tx.try_send(LlmEvent::TextStart);
@@ -1222,6 +1263,7 @@ async fn parse_openai_stream(
                 input_tokens: acc_input_tokens,
                 output_tokens: acc_output_tokens,
                 cache_read_tokens: 0,
+                provider_telemetry: provider_telemetry_done.clone(),
             });
             return false;
         }
@@ -1534,10 +1576,12 @@ impl LlmBridge for CodexClient {
 
             match response {
                 Ok(resp) if resp.status().is_success() => {
+                    let provider_telemetry =
+                        parse_rate_limit_snapshot("openai-codex", resp.headers());
                     log_rate_limit_headers("openai-codex", resp.headers());
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = parse_codex_stream(resp, &tx_clone).await {
+                        if let Err(e) = parse_codex_stream(resp, provider_telemetry, &tx_clone).await {
                             let _ = tx_clone
                                 .send(LlmEvent::Error {
                                     message: format!("{e}"),
@@ -1598,6 +1642,7 @@ impl LlmBridge for CodexClient {
 /// Parse Codex Responses API SSE stream (different event structure from Chat Completions).
 async fn parse_codex_stream(
     response: reqwest::Response,
+    provider_telemetry: Option<omegon_traits::ProviderTelemetrySnapshot>,
     tx: &mpsc::Sender<LlmEvent>,
 ) -> anyhow::Result<()> {
     let mut full_text = String::new();
@@ -1612,6 +1657,7 @@ async fn parse_codex_stream(
     }
     let mut tool_calls: Vec<ToolAcc> = Vec::new();
     let mut completed_tool_calls: Vec<Value> = Vec::new();
+    let provider_telemetry_done = provider_telemetry.clone();
     let _ = tx.try_send(LlmEvent::Start);
 
     // Terminal events (Done / Error) are deferred and sent *after* process_sse
@@ -1808,6 +1854,7 @@ async fn parse_codex_stream(
                     input_tokens,
                     output_tokens,
                     cache_read_tokens: 0,
+                    provider_telemetry: provider_telemetry_done.clone(),
                 })
                 .await;
         }
@@ -1990,6 +2037,29 @@ impl LlmBridge for OpenAICompatClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_rate_limit_snapshot_extracts_anthropic_utilization_headers() {
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            "anthropic-ratelimit-unified-5h-utilization",
+            reqwest::header::HeaderValue::from_static("42"),
+        );
+        headers.insert(
+            "anthropic-ratelimit-unified-7d-utilization",
+            reqwest::header::HeaderValue::from_static("64"),
+        );
+        headers.insert(
+            "retry-after",
+            reqwest::header::HeaderValue::from_static("17"),
+        );
+
+        let snapshot = parse_rate_limit_snapshot("anthropic", &headers).expect("snapshot");
+        assert_eq!(snapshot.provider, "anthropic");
+        assert_eq!(snapshot.unified_5h_utilization_pct, Some(42.0));
+        assert_eq!(snapshot.unified_7d_utilization_pct, Some(64.0));
+        assert_eq!(snapshot.retry_after_secs, Some(17));
+    }
 
     #[test]
     fn resolve_key_from_env_uses_standard_var_names() {

@@ -354,13 +354,14 @@ fn project_event(ev: &AgentEvent) -> Option<IpcEventPayload> {
     match ev {
         AgentEvent::TurnStart { turn } =>
             Some(IpcEventPayload::TurnStarted { turn: *turn }),
-        AgentEvent::TurnEnd { turn, estimated_tokens, actual_input_tokens, actual_output_tokens, cache_read_tokens } =>
+        AgentEvent::TurnEnd { turn, estimated_tokens, actual_input_tokens, actual_output_tokens, cache_read_tokens, provider_telemetry } =>
             Some(IpcEventPayload::TurnEnded {
                 turn: *turn,
                 estimated_tokens: *estimated_tokens,
                 actual_input_tokens: *actual_input_tokens,
                 actual_output_tokens: *actual_output_tokens,
                 cache_read_tokens: *cache_read_tokens,
+                provider_telemetry: provider_telemetry.clone(),
             }),
         AgentEvent::MessageChunk { text } =>
             Some(IpcEventPayload::MessageDelta { text: text.clone() }),

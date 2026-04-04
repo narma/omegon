@@ -121,6 +121,7 @@ pub async fn run(
                 actual_input_tokens: 0,
                 actual_output_tokens: 0,
                 cache_read_tokens: 0,
+                provider_telemetry: None,
             });
             break;
         }
@@ -336,6 +337,7 @@ pub async fn run(
                     actual_input_tokens: 0,
                     actual_output_tokens: 0,
                     cache_read_tokens: 0,
+                    provider_telemetry: None,
                 });
                 break;
             }
@@ -343,6 +345,7 @@ pub async fn run(
 
         // Real provider token counts for this turn (0 if provider didn't report them)
         let (act_in, act_out, act_cr) = assistant_msg.provider_tokens;
+        let provider_telemetry = assistant_msg.provider_telemetry.clone();
 
         // ─── Parse ambient capture blocks (omg: tags) ───────────────
         let captured =
@@ -375,6 +378,7 @@ pub async fn run(
                     actual_input_tokens: act_in,
                     actual_output_tokens: act_out,
                     cache_read_tokens: act_cr,
+                    provider_telemetry: provider_telemetry.clone(),
                 });
                 continue; // give it one more turn to commit
             }
@@ -385,6 +389,7 @@ pub async fn run(
                 actual_input_tokens: act_in,
                 actual_output_tokens: act_out,
                 cache_read_tokens: act_cr,
+                provider_telemetry: provider_telemetry.clone(),
             });
             break;
         }
@@ -487,6 +492,7 @@ pub async fn run(
             actual_input_tokens: act_in,
             actual_output_tokens: act_out,
             cache_read_tokens: act_cr,
+            provider_telemetry,
         });
     }
 
@@ -804,6 +810,7 @@ async fn consume_llm_stream(
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut final_raw: Value = Value::Null;
     let mut provider_tokens: (u64, u64, u64) = (0, 0, 0); // (input, output, cache_read)
+    let mut provider_telemetry = None;
 
     let _ = events.send(AgentEvent::MessageStart {
         role: "assistant".into(),
@@ -918,9 +925,16 @@ async fn consume_llm_stream(
                     arguments: tool_call.arguments,
                 });
             }
-            LlmEvent::Done { message, input_tokens, output_tokens, cache_read_tokens } => {
+            LlmEvent::Done {
+                message,
+                input_tokens,
+                output_tokens,
+                cache_read_tokens,
+                provider_telemetry: done_provider_telemetry,
+            } => {
                 final_raw = message.get("raw").cloned().unwrap_or(message);
                 provider_tokens = (input_tokens, output_tokens, cache_read_tokens);
+                provider_telemetry = done_provider_telemetry;
                 break;
             }
             LlmEvent::Error { message } => {
@@ -960,6 +974,7 @@ async fn consume_llm_stream(
         tool_calls,
         raw: final_raw,
         provider_tokens,
+        provider_telemetry,
     })
 }
 

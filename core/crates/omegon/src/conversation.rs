@@ -848,6 +848,7 @@ impl ConversationState {
                                 .collect(),
                             raw: raw.unwrap_or(Value::Null),
                             provider_tokens: (0, 0, 0),
+                            provider_telemetry: None,
                         },
                         turn,
                     ),
@@ -1142,6 +1143,7 @@ mod tests {
             }],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
     }
 
@@ -1157,6 +1159,7 @@ mod tests {
             tool_calls: vec![],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
         conv.intent.stats.turns = 1; // Advance turn so the message is old
 
@@ -1180,6 +1183,7 @@ mod tests {
             tool_calls: vec![],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
         conv.intent.stats.turns = 1;
 
@@ -1247,6 +1251,7 @@ mod tests {
             tool_calls: vec![],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
         conv.push_tool_result(ToolResultEntry {
             call_id: "t1".into(),
@@ -1292,6 +1297,7 @@ mod tests {
             }],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
         conv.push_tool_result(ToolResultEntry {
             call_id: "tc1".into(),
@@ -1414,6 +1420,7 @@ mod tests {
             tool_calls: vec![],
             raw: Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
 
         // Advance to turn 5 so turn-0 messages are outside decay window
@@ -1442,6 +1449,7 @@ mod tests {
             tool_calls: vec![],
             raw: Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
 
         // Advance and add recent
@@ -1735,6 +1743,7 @@ mod tests {
             tool_calls: vec![],
             raw: Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
 
         // Turn 1's tool result should now be in referenced_turns
@@ -1890,6 +1899,7 @@ mod tests {
             tool_calls: vec![],
             raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
         });
 
         let tmp = std::env::temp_dir().join("omegon-test-decay-session.json");
@@ -1921,6 +1931,7 @@ mod tests {
                 tool_calls: vec![],
                 raw: serde_json::Value::Null,
             provider_tokens: (0, 0, 0),
+            provider_telemetry: None,
             });
         }
 

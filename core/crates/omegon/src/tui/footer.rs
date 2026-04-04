@@ -61,6 +61,8 @@ pub struct FooterData {
     pub update_available: Option<String>,
     /// Inline operator-facing transient events shown under engine version info.
     pub operator_events: Vec<OperatorEventLine>,
+    /// Current provider quota/headroom telemetry, if exposed by the upstream.
+    pub provider_telemetry: Option<omegon_traits::ProviderTelemetrySnapshot>,
 }
 
 impl FooterData {
@@ -570,6 +572,13 @@ impl FooterData {
 
         lines.push(Line::from(auth_parts));
 
+        if let Some(line) = format_provider_telemetry_line(&self.provider_telemetry) {
+            lines.push(Line::from(vec![
+                Span::styled("quota ", Style::default().fg(t.dim())),
+                Span::styled(line, Style::default().fg(t.accent_muted())),
+            ]));
+        }
+
         let widget = Paragraph::new(lines).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, inner);
     }
@@ -830,6 +839,33 @@ fn format_session_text(model_id: &str, turn: u32, session_input_tokens: u64, ses
     parts.join(" ")
 }
 
+fn format_provider_telemetry_line(
+    telemetry: &Option<omegon_traits::ProviderTelemetrySnapshot>,
+) -> Option<String> {
+    let t = telemetry.as_ref()?;
+    let mut parts = Vec::new();
+    if let Some(pct) = t.unified_5h_utilization_pct {
+        parts.push(format!("5h {:.0}%", pct));
+    }
+    if let Some(pct) = t.unified_7d_utilization_pct {
+        parts.push(format!("7d {:.0}%", pct));
+    }
+    if let Some(rem) = t.requests_remaining {
+        parts.push(format!("req {}", rem));
+    }
+    if let Some(rem) = t.tokens_remaining {
+        parts.push(format!("tok {}", widgets::format_tokens_compact(rem as usize)));
+    }
+    if let Some(secs) = t.retry_after_secs {
+        parts.push(format!("retry {}s", secs));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
 fn format_failure_age(timestamp: &str) -> Option<String> {
     let parsed = DateTime::parse_from_rfc3339(timestamp).ok()?;
     let age = Utc::now().signed_duration_since(parsed.with_timezone(&Utc));
@@ -985,6 +1021,24 @@ mod tests {
         assert!(!text.contains('⚙'), "got {text}");
         assert!(!text.contains('↻'), "got {text}");
         assert!(!text.contains('·'), "got {text}");
+    }
+
+    #[test]
+    fn provider_telemetry_line_formats_unified_usage() {
+        let text = format_provider_telemetry_line(&Some(omegon_traits::ProviderTelemetrySnapshot {
+            provider: "anthropic".into(),
+            source: "response_headers".into(),
+            unified_5h_utilization_pct: Some(42.0),
+            unified_7d_utilization_pct: Some(64.0),
+            requests_remaining: None,
+            tokens_remaining: None,
+            retry_after_secs: Some(17),
+            request_id: None,
+        }))
+        .expect("telemetry line");
+        assert!(text.contains("5h 42%"), "got {text}");
+        assert!(text.contains("7d 64%"), "got {text}");
+        assert!(text.contains("retry 17s"), "got {text}");
     }
 
     #[test]
