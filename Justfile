@@ -559,14 +559,7 @@ publish:
     echo "  Binary:  $BINARY_VERSION"
 
     # Check signing status
-    SIGN_STATUS="unsigned"
-    if codesign -dvvv "$BINARY" 2>&1 | grep -q "Developer ID"; then
-        SIGN_STATUS="Developer ID (YubiKey)"
-    elif codesign -dvvv "$BINARY" 2>&1 | grep -q "Omegon Local Dev"; then
-        SIGN_STATUS="Omegon Local Dev (self-signed)"
-    elif codesign -dvvv "$BINARY" 2>&1 | grep -q "Signature=adhoc"; then
-        SIGN_STATUS="ad-hoc"
-    fi
+    SIGN_STATUS=$(python3 scripts/release_status.py --binary "$BINARY")
     echo "  Signing: $SIGN_STATUS"
 
     # ── 2. Push to origin (triggers CI: release, npm, site) ──
