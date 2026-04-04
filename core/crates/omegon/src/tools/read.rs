@@ -229,6 +229,45 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[tokio::test]
+    async fn read_offset_near_end_of_file() {
+        let dir = std::env::temp_dir().join("omegon-test-read-tail");
+        let _ = std::fs::create_dir_all(&dir);
+        let file = dir.join("large.txt");
+        let content: String = (1..=1500).map(|i| format!("line {i}\n")).collect();
+        std::fs::write(&file, &content).unwrap();
+
+        // Read near the end — offset 1495 (1-indexed), limit 3
+        let result = execute(&file, Some(1495), Some(3)).await.unwrap();
+        let text = match &result.content[0] {
+            ContentBlock::Text { text } => text.clone(),
+            _ => panic!("expected text"),
+        };
+        assert!(text.contains("line 1495"), "should start at line 1495: {text}");
+        assert!(text.contains("line 1497"), "should include line 1497: {text}");
+        assert!(!text.starts_with("line 1\n"), "must not reset to beginning: {text}");
+        assert!(!text.contains("line 1498"), "should respect limit=3: {text}");
+
+        // Read the very last line
+        let result = execute(&file, Some(1500), Some(1)).await.unwrap();
+        let text = match &result.content[0] {
+            ContentBlock::Text { text } => text.clone(),
+            _ => panic!("expected text"),
+        };
+        assert!(text.contains("line 1500"), "should return last line: {text}");
+        assert!(!text.contains("line 1499"), "should not include prior line: {text}");
+
+        // Offset beyond EOF — should return empty (no crash, no reset)
+        let result = execute(&file, Some(2000), Some(5)).await.unwrap();
+        let text = match &result.content[0] {
+            ContentBlock::Text { text } => text.clone(),
+            _ => panic!("expected text"),
+        };
+        assert!(!text.starts_with("line 1\n"), "must not reset to beginning on OOB offset: {text}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 struct Base64Encoder<W: std::io::Write> {
