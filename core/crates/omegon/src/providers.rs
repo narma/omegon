@@ -1777,7 +1777,17 @@ async fn parse_codex_stream(
                 return false;
             }
             "response.content_part.added" | "response.reasoning_summary_part.added" => {}
-            _ => {}
+            _ => {
+                // Forward unhandled Codex events as a no-op heartbeat.
+                // The Responses API sends events like response.created,
+                // response.in_progress, and reasoning.delta during model
+                // thinking — these don't map to LlmEvents but MUST reset
+                // the 30s consumer idle timer in consume_llm_stream,
+                // otherwise the consumer assumes the stream is stalled
+                // while the model is still reasoning.  LlmEvent::Start is
+                // already handled as a no-op by the consumer.
+                let _ = tx.try_send(LlmEvent::Start);
+            }
         }
         true
     })
