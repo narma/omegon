@@ -13,10 +13,7 @@ pub enum Tab {
     /// Main conversation tab (index 0, always present)
     Conversation,
     /// Extension widget tab
-    Extension {
-        widget_id: String,
-        label: String,
-    },
+    Extension { widget_id: String, label: String },
 }
 
 impl Tab {
@@ -32,7 +29,7 @@ impl Tab {
 #[derive(Debug, Clone)]
 pub struct TabState {
     pub tabs: Vec<Tab>,
-    pub active_tab: usize,  // always valid index into tabs
+    pub active_tab: usize, // always valid index into tabs
 }
 
 impl TabState {
@@ -370,7 +367,12 @@ impl ConversationView {
 
         let target = self
             .selected_segment
-            .filter(|&idx| matches!(self.segments.get(idx).map(|s| &s.content), Some(SegmentContent::ToolCard { .. })))
+            .filter(|&idx| {
+                matches!(
+                    self.segments.get(idx).map(|s| &s.content),
+                    Some(SegmentContent::ToolCard { .. })
+                )
+            })
             .or_else(|| self.focused_tool_card());
 
         if let Some(idx) = target {
@@ -463,7 +465,12 @@ impl ConversationView {
         let top_offset = if total_height <= viewport_height {
             0
         } else {
-            total_height - viewport_height - self.conv_state.scroll_offset.min(total_height.saturating_sub(viewport_height))
+            total_height
+                - viewport_height
+                - self
+                    .conv_state
+                    .scroll_offset
+                    .min(total_height.saturating_sub(viewport_height))
         };
 
         let target_y = top_offset + (row - viewport.y);
@@ -660,7 +667,6 @@ mod tests {
         assert!(!cv.conv_state.user_scrolled);
         assert_eq!(cv.conv_state.scroll_offset, 0);
     }
-
 
     #[test]
     fn segments_render_via_widget() {

@@ -120,7 +120,10 @@ impl PluginRegistry {
     pub fn load_skills(&mut self, cwd: &std::path::Path) {
         let bundled = dirs::home_dir().map(|h| h.join(".omegon").join("skills"));
         let project = cwd.join(".omegon").join("skills");
-        let dirs: Vec<std::path::PathBuf> = bundled.into_iter().chain(std::iter::once(project)).collect();
+        let dirs: Vec<std::path::PathBuf> = bundled
+            .into_iter()
+            .chain(std::iter::once(project))
+            .collect();
         self.loaded_skills = Self::load_from_dirs(&dirs);
     }
 
@@ -738,7 +741,9 @@ mod tests {
         let prompt = reg.build_system_prompt();
         let lex_pos = prompt.find("Lex Imperialis").unwrap();
         let skill_pos = prompt.find("SKILL_MARKER").unwrap();
-        let persona_pos = prompt.find("You are a systems engineering harness.").unwrap();
+        let persona_pos = prompt
+            .find("You are a systems engineering harness.")
+            .unwrap();
         assert!(lex_pos < skill_pos, "skill should follow lex");
         assert!(skill_pos < persona_pos, "persona should follow skill");
     }

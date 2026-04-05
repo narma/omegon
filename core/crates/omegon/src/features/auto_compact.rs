@@ -58,16 +58,21 @@ impl Feature for AutoCompact {
 
     fn on_event(&mut self, event: &BusEvent) -> Vec<BusRequest> {
         match event {
-            BusEvent::TurnEnd { turn, .. } => {
+            BusEvent::TurnEnd {
+                turn,
+                estimated_tokens,
+                context_window,
+                ..
+            } => {
                 if self.compacting {
                     return vec![];
                 }
 
-                // Rough estimate: ~2k tokens per turn
-                // The real estimate comes from the context manager, but we
-                // don't have direct access here. Use turn count as proxy.
-                // TODO: BusEvent::TurnEnd should carry context usage stats.
-                self.estimated_percent = (*turn as f32) * 2.0; // rough %
+                self.estimated_percent = if *context_window > 0 {
+                    ((*estimated_tokens as f32 / *context_window as f32) * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
 
                 if self.estimated_percent < self.threshold {
                     return vec![];
@@ -110,6 +115,8 @@ mod tests {
             turn: 1,
             model: None,
             provider: None,
+            estimated_tokens: 10_000,
+            context_window: 200_000,
             actual_input_tokens: 0,
             actual_output_tokens: 0,
             cache_read_tokens: 0,
@@ -122,11 +129,12 @@ mod tests {
     fn compacts_above_threshold() {
         let mut ac = AutoCompact::new();
         ac.threshold = 50.0; // lower threshold for testing
-        // Turn 30 → estimated 60% > 50%
         let requests = ac.on_event(&BusEvent::TurnEnd {
             turn: 30,
             model: None,
             provider: None,
+            estimated_tokens: 120_000,
+            context_window: 200_000,
             actual_input_tokens: 0,
             actual_output_tokens: 0,
             cache_read_tokens: 0,
@@ -145,6 +153,8 @@ mod tests {
             turn: 10,
             model: None,
             provider: None,
+            estimated_tokens: 50_000,
+            context_window: 200_000,
             actual_input_tokens: 0,
             actual_output_tokens: 0,
             cache_read_tokens: 0,
@@ -160,6 +170,8 @@ mod tests {
             turn: 11,
             model: None,
             provider: None,
+            estimated_tokens: 55_000,
+            context_window: 200_000,
             actual_input_tokens: 0,
             actual_output_tokens: 0,
             cache_read_tokens: 0,

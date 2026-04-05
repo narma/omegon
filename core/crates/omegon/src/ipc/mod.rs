@@ -30,8 +30,8 @@ use tracing::{debug, info, warn};
 
 use omegon_traits::{AgentEvent, IpcEnvelope, IpcErrorCode};
 
-use crate::tui::{SharedCancel, TuiCommand};
 use crate::tui::dashboard::DashboardHandles;
+use crate::tui::{SharedCancel, TuiCommand};
 
 use connection::{ConnectionConfig, IpcConnection};
 use wire::encode_envelope;
@@ -52,7 +52,8 @@ impl IpcServerConfig {
     pub fn from_cwd(cwd: &Path, omegon_version: &str, session_id: &str) -> Self {
         let socket_path = cwd.join(".omegon").join("ipc.sock");
         let started_at = chrono::Utc::now().to_rfc3339();
-        let server_instance_id = format!("{:x}", std::process::id() as u64 ^ started_at.len() as u64);
+        let server_instance_id =
+            format!("{:x}", std::process::id() as u64 ^ started_at.len() as u64);
         Self {
             socket_path,
             omegon_version: omegon_version.to_string(),
@@ -76,7 +77,8 @@ pub fn start_ipc_server(
     cancel: CancellationToken,
 ) {
     tokio::spawn(async move {
-        if let Err(e) = run_server(cfg, handles, events_tx, command_tx, shared_cancel, cancel).await {
+        if let Err(e) = run_server(cfg, handles, events_tx, command_tx, shared_cancel, cancel).await
+        {
             warn!("IPC server exited with error: {e}");
         }
     });
@@ -104,10 +106,7 @@ async fn run_server(
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            &cfg.socket_path,
-            std::fs::Permissions::from_mode(0o600),
-        )?;
+        std::fs::set_permissions(&cfg.socket_path, std::fs::Permissions::from_mode(0o600))?;
     }
 
     info!(

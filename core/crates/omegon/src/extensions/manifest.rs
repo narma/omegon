@@ -5,9 +5,9 @@
 //! - Runtime type (native binary or OCI image)
 //! - Startup behavior (health checks, timeouts)
 
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use anyhow::{anyhow, Result};
 
 /// Top-level manifest structure.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -93,7 +93,7 @@ pub struct WidgetConfig {
     /// Human-readable label for the tab/modal
     pub label: String,
     /// Widget kind: "stateful" (tab) or "ephemeral" (modal)
-    pub kind: String,  // "stateful" | "ephemeral"
+    pub kind: String, // "stateful" | "ephemeral"
     /// How to render: "timeline", "tree", "table", "graph", etc.
     pub renderer: String,
     /// Optional description of the widget
@@ -131,9 +131,7 @@ impl ExtensionManifest {
                     ))
                 }
             }
-            RuntimeConfig::Oci { .. } => {
-                Err(anyhow!("expected native runtime, got OCI"))
-            }
+            RuntimeConfig::Oci { .. } => Err(anyhow!("expected native runtime, got OCI")),
         }
     }
 
@@ -141,9 +139,7 @@ impl ExtensionManifest {
     pub fn oci_image(&self) -> Result<String> {
         match &self.runtime {
             RuntimeConfig::Oci { image } => Ok(image.clone()),
-            RuntimeConfig::Native { .. } => {
-                Err(anyhow!("expected OCI runtime, got native"))
-            }
+            RuntimeConfig::Native { .. } => Err(anyhow!("expected OCI runtime, got native")),
         }
     }
 

@@ -589,7 +589,7 @@ impl SplashScreen {
             // Compute column width from actual content — tight fit, not terminal-proportional.
             // Cap at 24 so no one summary can blow up the grid on a narrow terminal.
             const INDICATOR_W: usize = 2; // "✓ " or "· " etc.
-            const SEP_W: usize = 3;       // separator between columns
+            const SEP_W: usize = 3; // separator between columns
             const COLS: usize = 3;
             const MAX_COL: usize = 24;
 

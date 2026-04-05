@@ -8,8 +8,8 @@ use serde_json::Value;
 pub struct WidgetDeclaration {
     pub id: String,
     pub label: String,
-    pub kind: String,  // "stateful" | "ephemeral"
-    pub renderer: String,  // "timeline", "tree", "table", etc.
+    pub kind: String,     // "stateful" | "ephemeral"
+    pub renderer: String, // "timeline", "tree", "table", etc.
     #[serde(default)]
     pub description: String,
 }
@@ -49,16 +49,11 @@ pub struct ExtensionTabWidget {
     pub label: String,
     pub renderer: String,
     pub current_data: Value,
-    pub kind: String,  // "stateful" | "ephemeral"
+    pub kind: String, // "stateful" | "ephemeral"
 }
 
 impl ExtensionTabWidget {
-    pub fn new(
-        widget_id: String,
-        label: String,
-        renderer: String,
-        kind: String,
-    ) -> Self {
+    pub fn new(widget_id: String, label: String, renderer: String, kind: String) -> Self {
         Self {
             widget_id,
             label,
@@ -97,7 +92,9 @@ mod tests {
         let json = r#"{"type":"update","widget_id":"timeline","data":{},"title":"Updated"}"#;
         let event: WidgetEvent = serde_json::from_str(json).unwrap();
         match event {
-            WidgetEvent::Update { widget_id, title, .. } => {
+            WidgetEvent::Update {
+                widget_id, title, ..
+            } => {
                 assert_eq!(widget_id, "timeline");
                 assert_eq!(title, Some("Updated".to_string()));
             }

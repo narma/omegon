@@ -102,7 +102,9 @@ pub async fn execute(
             // Rollback all previously written files
             rollback(&snapshots, &written_files).await;
             let hint = super::edit::nearest_context(&current, old_text)
-                .map(|h| format!("\n\nNearest matching context to help you anchor the next edit:\n{h}"))
+                .map(|h| {
+                    format!("\n\nNearest matching context to help you anchor the next edit:\n{h}")
+                })
                 .unwrap_or_default();
             anyhow::bail!(
                 "Edit {}/{}: could not find exact text in {}. All changes rolled back. Read the file again and anchor on the current source before retrying.{hint}",

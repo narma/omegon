@@ -38,7 +38,10 @@ impl CodescanProvider {
     where
         F: FnOnce(&mut ScanCache) -> anyhow::Result<R>,
     {
-        let mut guard = self.cache.lock().map_err(|_| anyhow::anyhow!("mutex poisoned"))?;
+        let mut guard = self
+            .cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("mutex poisoned"))?;
         if guard.is_none() {
             *guard = Some(ScanCache::open(&self.db_path())?);
         }
@@ -53,7 +56,11 @@ impl CodescanProvider {
         let max_results = args["max_results"].as_u64().unwrap_or(10) as usize;
         let tag_filter: Vec<String> = args["tags"]
             .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let scope = SearchScope::from_str(scope_str);
@@ -82,7 +89,9 @@ impl CodescanProvider {
         // ── Build result table ───────────────────────────────────────────
         let mut table = format!(
             "## codebase_search: `{}`\n\n**{} result(s)** (scope: `{}`)\n\n",
-            query, results.len(), scope_str
+            query,
+            results.len(),
+            scope_str
         );
         table.push_str("| File | Lines | Type | Score | Preview |\n");
         table.push_str("|------|-------|------|-------|---------|\n");
@@ -99,7 +108,12 @@ impl CodescanProvider {
                 .replace('|', "\\|");
             table.push_str(&format!(
                 "| `{}` | {}-{} | {} | {:.2} | {} |\n",
-                r.file, r.start_line, r.end_line, r.chunk_type.as_str(), r.score, preview_text
+                r.file,
+                r.start_line,
+                r.end_line,
+                r.chunk_type.as_str(),
+                r.score,
+                preview_text
             ));
         }
         table.push_str("\n*Use `read` with offset/limit for full chunk content.*");
@@ -143,9 +157,15 @@ impl CodescanProvider {
             | Code chunks indexed | {} |\n\
             | Knowledge chunks indexed | {} |\n\
             | Duration | {}ms |\n",
-            if invalidate { "Full reindex" } else { "Incremental" },
-            stats.code_files, stats.knowledge_files,
-            stats.code_chunks, stats.knowledge_chunks,
+            if invalidate {
+                "Full reindex"
+            } else {
+                "Incremental"
+            },
+            stats.code_files,
+            stats.knowledge_files,
+            stats.code_chunks,
+            stats.knowledge_chunks,
             stats.duration_ms,
         );
         Ok(ToolResult {

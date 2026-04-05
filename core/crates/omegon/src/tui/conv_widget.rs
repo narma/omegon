@@ -540,6 +540,9 @@ mod tests {
             &mut state,
         );
 
-        assert_eq!(state.scroll_offset, 0, "live tail should continue following output");
+        assert_eq!(
+            state.scroll_offset, 0,
+            "live tail should continue following output"
+        );
     }
 }

@@ -353,7 +353,12 @@ mod tests {
                 assert!(wt_path.exists(), "worktree should exist");
 
                 let branch_exists = std::process::Command::new("git")
-                    .args(["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch_name}")])
+                    .args([
+                        "show-ref",
+                        "--verify",
+                        "--quiet",
+                        &format!("refs/heads/{branch_name}"),
+                    ])
                     .current_dir(model.repo_path())
                     .status()
                     .map(|s| s.success())

@@ -30,8 +30,10 @@ impl CodeScanner {
                 .or_regex_fallback(path, content, TS_PATTERNS),
             "tsx" => scan_with_ts(path, content, tsx_lang(), TS_KINDS, ts_kind, generic_name)
                 .or_regex_fallback(path, content, TS_PATTERNS),
-            "js" | "jsx" | "mjs" => scan_with_ts(path, content, js_lang(), JS_KINDS, js_kind, generic_name)
-                .or_regex_fallback(path, content, TS_PATTERNS),
+            "js" | "jsx" | "mjs" => {
+                scan_with_ts(path, content, js_lang(), JS_KINDS, js_kind, generic_name)
+                    .or_regex_fallback(path, content, TS_PATTERNS)
+            }
             "py" => scan_with_ts(path, content, py_lang(), PY_KINDS, py_kind, generic_name)
                 .or_regex_fallback(path, content, PY_PATTERNS),
             "go" => scan_with_ts(path, content, go_lang(), GO_KINDS, go_kind, go_name)
@@ -43,38 +45,71 @@ impl CodeScanner {
 
 // ── Tree-sitter languages ────────────────────────────────────────────────────
 
-fn rust_lang() -> Language { tree_sitter_rust::LANGUAGE.into() }
-fn ts_lang() -> Language { tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into() }
-fn tsx_lang() -> Language { tree_sitter_typescript::LANGUAGE_TSX.into() }
-fn js_lang() -> Language { tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into() } // close enough for JS
-fn py_lang() -> Language { tree_sitter_python::LANGUAGE.into() }
-fn go_lang() -> Language { tree_sitter_go::LANGUAGE.into() }
+fn rust_lang() -> Language {
+    tree_sitter_rust::LANGUAGE.into()
+}
+fn ts_lang() -> Language {
+    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+}
+fn tsx_lang() -> Language {
+    tree_sitter_typescript::LANGUAGE_TSX.into()
+}
+fn js_lang() -> Language {
+    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+} // close enough for JS
+fn py_lang() -> Language {
+    tree_sitter_python::LANGUAGE.into()
+}
+fn go_lang() -> Language {
+    tree_sitter_go::LANGUAGE.into()
+}
 
 // ── Top-level node kinds to chunk ────────────────────────────────────────────
 
 const RUST_KINDS: &[&str] = &[
-    "function_item", "impl_item", "struct_item", "enum_item",
-    "trait_item", "mod_item", "type_alias", "const_item", "static_item",
+    "function_item",
+    "impl_item",
+    "struct_item",
+    "enum_item",
+    "trait_item",
+    "mod_item",
+    "type_alias",
+    "const_item",
+    "static_item",
     "function_signature_item",
 ];
 
 const TS_KINDS: &[&str] = &[
-    "function_declaration", "function", "class_declaration", "interface_declaration",
-    "type_alias_declaration", "abstract_class_declaration", "export_statement",
-    "lexical_declaration", "variable_declaration",
+    "function_declaration",
+    "function",
+    "class_declaration",
+    "interface_declaration",
+    "type_alias_declaration",
+    "abstract_class_declaration",
+    "export_statement",
+    "lexical_declaration",
+    "variable_declaration",
 ];
 
 const JS_KINDS: &[&str] = &[
-    "function_declaration", "function", "class_declaration", "export_statement",
-    "lexical_declaration", "variable_declaration",
+    "function_declaration",
+    "function",
+    "class_declaration",
+    "export_statement",
+    "lexical_declaration",
+    "variable_declaration",
 ];
 
 const PY_KINDS: &[&str] = &[
-    "function_definition", "class_definition", "decorated_definition",
+    "function_definition",
+    "class_definition",
+    "decorated_definition",
 ];
 
 const GO_KINDS: &[&str] = &[
-    "function_declaration", "method_declaration", "type_declaration",
+    "function_declaration",
+    "method_declaration",
+    "type_declaration",
 ];
 
 // ── Kind → human label ───────────────────────────────────────────────────────
@@ -189,7 +224,9 @@ fn generic_name(node: &Node, source: &[u8]) -> String {
                 for spec in child.children(sub) {
                     if spec.kind() == "export_specifier" {
                         if let Some(n) = spec.child_by_field_name("name") {
-                            if let Ok(t) = n.utf8_text(source) { return t.to_string(); }
+                            if let Ok(t) = n.utf8_text(source) {
+                                return t.to_string();
+                            }
                         }
                     }
                 }
@@ -202,7 +239,9 @@ fn generic_name(node: &Node, source: &[u8]) -> String {
         for child in node.children(cursor) {
             if matches!(child.kind(), "variable_declarator") {
                 if let Some(n) = child.child_by_field_name("name") {
-                    if let Ok(t) = n.utf8_text(source) { return t.to_string(); }
+                    if let Ok(t) = n.utf8_text(source) {
+                        return t.to_string();
+                    }
                 }
             }
         }
@@ -215,7 +254,12 @@ fn generic_name(node: &Node, source: &[u8]) -> String {
 struct ScanResult(Vec<CodeChunk>);
 
 impl ScanResult {
-    fn or_regex_fallback(self, path: &Path, content: &str, patterns: &'static [(&'static str, &'static str)]) -> Vec<CodeChunk> {
+    fn or_regex_fallback(
+        self,
+        path: &Path,
+        content: &str,
+        patterns: &'static [(&'static str, &'static str)],
+    ) -> Vec<CodeChunk> {
         if self.0.is_empty() {
             scan_with_regex(path, content, patterns)
         } else {
@@ -281,19 +325,49 @@ fn scan_with_ts(
 type PatternPair = (&'static str, &'static str);
 
 const RUST_PATTERNS: &[PatternPair] = &[
-    (r"^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", "fn"),
-    (r"^(?:pub(?:\([^)]*\))?\s+)?impl(?:<[^>]*>)?\s+(?:\S+\s+for\s+)?([a-zA-Z_][a-zA-Z0-9_:<>]*)", "impl"),
-    (r"^(?:pub(?:\([^)]*\))?\s+)?struct\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", "struct"),
-    (r"^(?:pub(?:\([^)]*\))?\s+)?enum\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", "enum"),
-    (r"^(?:pub(?:\([^)]*\))?\s+)?trait\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", "trait"),
-    (r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+([a-zA-Z_][a-zA-Z0-9_]*)\b", "mod"),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "fn",
+    ),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?impl(?:<[^>]*>)?\s+(?:\S+\s+for\s+)?([a-zA-Z_][a-zA-Z0-9_:<>]*)",
+        "impl",
+    ),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?struct\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "struct",
+    ),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?enum\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "enum",
+    ),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?trait\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "trait",
+    ),
+    (
+        r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "mod",
+    ),
 ];
 
 const TS_PATTERNS: &[PatternPair] = &[
-    (r"^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b", "function"),
-    (r"^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b", "class"),
-    (r"^(?:export\s+)?interface\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b", "interface"),
-    (r"^(?:export\s+)?type\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=", "type"),
+    (
+        r"^(?:export\s+)?(?:async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b",
+        "function",
+    ),
+    (
+        r"^(?:export\s+)?(?:abstract\s+)?class\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b",
+        "class",
+    ),
+    (
+        r"^(?:export\s+)?interface\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\b",
+        "interface",
+    ),
+    (
+        r"^(?:export\s+)?type\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=",
+        "type",
+    ),
 ];
 
 const PY_PATTERNS: &[PatternPair] = &[
@@ -302,8 +376,14 @@ const PY_PATTERNS: &[PatternPair] = &[
 ];
 
 const GO_PATTERNS: &[PatternPair] = &[
-    (r"^func\s+(?:\([^)]+\)\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\b", "func"),
-    (r"^type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:struct|interface)\b", "type"),
+    (
+        r"^func\s+(?:\([^)]+\)\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        "func",
+    ),
+    (
+        r"^type\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+(?:struct|interface)\b",
+        "type",
+    ),
 ];
 
 fn scan_with_regex(path: &Path, content: &str, patterns: &[PatternPair]) -> Vec<CodeChunk> {
@@ -313,10 +393,15 @@ fn scan_with_regex(path: &Path, content: &str, patterns: &[PatternPair]) -> Vec<
     let mut matches: BTreeMap<usize, (String, String)> = BTreeMap::new();
 
     for &(pattern, kind) in patterns {
-        let Ok(re) = regex::Regex::new(pattern) else { continue };
+        let Ok(re) = regex::Regex::new(pattern) else {
+            continue;
+        };
         for (i, line) in lines.iter().enumerate() {
             if let Some(cap) = re.captures(line) {
-                let name = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_default();
+                let name = cap
+                    .get(1)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_default();
                 if !name.is_empty() {
                     matches.entry(i).or_insert_with(|| (name, kind.to_string()));
                 }
@@ -327,14 +412,21 @@ fn scan_with_regex(path: &Path, content: &str, patterns: &[PatternPair]) -> Vec<
     let starts: Vec<usize> = matches.keys().cloned().collect();
     let mut chunks = Vec::with_capacity(starts.len());
     for (i, &start) in starts.iter().enumerate() {
-        let end = if i + 1 < starts.len() { starts[i + 1].saturating_sub(1) } else { total.saturating_sub(1) };
+        let end = if i + 1 < starts.len() {
+            starts[i + 1].saturating_sub(1)
+        } else {
+            total.saturating_sub(1)
+        };
         let chunk_end = end.min(start + 99);
         let (name, kind) = &matches[&start];
         let text = lines[start..=chunk_end.min(total.saturating_sub(1))].join("\n");
         chunks.push(CodeChunk {
             path: path.to_path_buf(),
-            start_line: start + 1, end_line: chunk_end + 1,
-            item_name: name.clone(), item_kind: kind.clone(), text,
+            start_line: start + 1,
+            end_line: chunk_end + 1,
+            item_name: name.clone(),
+            item_kind: kind.clone(),
+            text,
         });
     }
     chunks
@@ -411,7 +503,8 @@ export type Status = "active" | "inactive";
 
     #[test]
     fn scan_python_treesitter() {
-        let src = "class Foo:\n    def method(self): pass\n\nasync def handler(req):\n    return 'ok'\n";
+        let src =
+            "class Foo:\n    def method(self): pass\n\nasync def handler(req):\n    return 'ok'\n";
         let chunks = CodeScanner::scan_file(Path::new("x.py"), src);
         let names: Vec<&str> = chunks.iter().map(|c| c.item_name.as_str()).collect();
         assert!(names.contains(&"Foo"), "class: {:?}", names);
@@ -439,6 +532,9 @@ export type Status = "active" | "inactive";
         let chunks = CodeScanner::scan_file(Path::new("x.rs"), src);
         // tree-sitter will parse even incomplete Rust (error recovery), but regex
         // will produce at least one chunk
-        assert!(!chunks.is_empty() || src.len() < 10, "should attempt extraction");
+        assert!(
+            !chunks.is_empty() || src.len() < 10,
+            "should attempt extraction"
+        );
     }
 }

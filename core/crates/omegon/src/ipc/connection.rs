@@ -1,7 +1,10 @@
 //! Per-client IPC connection — handshake, dispatch, event push.
 
 use std::collections::HashSet;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::Context as _;
 use serde_json::json;
@@ -11,16 +14,16 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, warn};
 
 use omegon_traits::{
-    AcceptedResponse, AgentEvent, HelloRequest, HelloResponse, IpcCapability, IpcEnvelope,
-    IpcEnvelopeKind, IpcErrorCode, IpcEventPayload, PingRequest, PingResponse,
+    AcceptedResponse, AgentEvent, HelloRequest, HelloResponse, IPC_PROTOCOL_VERSION, IpcCapability,
+    IpcEnvelope, IpcEnvelopeKind, IpcErrorCode, IpcEventPayload, PingRequest, PingResponse,
     SlashCommandRequest, SlashCommandResponse, SubmitPromptRequest, SubscriptionRequest,
-    SubscriptionResponse, IPC_PROTOCOL_VERSION,
+    SubscriptionResponse,
 };
 
-use crate::tui::{SharedCancel, TuiCommand};
-use crate::tui::dashboard::DashboardHandles;
 use super::snapshot::build_state_snapshot;
 use super::wire::{decode_envelope, encode_envelope, read_frame};
+use crate::tui::dashboard::DashboardHandles;
+use crate::tui::{SharedCancel, TuiCommand};
 
 /// Passed from the server into each connection task.
 pub struct ConnectionConfig {
@@ -74,10 +77,15 @@ impl IpcConnection {
             }
         };
         let hello_env = decode_envelope(&hello_raw)?;
-        if hello_env.kind != IpcEnvelopeKind::Hello
-            || hello_env.method.as_deref() != Some("hello")
+        if hello_env.kind != IpcEnvelopeKind::Hello || hello_env.method.as_deref() != Some("hello")
         {
-            send_error(&out_tx, None, IpcErrorCode::InvalidPayload, "expected hello").await;
+            send_error(
+                &out_tx,
+                None,
+                IpcErrorCode::InvalidPayload,
+                "expected hello",
+            )
+            .await;
             cfg.has_controller.store(false, Ordering::SeqCst);
             return Ok(());
         }
@@ -116,7 +124,13 @@ impl IpcConnection {
                 .collect(),
         };
 
-        send_response(&out_tx, hello_env.request_id, "hello", serde_json::to_value(&hello_resp)?).await;
+        send_response(
+            &out_tx,
+            hello_env.request_id,
+            "hello",
+            serde_json::to_value(&hello_resp)?,
+        )
+        .await;
 
         // ── Start event push task ──────────────────────────────────────
         let mut events_rx = cfg.events_tx.subscribe();
@@ -182,7 +196,13 @@ impl IpcConnection {
                     let nonce = serde_json::from_value::<PingRequest>(payload)
                         .map(|r| r.nonce)
                         .unwrap_or_default();
-                    send_response(&out_tx, req_id, "ping", serde_json::to_value(PingResponse { nonce })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "ping",
+                        serde_json::to_value(PingResponse { nonce })?,
+                    )
+                    .await;
                 }
 
                 "get_state" => {
@@ -205,7 +225,13 @@ impl IpcConnection {
                         .send(TuiCommand::UserPrompt(req.prompt))
                         .await
                         .is_ok();
-                    send_response(&out_tx, req_id, "submit_prompt", serde_json::to_value(AcceptedResponse { accepted })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "submit_prompt",
+                        serde_json::to_value(AcceptedResponse { accepted })?,
+                    )
+                    .await;
                 }
 
                 "cancel" => {
@@ -217,7 +243,13 @@ impl IpcConnection {
                     } else {
                         false
                     };
-                    send_response(&out_tx, req_id, "cancel", serde_json::to_value(AcceptedResponse { accepted })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "cancel",
+                        serde_json::to_value(AcceptedResponse { accepted })?,
+                    )
+                    .await;
                 }
 
                 "subscribe" => {
@@ -234,7 +266,13 @@ impl IpcConnection {
                             subs.insert(e.clone());
                         }
                     }
-                    send_response(&out_tx, req_id, "subscribe", serde_json::to_value(SubscriptionResponse { events: valid })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "subscribe",
+                        serde_json::to_value(SubscriptionResponse { events: valid })?,
+                    )
+                    .await;
                 }
 
                 "unsubscribe" => {
@@ -242,18 +280,22 @@ impl IpcConnection {
                         .unwrap_or(SubscriptionRequest { events: vec![] });
                     let removed: Vec<String> = {
                         let mut subs = subscriptions.lock().await;
-                        req.events
-                            .into_iter()
-                            .filter(|e| subs.remove(e))
-                            .collect()
+                        req.events.into_iter().filter(|e| subs.remove(e)).collect()
                     };
-                    send_response(&out_tx, req_id, "unsubscribe", serde_json::to_value(SubscriptionResponse { events: removed })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "unsubscribe",
+                        serde_json::to_value(SubscriptionResponse { events: removed })?,
+                    )
+                    .await;
                 }
 
                 "get_graph" => {
                     // Delegate to the same logic web/api.rs uses, but return JSON here.
                     // For now return a minimal shape; full graph implemented in follow-on.
-                    send_response(&out_tx, req_id, "get_graph", json!({"nodes":[],"links":[]})).await;
+                    send_response(&out_tx, req_id, "get_graph", json!({"nodes":[],"links":[]}))
+                        .await;
                 }
 
                 "run_slash_command" => {
@@ -261,14 +303,32 @@ impl IpcConnection {
                         .context("parse run_slash_command")?;
                     let accepted = cfg
                         .command_tx
-                        .send(TuiCommand::BusCommand { name: req.name, args: req.args })
+                        .send(TuiCommand::BusCommand {
+                            name: req.name,
+                            args: req.args,
+                        })
                         .await
                         .is_ok();
-                    send_response(&out_tx, req_id, "run_slash_command", serde_json::to_value(SlashCommandResponse { accepted, output: None })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "run_slash_command",
+                        serde_json::to_value(SlashCommandResponse {
+                            accepted,
+                            output: None,
+                        })?,
+                    )
+                    .await;
                 }
 
                 "shutdown" => {
-                    send_response(&out_tx, req_id, "shutdown", serde_json::to_value(AcceptedResponse { accepted: true })?).await;
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "shutdown",
+                        serde_json::to_value(AcceptedResponse { accepted: true })?,
+                    )
+                    .await;
                     let _ = cfg.command_tx.send(TuiCommand::Quit).await;
                     shutdown_requested = true;
                     break;
@@ -355,28 +415,41 @@ fn build_event_frame(ev: &IpcEventPayload) -> anyhow::Result<Vec<u8>> {
 /// that have no IPC equivalent.
 fn project_event(ev: &AgentEvent) -> Option<IpcEventPayload> {
     match ev {
-        AgentEvent::TurnStart { turn } =>
-            Some(IpcEventPayload::TurnStarted { turn: *turn }),
-        AgentEvent::TurnEnd { turn, estimated_tokens, actual_input_tokens, actual_output_tokens, cache_read_tokens, provider_telemetry } =>
-            Some(IpcEventPayload::TurnEnded {
-                turn: *turn,
-                estimated_tokens: *estimated_tokens,
-                actual_input_tokens: *actual_input_tokens,
-                actual_output_tokens: *actual_output_tokens,
-                cache_read_tokens: *cache_read_tokens,
-                provider_telemetry: provider_telemetry.clone(),
-            }),
-        AgentEvent::MessageChunk { text } =>
-            Some(IpcEventPayload::MessageDelta { text: text.clone() }),
-        AgentEvent::ThinkingChunk { text } =>
-            Some(IpcEventPayload::ThinkingDelta { text: text.clone() }),
-        AgentEvent::MessageEnd =>
-            Some(IpcEventPayload::MessageCompleted),
-        AgentEvent::ToolStart { id, name, args } =>
-            Some(IpcEventPayload::ToolStarted { id: id.clone(), name: name.clone(), args: args.clone() }),
-        AgentEvent::ToolUpdate { id, .. } =>
-            Some(IpcEventPayload::ToolUpdated { id: id.clone() }),
-        AgentEvent::ToolEnd { id, result, is_error, .. } => {
+        AgentEvent::TurnStart { turn } => Some(IpcEventPayload::TurnStarted { turn: *turn }),
+        AgentEvent::TurnEnd {
+            turn,
+            estimated_tokens,
+            actual_input_tokens,
+            actual_output_tokens,
+            cache_read_tokens,
+            provider_telemetry,
+        } => Some(IpcEventPayload::TurnEnded {
+            turn: *turn,
+            estimated_tokens: *estimated_tokens,
+            actual_input_tokens: *actual_input_tokens,
+            actual_output_tokens: *actual_output_tokens,
+            cache_read_tokens: *cache_read_tokens,
+            provider_telemetry: provider_telemetry.clone(),
+        }),
+        AgentEvent::MessageChunk { text } => {
+            Some(IpcEventPayload::MessageDelta { text: text.clone() })
+        }
+        AgentEvent::ThinkingChunk { text } => {
+            Some(IpcEventPayload::ThinkingDelta { text: text.clone() })
+        }
+        AgentEvent::MessageEnd => Some(IpcEventPayload::MessageCompleted),
+        AgentEvent::ToolStart { id, name, args } => Some(IpcEventPayload::ToolStarted {
+            id: id.clone(),
+            name: name.clone(),
+            args: args.clone(),
+        }),
+        AgentEvent::ToolUpdate { id, .. } => Some(IpcEventPayload::ToolUpdated { id: id.clone() }),
+        AgentEvent::ToolEnd {
+            id,
+            result,
+            is_error,
+            ..
+        } => {
             let summary = result
                 .content
                 .first()
@@ -389,22 +462,29 @@ fn project_event(ev: &AgentEvent) -> Option<IpcEventPayload> {
                 summary,
             })
         }
-        AgentEvent::AgentEnd =>
-            Some(IpcEventPayload::AgentCompleted),
-        AgentEvent::PhaseChanged { phase } =>
-            Some(IpcEventPayload::PhaseChanged { phase: format!("{:?}", phase) }),
-        AgentEvent::DecompositionStarted { children } =>
-            Some(IpcEventPayload::DecompositionStarted { children: children.clone() }),
-        AgentEvent::DecompositionChildCompleted { label, success } =>
-            Some(IpcEventPayload::DecompositionChildCompleted { label: label.clone(), success: *success }),
-        AgentEvent::DecompositionCompleted { merged } =>
-            Some(IpcEventPayload::DecompositionCompleted { merged: *merged }),
-        AgentEvent::SystemNotification { message } =>
-            Some(IpcEventPayload::SystemNotification { message: message.clone() }),
-        AgentEvent::HarnessStatusChanged { .. } =>
-            Some(IpcEventPayload::HarnessChanged),
-        AgentEvent::SessionReset =>
-            Some(IpcEventPayload::SessionReset),
+        AgentEvent::AgentEnd => Some(IpcEventPayload::AgentCompleted),
+        AgentEvent::PhaseChanged { phase } => Some(IpcEventPayload::PhaseChanged {
+            phase: format!("{:?}", phase),
+        }),
+        AgentEvent::DecompositionStarted { children } => {
+            Some(IpcEventPayload::DecompositionStarted {
+                children: children.clone(),
+            })
+        }
+        AgentEvent::DecompositionChildCompleted { label, success } => {
+            Some(IpcEventPayload::DecompositionChildCompleted {
+                label: label.clone(),
+                success: *success,
+            })
+        }
+        AgentEvent::DecompositionCompleted { merged } => {
+            Some(IpcEventPayload::DecompositionCompleted { merged: *merged })
+        }
+        AgentEvent::SystemNotification { message } => Some(IpcEventPayload::SystemNotification {
+            message: message.clone(),
+        }),
+        AgentEvent::HarnessStatusChanged { .. } => Some(IpcEventPayload::HarnessChanged),
+        AgentEvent::SessionReset => Some(IpcEventPayload::SessionReset),
         // Internal-only events — not projected to IPC
         AgentEvent::MessageStart { .. } => None,
         AgentEvent::MessageAbort => None,
@@ -438,12 +518,19 @@ fn event_name(ev: &IpcEventPayload) -> &'static str {
 
 /// All v1 event names. Only names in this set are accepted by `subscribe`.
 const KNOWN_EVENTS: &[&str] = &[
-    "turn.started", "turn.ended",
-    "message.delta", "thinking.delta", "message.completed",
-    "tool.started", "tool.updated", "tool.ended",
+    "turn.started",
+    "turn.ended",
+    "message.delta",
+    "thinking.delta",
+    "message.completed",
+    "tool.started",
+    "tool.updated",
+    "tool.ended",
     "agent.completed",
     "phase.changed",
-    "decomposition.started", "decomposition.child_completed", "decomposition.completed",
+    "decomposition.started",
+    "decomposition.child_completed",
+    "decomposition.completed",
     "harness.changed",
     "state.changed",
     "system.notification",

@@ -48,7 +48,10 @@ impl LifecycleFeature {
         matches!(node.status, NodeStatus::Archived)
     }
 
-    fn has_non_archived_descendants(nodes: &std::collections::HashMap<String, DesignNode>, node_id: &str) -> bool {
+    fn has_non_archived_descendants(
+        nodes: &std::collections::HashMap<String, DesignNode>,
+        node_id: &str,
+    ) -> bool {
         for child in design::get_children(nodes, node_id) {
             if !Self::is_archived(child) || Self::has_non_archived_descendants(nodes, &child.id) {
                 return true;
@@ -408,9 +411,7 @@ impl LifecycleFeature {
                 let id = node_id.ok_or_else(|| anyhow::anyhow!("node_id required"))?;
                 let nodes = self.provider.lock().unwrap().all_nodes().clone();
                 if Self::has_non_archived_descendants(&nodes, id) {
-                    anyhow::bail!(
-                        "cannot archive '{id}' while non-archived descendants remain"
-                    );
+                    anyhow::bail!("cannot archive '{id}' while non-archived descendants remain");
                 }
 
                 let mut opsx = self.opsx.lock().unwrap();
@@ -483,9 +484,8 @@ impl LifecycleFeature {
 
                 // Auto-ingest to memory when node reaches a terminal milestone
                 if matches!(status_str, "resolved" | "decided" | "implementing") {
-                    let content = format!(
-                        "Design node '{id}' ({node_title}) status → {status_str}"
-                    );
+                    let content =
+                        format!("Design node '{id}' ({node_title}) status → {status_str}");
                     if let Ok(mut q) = self.pending_memory.lock() {
                         q.push(BusRequest::AutoStoreFact {
                             section: "Decisions".into(),
@@ -1296,7 +1296,10 @@ mod tests {
 
         assert!(required.contains(&"node_id"), "create must require node_id");
         assert!(required.contains(&"title"), "create must require title");
-        assert!(required.contains(&"overview"), "create must require overview");
+        assert!(
+            required.contains(&"overview"),
+            "create must require overview"
+        );
     }
 
     #[test]
@@ -1321,8 +1324,14 @@ mod tests {
             .expect("set_status required array");
         let required: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
 
-        assert!(required.contains(&"node_id"), "set_status must require node_id");
-        assert!(required.contains(&"status"), "set_status must require status");
+        assert!(
+            required.contains(&"node_id"),
+            "set_status must require node_id"
+        );
+        assert!(
+            required.contains(&"status"),
+            "set_status must require status"
+        );
     }
 
     fn design_tree_update_schema_requires_node_id_for_archive() {
@@ -1346,7 +1355,10 @@ mod tests {
             .expect("archive required array");
         let required: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
 
-        assert!(required.contains(&"node_id"), "archive must require node_id");
+        assert!(
+            required.contains(&"node_id"),
+            "archive must require node_id"
+        );
     }
 
     #[test]
@@ -1690,7 +1702,10 @@ mod tests {
             .execute_design_tree(&json!({"action": "list"}))
             .unwrap();
         let text = list.content[0].as_text().unwrap();
-        assert!(!text.contains("archive-me"), "archived node leaked into list: {text}");
+        assert!(
+            !text.contains("archive-me"),
+            "archived node leaked into list: {text}"
+        );
 
         let ready = feature
             .execute_design_tree(&json!({"action": "ready"}))
@@ -1705,7 +1720,10 @@ mod tests {
             .execute_design_tree(&json!({"action": "node", "node_id": "archive-me"}))
             .unwrap();
         let node_text = node.content[0].as_text().unwrap();
-        assert!(node_text.contains("\"status\": \"archived\""), "{node_text}");
+        assert!(
+            node_text.contains("\"status\": \"archived\""),
+            "{node_text}"
+        );
         assert!(
             node_text.contains("\"archive_reason\": \"obsolete\""),
             "{node_text}"

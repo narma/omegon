@@ -149,7 +149,12 @@ impl ExtensionManifest {
         }
 
         // Name must be lowercase alphanumeric + hyphens
-        if !self.extension.name.chars().all(|c| c.is_alphanumeric() || c == '-') {
+        if !self
+            .extension
+            .name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-')
+        {
             return Err(ManifestError::fatal(
                 "extension.name must contain only lowercase alphanumeric and hyphens",
             ));
@@ -190,9 +195,10 @@ impl ExtensionManifest {
             match widget.kind.as_str() {
                 "stateful" | "ephemeral" => {}
                 _ => {
-                    return Err(ManifestError::fatal(
-                        format!("widget.kind must be 'stateful' or 'ephemeral', got '{}'", widget.kind),
-                    ));
+                    return Err(ManifestError::fatal(format!(
+                        "widget.kind must be 'stateful' or 'ephemeral', got '{}'",
+                        widget.kind
+                    )));
                 }
             }
         }
@@ -211,9 +217,9 @@ impl ExtensionManifest {
     }
 
     /// Check SDK version compatibility.
-    /// 
+    ///
     /// # Constraints
-    /// 
+    ///
     /// - Extension declares `sdk_version` in manifest.toml
     /// - Omegon validates at install time: extension's sdk_version must match omegon's SDK crate version
     /// - Wildcard matching: "0.15" matches "0.15.0", "0.15.6", "0.15.6-rc.1"

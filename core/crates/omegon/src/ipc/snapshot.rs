@@ -1,12 +1,12 @@
 //! Project DashboardHandles + HarnessStatus into IpcStateSnapshot.
 
 use omegon_traits::{
-    IpcCleaveSnapshot, IpcChildSnapshot, IpcDesignCounts, IpcDesignTreeSnapshot,
-    IpcFocusedNode, IpcHealthSnapshot, IpcHealthState, IpcHarnessSnapshot, IpcMemorySnapshot,
-    IpcNodeBrief, IpcOpenSpecSnapshot, IpcChangeSnapshot, IpcProviderSnapshot,
-    IpcSessionSnapshot, IpcStateSnapshot, OmegonControlPlane, OmegonDeploymentKind,
-    OmegonIdentity, OmegonInstanceDescriptor, OmegonOwnerKind, OmegonOwnership,
-    OmegonPlacement, OmegonPlacementKind, OmegonRole, OmegonRuntime, OmegonRuntimeHealth,
+    IpcChangeSnapshot, IpcChildSnapshot, IpcCleaveSnapshot, IpcDesignCounts, IpcDesignTreeSnapshot,
+    IpcFocusedNode, IpcHarnessSnapshot, IpcHealthSnapshot, IpcHealthState, IpcMemorySnapshot,
+    IpcNodeBrief, IpcOpenSpecSnapshot, IpcProviderSnapshot, IpcSessionSnapshot, IpcStateSnapshot,
+    OmegonControlPlane, OmegonDeploymentKind, OmegonIdentity, OmegonInstanceDescriptor,
+    OmegonOwnerKind, OmegonOwnership, OmegonPlacement, OmegonPlacementKind, OmegonRole,
+    OmegonRuntime, OmegonRuntimeHealth,
 };
 
 use crate::tui::dashboard::DashboardHandles;
@@ -56,21 +56,19 @@ fn project_session(
     started_at: &str,
     session_id: &str,
 ) -> IpcSessionSnapshot {
-    let (turns, tool_calls, compactions) =
-        if let Ok(s) = handles.session.lock() {
-            (s.turns, s.tool_calls, s.compactions)
-        } else {
-            (0, 0, 0)
-        };
+    let (turns, tool_calls, compactions) = if let Ok(s) = handles.session.lock() {
+        (s.turns, s.tool_calls, s.compactions)
+    } else {
+        (0, 0, 0)
+    };
 
-    let (git_branch, git_detached) =
-        if let Some(ref h) = handles.harness
-            && let Ok(s) = h.lock()
-        {
-            (s.git_branch.clone(), s.git_detached)
-        } else {
-            (None, false)
-        };
+    let (git_branch, git_detached) = if let Some(ref h) = handles.harness
+        && let Ok(s) = h.lock()
+    {
+        (s.git_branch.clone(), s.git_detached)
+    } else {
+        (None, false)
+    };
 
     IpcSessionSnapshot {
         cwd: cwd.to_string(),
@@ -149,26 +147,44 @@ fn project_design_tree(handles: &DashboardHandles) -> IpcDesignTreeSnapshot {
         nodes.push(brief);
     }
 
-    let focused = lp.focused_node_id().and_then(|id| lp.get_node(id)).map(|n| {
-        IpcFocusedNode {
+    let focused = lp
+        .focused_node_id()
+        .and_then(|id| lp.get_node(id))
+        .map(|n| IpcFocusedNode {
             id: n.id.clone(),
             title: n.title.clone(),
             status: n.status.as_str().to_string(),
             open_questions: n.open_questions.clone(),
             decisions: 0,
-            children: all.values().filter(|c| c.parent.as_deref() == Some(&n.id)).count(),
-        }
-    });
+            children: all
+                .values()
+                .filter(|c| c.parent.as_deref() == Some(&n.id))
+                .count(),
+        });
 
-    IpcDesignTreeSnapshot { counts, focused, implementing, actionable, nodes }
+    IpcDesignTreeSnapshot {
+        counts,
+        focused,
+        implementing,
+        actionable,
+        nodes,
+    }
 }
 
 fn project_openspec(handles: &DashboardHandles) -> IpcOpenSpecSnapshot {
     let Some(ref lp_lock) = handles.lifecycle else {
-        return IpcOpenSpecSnapshot { changes: vec![], total_tasks: 0, done_tasks: 0 };
+        return IpcOpenSpecSnapshot {
+            changes: vec![],
+            total_tasks: 0,
+            done_tasks: 0,
+        };
     };
     let Ok(lp) = lp_lock.lock() else {
-        return IpcOpenSpecSnapshot { changes: vec![], total_tasks: 0, done_tasks: 0 };
+        return IpcOpenSpecSnapshot {
+            changes: vec![],
+            total_tasks: 0,
+            done_tasks: 0,
+        };
     };
 
     let changes: Vec<IpcChangeSnapshot> = lp
@@ -185,15 +201,31 @@ fn project_openspec(handles: &DashboardHandles) -> IpcOpenSpecSnapshot {
     let total_tasks: usize = changes.iter().map(|c| c.total_tasks).sum();
     let done_tasks: usize = changes.iter().map(|c| c.done_tasks).sum();
 
-    IpcOpenSpecSnapshot { changes, total_tasks, done_tasks }
+    IpcOpenSpecSnapshot {
+        changes,
+        total_tasks,
+        done_tasks,
+    }
 }
 
 fn project_cleave(handles: &DashboardHandles) -> IpcCleaveSnapshot {
     let Some(ref cp_lock) = handles.cleave else {
-        return IpcCleaveSnapshot { active: false, total_children: 0, completed: 0, failed: 0, children: vec![] };
+        return IpcCleaveSnapshot {
+            active: false,
+            total_children: 0,
+            completed: 0,
+            failed: 0,
+            children: vec![],
+        };
     };
     let Ok(cp) = cp_lock.lock() else {
-        return IpcCleaveSnapshot { active: false, total_children: 0, completed: 0, failed: 0, children: vec![] };
+        return IpcCleaveSnapshot {
+            active: false,
+            total_children: 0,
+            completed: 0,
+            failed: 0,
+            children: vec![],
+        };
     };
 
     IpcCleaveSnapshot {
@@ -267,7 +299,13 @@ pub fn project_instance_descriptor(
                 .into_iter()
                 .map(str::to_string)
                 .collect(),
-            ipc_socket_path: Some(std::path::Path::new(cwd).join(".omegon").join("ipc.sock").display().to_string()),
+            ipc_socket_path: Some(
+                std::path::Path::new(cwd)
+                    .join(".omegon")
+                    .join("ipc.sock")
+                    .display()
+                    .to_string(),
+            ),
             http_base: None,
             startup_url: None,
             state_url: None,
@@ -302,7 +340,15 @@ fn project_instance(
     omegon_version: &str,
     server_instance_id: &str,
 ) -> OmegonInstanceDescriptor {
-    project_instance_descriptor(handles, cwd, session, harness, health, omegon_version, server_instance_id)
+    project_instance_descriptor(
+        handles,
+        cwd,
+        session,
+        harness,
+        health,
+        omegon_version,
+        server_instance_id,
+    )
 }
 
 fn workspace_id_from_cwd(cwd: &str) -> String {
@@ -322,7 +368,12 @@ fn project_harness(handles: &DashboardHandles) -> IpcHarnessSnapshot {
             memory_available: false,
             cleave_available: false,
             memory_warning: None,
-            memory: IpcMemorySnapshot { active_facts: 0, project_facts: 0, working_facts: 0, episodes: 0 },
+            memory: IpcMemorySnapshot {
+                active_facts: 0,
+                project_facts: 0,
+                working_facts: 0,
+                episodes: 0,
+            },
             providers: vec![],
             mcp_server_count: 0,
             mcp_tool_count: 0,
@@ -339,7 +390,12 @@ fn project_harness(handles: &DashboardHandles) -> IpcHarnessSnapshot {
             memory_available: false,
             cleave_available: false,
             memory_warning: None,
-            memory: IpcMemorySnapshot { active_facts: 0, project_facts: 0, working_facts: 0, episodes: 0 },
+            memory: IpcMemorySnapshot {
+                active_facts: 0,
+                project_facts: 0,
+                working_facts: 0,
+                episodes: 0,
+            },
             providers: vec![],
             mcp_server_count: 0,
             mcp_tool_count: 0,
@@ -384,22 +440,21 @@ fn project_harness(handles: &DashboardHandles) -> IpcHarnessSnapshot {
 
 fn project_health(handles: &DashboardHandles) -> IpcHealthSnapshot {
     let now = chrono::Utc::now().to_rfc3339();
-    let (memory_ok, provider_ok) =
-        if let Some(ref h_lock) = handles.harness
-            && let Ok(h) = h_lock.lock()
-        {
-            let mem_ok = h.memory_available || h.memory_warning.is_none();
-            let prov_ok = h.providers.iter().any(|p| {
-                p.authenticated
-                    && !matches!(
-                        p.runtime_status,
-                        Some(crate::status::ProviderRuntimeStatus::Degraded)
-                    )
-            });
-            (mem_ok, prov_ok)
-        } else {
-            (true, false)
-        };
+    let (memory_ok, provider_ok) = if let Some(ref h_lock) = handles.harness
+        && let Ok(h) = h_lock.lock()
+    {
+        let mem_ok = h.memory_available || h.memory_warning.is_none();
+        let prov_ok = h.providers.iter().any(|p| {
+            p.authenticated
+                && !matches!(
+                    p.runtime_status,
+                    Some(crate::status::ProviderRuntimeStatus::Degraded)
+                )
+        });
+        (mem_ok, prov_ok)
+    } else {
+        (true, false)
+    };
 
     IpcHealthSnapshot {
         state: IpcHealthState::Ready,
@@ -442,11 +497,19 @@ mod tests {
         assert_eq!(snap.instance.identity.instance_id, "instance-123");
         assert_eq!(snap.instance.identity.session_id, "session-abc");
         assert_eq!(snap.instance.identity.workspace_id, "tmp::example-project");
-        assert_eq!(snap.instance.control_plane.server_instance_id, "instance-123");
-        assert_eq!(snap.instance.control_plane.schema_version, omegon_traits::IPC_PROTOCOL_VERSION);
+        assert_eq!(
+            snap.instance.control_plane.server_instance_id,
+            "instance-123"
+        );
+        assert_eq!(
+            snap.instance.control_plane.schema_version,
+            omegon_traits::IPC_PROTOCOL_VERSION
+        );
         assert_eq!(snap.instance.control_plane.omegon_version, "0.15.10-rc.15");
         assert_eq!(snap.session.session_id.as_deref(), Some("session-abc"));
-        assert_eq!(snap.instance.runtime.thinking_level.as_deref(), Some("high"));
+        assert_eq!(
+            snap.instance.runtime.thinking_level.as_deref(),
+            Some("high")
+        );
     }
 }
-

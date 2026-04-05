@@ -244,10 +244,22 @@ mod tests {
             ContentBlock::Text { text } => text.clone(),
             _ => panic!("expected text"),
         };
-        assert!(text.contains("line 1495"), "should start at line 1495: {text}");
-        assert!(text.contains("line 1497"), "should include line 1497: {text}");
-        assert!(!text.starts_with("line 1\n"), "must not reset to beginning: {text}");
-        assert!(!text.contains("line 1498"), "should respect limit=3: {text}");
+        assert!(
+            text.contains("line 1495"),
+            "should start at line 1495: {text}"
+        );
+        assert!(
+            text.contains("line 1497"),
+            "should include line 1497: {text}"
+        );
+        assert!(
+            !text.starts_with("line 1\n"),
+            "must not reset to beginning: {text}"
+        );
+        assert!(
+            !text.contains("line 1498"),
+            "should respect limit=3: {text}"
+        );
 
         // Read the very last line
         let result = execute(&file, Some(1500), Some(1)).await.unwrap();
@@ -255,8 +267,14 @@ mod tests {
             ContentBlock::Text { text } => text.clone(),
             _ => panic!("expected text"),
         };
-        assert!(text.contains("line 1500"), "should return last line: {text}");
-        assert!(!text.contains("line 1499"), "should not include prior line: {text}");
+        assert!(
+            text.contains("line 1500"),
+            "should return last line: {text}"
+        );
+        assert!(
+            !text.contains("line 1499"),
+            "should not include prior line: {text}"
+        );
 
         // Offset beyond EOF — should return empty (no crash, no reset)
         let result = execute(&file, Some(2000), Some(5)).await.unwrap();
@@ -264,7 +282,10 @@ mod tests {
             ContentBlock::Text { text } => text.clone(),
             _ => panic!("expected text"),
         };
-        assert!(!text.starts_with("line 1\n"), "must not reset to beginning on OOB offset: {text}");
+        assert!(
+            !text.starts_with("line 1\n"),
+            "must not reset to beginning on OOB offset: {text}"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

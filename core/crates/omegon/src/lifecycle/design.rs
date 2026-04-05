@@ -561,11 +561,17 @@ fn serialize_frontmatter(node: &DesignNode) -> String {
     }
 
     if let Some(ref archive_reason) = node.archive_reason {
-        lines.push(format!("archive_reason: {}", quote_yaml_scalar(archive_reason)));
+        lines.push(format!(
+            "archive_reason: {}",
+            quote_yaml_scalar(archive_reason)
+        ));
     }
 
     if let Some(ref superseded_by) = node.superseded_by {
-        lines.push(format!("superseded_by: {}", quote_yaml_scalar(superseded_by)));
+        lines.push(format!(
+            "superseded_by: {}",
+            quote_yaml_scalar(superseded_by)
+        ));
     }
 
     if let Some(ref archived_at) = node.archived_at {

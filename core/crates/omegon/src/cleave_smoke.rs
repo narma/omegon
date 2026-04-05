@@ -1,5 +1,5 @@
-use crate::cleave;
 use crate::Cli;
+use crate::cleave;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use tokio_util::sync::CancellationToken;
@@ -66,8 +66,14 @@ pub async fn run(cli: &Cli) -> anyhow::Result<()> {
         },
     ];
 
-    eprintln!("omegon {} — cleave smoke test mode", env!("CARGO_PKG_VERSION"));
-    eprintln!("Running {} deterministic cleave smoke scenario(s)...", scenarios.len());
+    eprintln!(
+        "omegon {} — cleave smoke test mode",
+        env!("CARGO_PKG_VERSION")
+    );
+    eprintln!(
+        "Running {} deterministic cleave smoke scenario(s)...",
+        scenarios.len()
+    );
 
     let mut failed = 0usize;
     for scenario in &scenarios {
@@ -90,8 +96,11 @@ pub async fn run(cli: &Cli) -> anyhow::Result<()> {
 }
 
 async fn run_scenario(cli: &Cli, scenario: &SmokeScenario) -> anyhow::Result<()> {
-    let temp_dir = std::env::temp_dir()
-        .join(format!("omegon-cleave-smoke-{}-{}", std::process::id(), scenario.name));
+    let temp_dir = std::env::temp_dir().join(format!(
+        "omegon-cleave-smoke-{}-{}",
+        std::process::id(),
+        scenario.name
+    ));
     let repo = temp_dir.join("repo");
     let workspace = temp_dir.join("workspace");
     std::fs::create_dir_all(&workspace)?;
@@ -100,7 +109,9 @@ async fn run_scenario(cli: &Cli, scenario: &SmokeScenario) -> anyhow::Result<()>
     // temp_dir is PID-namespaced; best-effort cleanup on success
     struct Cleanup(PathBuf);
     impl Drop for Cleanup {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
     let _cleanup = Cleanup(temp_dir.clone());
 

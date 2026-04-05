@@ -43,12 +43,21 @@ pub async fn ws_handler(
     State(state): State<WebState>,
 ) -> impl IntoResponse {
     if state.web_auth.verify_query_token(query.token.as_deref()) {
-        tracing::debug!(auth_mode = state.web_auth.mode_name(), "WebSocket auth OK, upgrading");
+        tracing::debug!(
+            auth_mode = state.web_auth.mode_name(),
+            "WebSocket auth OK, upgrading"
+        );
     } else if query.token.is_some() {
-        tracing::warn!(auth_mode = state.web_auth.mode_name(), "WebSocket auth failed — token mismatch");
+        tracing::warn!(
+            auth_mode = state.web_auth.mode_name(),
+            "WebSocket auth failed — token mismatch"
+        );
         return axum::http::StatusCode::UNAUTHORIZED.into_response();
     } else {
-        tracing::warn!(auth_mode = state.web_auth.mode_name(), "WebSocket auth failed — no token provided");
+        tracing::warn!(
+            auth_mode = state.web_auth.mode_name(),
+            "WebSocket auth failed — no token provided"
+        );
         return axum::http::StatusCode::UNAUTHORIZED.into_response();
     }
     ws.on_upgrade(|socket| handle_socket(socket, state))
@@ -439,7 +448,10 @@ mod tests {
         assert_eq!(messages[0]["provider_telemetry"]["provider"], "anthropic");
         assert_eq!(messages[1]["type"], "state_changed");
         assert_eq!(messages[1]["event_name"], "state.changed");
-        assert_eq!(messages[1]["sections"], serde_json::json!(["session", "design", "openspec", "cleave"]));
+        assert_eq!(
+            messages[1]["sections"],
+            serde_json::json!(["session", "design", "openspec", "cleave"])
+        );
     }
 
     #[test]
@@ -460,7 +472,10 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["type"], "session_reset");
         assert_eq!(messages[0]["event_name"], "session.reset");
-        assert_eq!(messages[1]["sections"], serde_json::json!(["session", "design", "openspec", "cleave", "harness"]));
+        assert_eq!(
+            messages[1]["sections"],
+            serde_json::json!(["session", "design", "openspec", "cleave", "harness"])
+        );
     }
 
     #[test]

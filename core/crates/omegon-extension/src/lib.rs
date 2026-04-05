@@ -80,8 +80,11 @@ mod rpc;
 pub use error::{Error, ErrorCode, Result};
 pub use extension::{Extension, ExtensionServe};
 pub use manifest::{ExtensionManifest, ManifestError};
-pub use mind::{Fact, Episode, GetMindResponse, LoadMindResponse, StoreMindResponse, AddFactResponse, FactOpResponse, MindMetadata};
-pub use rpc::{RpcMessage, RpcRequest, RpcResponse, RpcError};
+pub use mind::{
+    AddFactResponse, Episode, Fact, FactOpResponse, GetMindResponse, LoadMindResponse,
+    MindMetadata, StoreMindResponse,
+};
+pub use rpc::{RpcError, RpcMessage, RpcRequest, RpcResponse};
 
 /// Convenience type for RPC method results.
 pub type RpcResult = Result<serde_json::Value>;

@@ -30,7 +30,10 @@ use std::path::{Path, PathBuf};
 ///
 /// Handles both legacy HTTP-only manifests and armory-style manifests
 /// (with MCP servers, script tools, OCI tools, etc.).
-pub async fn discover_plugins(cwd: &Path, secrets: Option<&omegon_secrets::SecretsManager>) -> Vec<Box<dyn omegon_traits::Feature>> {
+pub async fn discover_plugins(
+    cwd: &Path,
+    secrets: Option<&omegon_secrets::SecretsManager>,
+) -> Vec<Box<dyn omegon_traits::Feature>> {
     let plugin_dirs = plugin_search_paths();
     let mut features: Vec<Box<dyn omegon_traits::Feature>> = Vec::new();
 
@@ -190,7 +193,10 @@ fn load_legacy_plugin(
 
 /// Discover MCP servers declared in project-level config files.
 /// Checks: .omegon/mcp.toml, opencode.json (for compatibility), .mcp.json
-async fn discover_project_mcp_servers(cwd: &Path, secrets: Option<&omegon_secrets::SecretsManager>) -> Vec<Box<dyn omegon_traits::Feature>> {
+async fn discover_project_mcp_servers(
+    cwd: &Path,
+    secrets: Option<&omegon_secrets::SecretsManager>,
+) -> Vec<Box<dyn omegon_traits::Feature>> {
     let mut features: Vec<Box<dyn omegon_traits::Feature>> = Vec::new();
 
     // Check .omegon/mcp.toml (native Omegon MCP config)

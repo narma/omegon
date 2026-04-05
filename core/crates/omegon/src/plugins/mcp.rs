@@ -258,7 +258,11 @@ impl McpFeature {
     /// 2. Docker MCP Gateway — Docker Desktop MCP Toolkit
     /// 3. OCI container — podman/docker with mount/network policy
     /// 4. Local process — direct command spawn (default)
-    fn build_command(server_name: &str, config: &McpServerConfig, secrets: Option<&omegon_secrets::SecretsManager>) -> anyhow::Result<Command> {
+    fn build_command(
+        server_name: &str,
+        config: &McpServerConfig,
+        secrets: Option<&omegon_secrets::SecretsManager>,
+    ) -> anyhow::Result<Command> {
         // Mode 1: Styrene mesh transport
         // The MCP server runs on a remote node. We use styrene-ipc's
         // DaemonFleet::terminal_open() for bidirectional stdio, wrapped
@@ -316,7 +320,11 @@ impl McpFeature {
                     tracing::warn!(key = key, "skipping env var with invalid name");
                     continue;
                 }
-                cmd.arg(format!("-e={}={}", key, resolve_env_template(value, secrets)));
+                cmd.arg(format!(
+                    "-e={}={}",
+                    key,
+                    resolve_env_template(value, secrets)
+                ));
             }
 
             cmd.arg(image);
@@ -489,7 +497,10 @@ fn which_exists(name: &str) -> bool {
 ///    and any env var not managed through the secrets system
 ///
 /// Non-matching literals are passed through unchanged.
-fn resolve_env_template(template: &str, secrets: Option<&omegon_secrets::SecretsManager>) -> String {
+fn resolve_env_template(
+    template: &str,
+    secrets: Option<&omegon_secrets::SecretsManager>,
+) -> String {
     let mut result = String::with_capacity(template.len());
     let mut chars = template.char_indices().peekable();
 

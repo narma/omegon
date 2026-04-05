@@ -112,9 +112,11 @@ impl OllamaManager {
 
         // First, check if already warm via /api/ps.
         let running = self.list_running().await.unwrap_or_default();
-        let is_warm = running.iter().any(|r| r.name == model_name
-            || r.name.starts_with(&format!("{model_name}:"))
-            || model_name.starts_with(&r.name));
+        let is_warm = running.iter().any(|r| {
+            r.name == model_name
+                || r.name.starts_with(&format!("{model_name}:"))
+                || model_name.starts_with(&r.name)
+        });
         if is_warm {
             return Ok(WarmupResult::AlreadyWarm);
         }

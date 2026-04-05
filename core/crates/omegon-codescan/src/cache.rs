@@ -60,29 +60,32 @@ impl ScanCache {
     /// Used by the indexer to batch-compare hashes without N individual queries.
     pub fn all_hashes(&self) -> HashMap<String, String> {
         let mut map = HashMap::new();
-        if let Ok(mut stmt) = self.conn.prepare(
-            "SELECT path, content_hash FROM code_chunks GROUP BY path HAVING MAX(rowid)",
-        ) {
-            let _ = stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map(|rows| {
-                for row in rows.flatten() {
-                    map.insert(row.0, row.1);
-                }
-            });
+        if let Ok(mut stmt) = self
+            .conn
+            .prepare("SELECT path, content_hash FROM code_chunks GROUP BY path HAVING MAX(rowid)")
+        {
+            let _ = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| {
+                    for row in rows.flatten() {
+                        map.insert(row.0, row.1);
+                    }
+                });
         }
         if let Ok(mut stmt) = self.conn.prepare(
             "SELECT path, content_hash FROM knowledge_chunks GROUP BY path HAVING MAX(rowid)",
         ) {
-            let _ = stmt.query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map(|rows| {
-                for row in rows.flatten() {
-                    map.entry(row.0).or_insert(row.1);
-                }
-            });
+            let _ = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map(|rows| {
+                    for row in rows.flatten() {
+                        map.entry(row.0).or_insert(row.1);
+                    }
+                });
         }
         map
     }
@@ -106,7 +109,8 @@ impl ScanCache {
 
     pub fn upsert_code_chunks(&self, path: &Path, hash: &str, chunks: &[CodeChunk]) -> Result<()> {
         let path_str = path.to_string_lossy();
-        self.conn.execute("DELETE FROM code_chunks WHERE path = ?1", params![path_str])?;
+        self.conn
+            .execute("DELETE FROM code_chunks WHERE path = ?1", params![path_str])?;
         for chunk in chunks {
             self.conn.execute(
                 "INSERT INTO code_chunks (path, start_line, end_line, item_name, item_kind, text, content_hash)
@@ -117,9 +121,17 @@ impl ScanCache {
         Ok(())
     }
 
-    pub fn upsert_knowledge_chunks(&self, path: &Path, hash: &str, chunks: &[KnowledgeChunk]) -> Result<()> {
+    pub fn upsert_knowledge_chunks(
+        &self,
+        path: &Path,
+        hash: &str,
+        chunks: &[KnowledgeChunk],
+    ) -> Result<()> {
         let path_str = path.to_string_lossy();
-        self.conn.execute("DELETE FROM knowledge_chunks WHERE path = ?1", params![path_str])?;
+        self.conn.execute(
+            "DELETE FROM knowledge_chunks WHERE path = ?1",
+            params![path_str],
+        )?;
         for chunk in chunks {
             self.conn.execute(
                 "INSERT INTO knowledge_chunks (path, heading, start_line, end_line, tags, text, content_hash)
@@ -162,7 +174,11 @@ impl ScanCache {
                     heading: row.get(1)?,
                     start_line: row.get(2)?,
                     end_line: row.get(3)?,
-                    tags: tags_str.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect(),
+                    tags: tags_str
+                        .split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect(),
                     text: row.get(5)?,
                 })
             })?
@@ -173,7 +189,11 @@ impl ScanCache {
 
     pub fn get_meta(&self, key: &str) -> Option<String> {
         self.conn
-            .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |row| row.get(0))
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
             .ok()
     }
 
@@ -186,7 +206,8 @@ impl ScanCache {
     }
 
     pub fn clear_all(&self) -> Result<()> {
-        self.conn.execute_batch("DELETE FROM code_chunks; DELETE FROM knowledge_chunks;")?;
+        self.conn
+            .execute_batch("DELETE FROM code_chunks; DELETE FROM knowledge_chunks;")?;
         Ok(())
     }
 
@@ -214,7 +235,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = ScanCache::open(&dir.path().join("t.db")).unwrap();
         let path = Path::new("src/foo.rs");
-        let chunk = CodeChunk { path: path.to_path_buf(), start_line: 1, end_line: 10, item_name: "foo".into(), item_kind: "fn".into(), text: "fn foo() {}".into() };
+        let chunk = CodeChunk {
+            path: path.to_path_buf(),
+            start_line: 1,
+            end_line: 10,
+            item_name: "foo".into(),
+            item_kind: "fn".into(),
+            text: "fn foo() {}".into(),
+        };
         cache.upsert_code_chunks(path, "h1", &[chunk]).unwrap();
         let loaded = cache.all_code_chunks().unwrap();
         assert_eq!(loaded.len(), 1);
@@ -226,7 +254,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = ScanCache::open(&dir.path().join("t.db")).unwrap();
         let path = Path::new("docs/foo.md");
-        let chunk = KnowledgeChunk { path: path.to_path_buf(), heading: "Overview".into(), start_line: 3, end_line: 15, tags: vec!["arch".into()], text: "text".into() };
+        let chunk = KnowledgeChunk {
+            path: path.to_path_buf(),
+            heading: "Overview".into(),
+            start_line: 3,
+            end_line: 15,
+            tags: vec!["arch".into()],
+            text: "text".into(),
+        };
         cache.upsert_knowledge_chunks(path, "h1", &[chunk]).unwrap();
         let loaded = cache.all_knowledge_chunks().unwrap();
         assert_eq!(loaded.len(), 1);
@@ -238,8 +273,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cache = ScanCache::open(&dir.path().join("t.db")).unwrap();
         let path_a = PathBuf::from("a.rs");
-        let chunk = CodeChunk { path: path_a.clone(), start_line: 1, end_line: 1, item_name: "a".into(), item_kind: "fn".into(), text: "fn a(){}".into() };
-        cache.upsert_code_chunks(&path_a, "hash_a", &[chunk]).unwrap();
+        let chunk = CodeChunk {
+            path: path_a.clone(),
+            start_line: 1,
+            end_line: 1,
+            item_name: "a".into(),
+            item_kind: "fn".into(),
+            text: "fn a(){}".into(),
+        };
+        cache
+            .upsert_code_chunks(&path_a, "hash_a", &[chunk])
+            .unwrap();
 
         let stale = cache.stale_paths(&[
             (path_a.clone(), "hash_a".into()),     // not stale
@@ -253,8 +297,17 @@ mod tests {
     fn all_hashes_returns_correct_map() {
         let dir = tempfile::tempdir().unwrap();
         let cache = ScanCache::open(&dir.path().join("t.db")).unwrap();
-        let chunk = CodeChunk { path: PathBuf::from("x.rs"), start_line: 1, end_line: 1, item_name: "x".into(), item_kind: "fn".into(), text: "".into() };
-        cache.upsert_code_chunks(Path::new("x.rs"), "abc123", &[chunk]).unwrap();
+        let chunk = CodeChunk {
+            path: PathBuf::from("x.rs"),
+            start_line: 1,
+            end_line: 1,
+            item_name: "x".into(),
+            item_kind: "fn".into(),
+            text: "".into(),
+        };
+        cache
+            .upsert_code_chunks(Path::new("x.rs"), "abc123", &[chunk])
+            .unwrap();
         let hashes = cache.all_hashes();
         assert_eq!(hashes.get("x.rs"), Some(&"abc123".to_string()));
     }

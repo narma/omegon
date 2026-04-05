@@ -122,7 +122,11 @@ impl IpcEnvelope {
             request_id,
             method: None,
             payload: None,
-            error: Some(IpcError { code, message: message.into(), details: None }),
+            error: Some(IpcError {
+                code,
+                message: message.into(),
+                details: None,
+            }),
         }
     }
 }
@@ -415,7 +419,6 @@ pub enum OmegonRuntimeHealth {
     Starting,
     Failed,
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IpcSessionSnapshot {
@@ -795,6 +798,8 @@ pub enum BusEvent {
         turn: u32,
         model: Option<String>,
         provider: Option<String>,
+        estimated_tokens: usize,
+        context_window: usize,
         actual_input_tokens: u64,
         actual_output_tokens: u64,
         cache_read_tokens: u64,
@@ -1241,16 +1246,14 @@ mod tests {
                     working_facts: 5,
                     episodes: 3,
                 },
-                providers: vec![
-                    IpcProviderSnapshot {
-                        name: "Anthropic".into(),
-                        authenticated: true,
-                        model: Some("claude-sonnet-4-6".into()),
-                        runtime_status: None,
-                        recent_failure_count: None,
-                        last_failure_kind: None,
-                    },
-                ],
+                providers: vec![IpcProviderSnapshot {
+                    name: "Anthropic".into(),
+                    authenticated: true,
+                    model: Some("claude-sonnet-4-6".into()),
+                    runtime_status: None,
+                    recent_failure_count: None,
+                    last_failure_kind: None,
+                }],
                 mcp_server_count: 0,
                 mcp_tool_count: 0,
                 active_persona: None,
@@ -1292,10 +1295,7 @@ mod tests {
         let raw = env.encode_msgpack().unwrap();
         let decoded = IpcEnvelope::decode_msgpack(&raw).unwrap();
         assert_eq!(decoded.kind, IpcEnvelopeKind::Error);
-        assert_eq!(
-            decoded.error.unwrap().code,
-            IpcErrorCode::UnknownMethod
-        );
+        assert_eq!(decoded.error.unwrap().code, IpcErrorCode::UnknownMethod);
     }
 
     #[test]
@@ -1354,8 +1354,16 @@ mod tests {
     fn ipc_state_snapshot_all_sections_present() {
         let snap = sample_state_snapshot();
         let v = serde_json::to_value(&snap).unwrap();
-        for field in &["schema_version", "omegon_version", "session", "design_tree",
-                        "openspec", "cleave", "harness", "health"] {
+        for field in &[
+            "schema_version",
+            "omegon_version",
+            "session",
+            "design_tree",
+            "openspec",
+            "cleave",
+            "harness",
+            "health",
+        ] {
             assert!(v.get(field).is_some(), "missing field: {field}");
         }
         // Check session fields

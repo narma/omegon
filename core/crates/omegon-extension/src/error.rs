@@ -77,7 +77,10 @@ impl Error {
     }
 
     pub fn method_not_found(method: &str) -> Self {
-        Self::new(ErrorCode::MethodNotFound, format!("method '{}' not found", method))
+        Self::new(
+            ErrorCode::MethodNotFound,
+            format!("method '{}' not found", method),
+        )
     }
 
     pub fn invalid_params(reason: impl Into<String>) -> Self {

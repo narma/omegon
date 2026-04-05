@@ -737,10 +737,16 @@ mod tests {
     #[test]
     fn humanize_model_id_strips_provider_and_latest() {
         // Provider prefix stripped
-        assert_eq!(humanize_model_id("anthropic:claude-opus-4-6"), "claude-opus-4-6");
+        assert_eq!(
+            humanize_model_id("anthropic:claude-opus-4-6"),
+            "claude-opus-4-6"
+        );
         assert_eq!(humanize_model_id("openai:gpt-4o"), "gpt-4o");
         // Ollama :latest stripped
-        assert_eq!(humanize_model_id("ollama:glm-4.7-flash:latest"), "glm-4.7-flash");
+        assert_eq!(
+            humanize_model_id("ollama:glm-4.7-flash:latest"),
+            "glm-4.7-flash"
+        );
         assert_eq!(humanize_model_id("local:mistral:latest"), "mistral");
         // Non-provider first segment kept
         assert_eq!(humanize_model_id("qwen3:30b"), "qwen3:30b");
@@ -934,7 +940,10 @@ mod tests {
         let nested = tmp.path().join("core/crates/omegon");
         std::fs::create_dir_all(&nested).unwrap();
 
-        assert_eq!(project_profile_path(&nested), tmp.path().join(".omegon/profile.json"));
+        assert_eq!(
+            project_profile_path(&nested),
+            tmp.path().join(".omegon/profile.json")
+        );
     }
 
     #[test]

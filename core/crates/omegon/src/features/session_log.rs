@@ -462,6 +462,8 @@ impl Feature for SessionLog {
                 turn,
                 model,
                 provider,
+                estimated_tokens: _,
+                context_window: _,
                 actual_input_tokens,
                 actual_output_tokens,
                 cache_read_tokens,
@@ -509,7 +511,11 @@ mod tests {
     #[test]
     fn read_narrative_strips_file_ops() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         fs::write(
             &log_path,
             "# Session Log\n\n\
@@ -548,7 +554,11 @@ mod tests {
     #[test]
     fn read_narrative_last_n_entries() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         let mut content = "# Session Log\n\n".to_string();
         for i in 1..=5 {
             content.push_str(&format!(
@@ -584,7 +594,11 @@ mod tests {
     #[test]
     fn append_entry_appends_not_overwrites() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         fs::write(
             &log_path,
             "# Agent Journal\n\n## 2026-03-01 — existing entry\n",
@@ -613,6 +627,8 @@ mod tests {
             turn: 7,
             model: Some("anthropic:claude-sonnet-4-6".into()),
             provider: Some("anthropic".into()),
+            estimated_tokens: 12_000,
+            context_window: 200_000,
             actual_input_tokens: 1200,
             actual_output_tokens: 300,
             cache_read_tokens: 40,
@@ -636,7 +652,10 @@ mod tests {
         );
         let content = fs::read_to_string(&feature.log_path).unwrap();
         assert!(content.contains("7t"), "should record turns");
-        assert!(content.contains("anthropic / anthropic:claude-sonnet-4-6"), "should record provider/model");
+        assert!(
+            content.contains("anthropic / anthropic:claude-sonnet-4-6"),
+            "should record provider/model"
+        );
         assert!(content.contains("5h 42%"), "should record telemetry");
     }
 
@@ -688,7 +707,11 @@ mod tests {
     #[test]
     fn read_entries_command() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         fs::write(
             &log_path,
             "# Session Log\n\n\
@@ -709,7 +732,11 @@ mod tests {
     #[tokio::test]
     async fn session_log_tool_reads_entries_via_bus() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         fs::write(
             &log_path,
             "# Session Log\n\n\
@@ -741,7 +768,11 @@ mod tests {
     #[test]
     fn context_injection_after_session_start() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = { let d = dir.path().join(".omegon"); std::fs::create_dir_all(&d).unwrap(); d.join("agent-journal.md") };
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
         fs::write(
             &log_path,
             "# Log\n\n## 2026-03-18 — main (5t 20tc 3m)\n\nContext here.\n",

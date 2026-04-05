@@ -10,12 +10,12 @@ use super::state::{self, ChildStatus, CleaveState};
 use super::waves::compute_waves;
 use super::worktree;
 use anyhow::{Context, Result};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use std::collections::VecDeque;
 use tokio::process::Command;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
@@ -297,7 +297,8 @@ pub async fn run_cleave(
                         // Model was set to parent's model (from_plan default path) — apply routing.
                         let inv = inv_lock.read().await;
                         let parent_tier = crate::routing::infer_model_tier(&effective_model);
-                        let scope_tier = crate::routing::infer_capability_tier(child_state.scope.len());
+                        let scope_tier =
+                            crate::routing::infer_capability_tier(child_state.scope.len());
                         // Cap the child at the parent's tier so delegation never upgrades cost.
                         let tier = scope_tier.min(parent_tier);
                         let req = crate::routing::CapabilityRequest {
@@ -388,7 +389,10 @@ pub async fn run_cleave(
                 }
                 Err(e) => {
                     match e {
-                        ChildError::UpstreamExhausted { ref provider, ref message } => {
+                        ChildError::UpstreamExhausted {
+                            ref provider,
+                            ref message,
+                        } => {
                             tracing::warn!(
                                 child = %label,
                                 provider = %provider,
@@ -424,11 +428,14 @@ pub async fn run_cleave(
                                     .worktree_path
                                     .as_deref()
                                     .map(PathBuf::from)
-                                    .unwrap_or_else(|| workspace_path.join(format!("{}-wt-{}", child_idx, label)));
+                                    .unwrap_or_else(|| {
+                                        workspace_path.join(format!("{}-wt-{}", child_idx, label))
+                                    });
 
                                 // Re-read the prompt that was written during worktree setup.
-                                let fb_prompt = std::fs::read_to_string(wt_path.join(".cleave-prompt.md"))
-                                    .unwrap_or_default();
+                                let fb_prompt =
+                                    std::fs::read_to_string(wt_path.join(".cleave-prompt.md"))
+                                        .unwrap_or_default();
 
                                 let fb_dispatch = ChildDispatchConfig {
                                     agent_binary: &config.agent_binary,
@@ -449,21 +456,27 @@ pub async fn run_cleave(
                                     label,
                                     &fb_prompt,
                                     cancel.clone(),
-                                ).await;
+                                )
+                                .await;
 
                                 match fallback_result {
                                     Ok(output) => {
                                         state.children[child_idx].status = ChildStatus::Completed;
-                                        state.children[child_idx].duration_secs = Some(output.duration_secs);
+                                        state.children[child_idx].duration_secs =
+                                            Some(output.duration_secs);
                                         tracing::info!(
                                             child = %label, fallback = %fb_model,
                                             duration = format!("{:.0}s", output.duration_secs),
                                             "child completed via fallback"
                                         );
-                                        let ac = salvage_worktree_changes(&state.children[child_idx], false);
+                                        let ac = salvage_worktree_changes(
+                                            &state.children[child_idx],
+                                            false,
+                                        );
                                         if ac > 0 {
                                             config.progress_sink.emit(&ProgressEvent::AutoCommit {
-                                                child: label.clone(), files: ac,
+                                                child: label.clone(),
+                                                files: ac,
                                             });
                                         }
                                         config.progress_sink.emit(&ProgressEvent::ChildStatus {
@@ -474,9 +487,12 @@ pub async fn run_cleave(
                                         });
                                     }
                                     Err(fb_e) => {
-                                        let combined = format!("primary: {message}\nfallback({fb_model}): {fb_e}");
+                                        let combined = format!(
+                                            "primary: {message}\nfallback({fb_model}): {fb_e}"
+                                        );
                                         tracing::error!(child = %label, "fallback also failed: {fb_e}");
-                                        state.children[child_idx].status = ChildStatus::UpstreamExhausted;
+                                        state.children[child_idx].status =
+                                            ChildStatus::UpstreamExhausted;
                                         state.children[child_idx].error = Some(combined.clone());
                                         config.progress_sink.emit(&ProgressEvent::ChildStatus {
                                             child: label.clone(),
@@ -504,7 +520,8 @@ pub async fn run_cleave(
                             state.children[child_idx].error = Some(msg.clone());
                             tracing::error!(child = %label, "child failed: {msg}");
 
-                            let salvaged = salvage_worktree_changes(&state.children[child_idx], true);
+                            let salvaged =
+                                salvage_worktree_changes(&state.children[child_idx], true);
                             if salvaged > 0 {
                                 tracing::info!(child = %label, files = salvaged, "salvaged changes from failed child");
                             }
@@ -685,14 +702,22 @@ async fn dispatch_child(
     prompt: &str,
     cancel: CancellationToken,
 ) -> Result<ChildOutput, ChildError> {
-    let provider = config.model.split(':').next().unwrap_or("unknown").to_string();
+    let provider = config
+        .model
+        .split(':')
+        .next()
+        .unwrap_or("unknown")
+        .to_string();
     dispatch_child_inner(config, cwd, label, prompt, cancel)
         .await
         .map_err(|e| {
             let msg = e.to_string();
             // Exit code 2 means the child tagged itself as upstream-exhausted via main.rs.
             if msg.contains("exit code 2") || msg.contains("upstream exhausted:") {
-                ChildError::UpstreamExhausted { provider, message: msg }
+                ChildError::UpstreamExhausted {
+                    provider,
+                    message: msg,
+                }
             } else {
                 ChildError::Failed(msg)
             }
@@ -874,7 +899,11 @@ async fn dispatch_child_inner(
             return String::new();
         }
         let lines: Vec<&str> = tail.iter().map(|s| s.as_str()).collect();
-        format!("\n--- last {} stderr lines ---\n{}\n---", lines.len(), lines.join("\n"))
+        format!(
+            "\n--- last {} stderr lines ---\n{}\n---",
+            lines.len(),
+            lines.join("\n")
+        )
     };
 
     match io_result {
@@ -1312,7 +1341,10 @@ mod tests {
         assert!(canonical_cwd.is_absolute());
         assert!(prompt_file.is_absolute());
         assert_eq!(prompt_file.parent(), Some(canonical_cwd.as_path()));
-        assert_eq!(prompt_file.file_name().and_then(|s| s.to_str()), Some(".cleave-prompt.md"));
+        assert_eq!(
+            prompt_file.file_name().and_then(|s| s.to_str()),
+            Some(".cleave-prompt.md")
+        );
     }
 }
 

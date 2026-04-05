@@ -1,9 +1,9 @@
 //! Extension state management — track enable/disable status, crashes, and health.
 
+use anyhow::{Result, anyhow};
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use anyhow::{anyhow, Result};
-use chrono::Utc;
 
 /// Extension state persisted to .omegon/state.toml in the extension directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,7 +142,10 @@ impl ExtensionState {
         }
 
         if self.stability.health_check_failures > 0 {
-            return format!("degraded ({} health check failures)", self.stability.health_check_failures);
+            return format!(
+                "degraded ({} health check failures)",
+                self.stability.health_check_failures
+            );
         }
 
         "enabled".to_string()

@@ -52,8 +52,13 @@ pub fn render_bootstrap(status: &HarnessStatus, color: bool) -> String {
         ));
         if let Some(ProviderRuntimeStatus::Degraded) = p.runtime_status {
             let failures = p.recent_failure_count.unwrap_or(0);
-            let kind = p.last_failure_kind.as_deref().unwrap_or("transient failures");
-            out.push_str(&format!(" {yellow}[runtime degraded: {failures}× {kind}]{reset}"));
+            let kind = p
+                .last_failure_kind
+                .as_deref()
+                .unwrap_or("transient failures");
+            out.push_str(&format!(
+                " {yellow}[runtime degraded: {failures}× {kind}]{reset}"
+            ));
         }
         out.push('\n');
         has_providers = true;

@@ -7,9 +7,9 @@
 //! - (fallback): pretty-printed JSON
 
 use ratatui::{
+    prelude::*,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    prelude::*,
 };
 use serde_json::Value;
 
@@ -44,7 +44,7 @@ fn render_timeline(frame: &mut Frame, area: Rect, data: &Value, label: &str) {
             if idx > 0 {
                 lines.push(Line::from(""));
             }
-            
+
             let timestamp = event
                 .get("timestamp")
                 .and_then(|v| v.as_str())
@@ -117,18 +117,16 @@ fn render_table(frame: &mut Frame, area: Rect, data: &Value, label: &str) {
                         .collect::<Vec<_>>(),
                 );
                 lines.push(header);
-                lines.push(Line::from("─".repeat(area.width.saturating_sub(2) as usize)));
+                lines.push(Line::from(
+                    "─".repeat(area.width.saturating_sub(2) as usize),
+                ));
 
                 // Data rows
                 for row in rows {
                     if let Some(obj) = row.as_object() {
                         let values: Vec<_> = cols
                             .iter()
-                            .map(|col| {
-                                obj.get(*col)
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("-")
-                            })
+                            .map(|col| obj.get(*col).and_then(|v| v.as_str()).unwrap_or("-"))
                             .collect();
 
                         let line = Line::from(
@@ -208,8 +206,7 @@ fn render_json_fallback(frame: &mut Frame, area: Rect, data: &Value, label: &str
         .title(format!(" {} (JSON) ", label))
         .borders(Borders::ALL);
 
-    let json_str = serde_json::to_string_pretty(data)
-        .unwrap_or_else(|_| "{}".to_string());
+    let json_str = serde_json::to_string_pretty(data).unwrap_or_else(|_| "{}".to_string());
     let para = Paragraph::new(json_str).block(block);
     frame.render_widget(para, area);
 }

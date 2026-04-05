@@ -39,7 +39,7 @@ impl Indexer {
                 if code_chunks > 0 || knowledge_chunks > 0 {
                     tracing::debug!(head = %head, "codescan fast-path: HEAD unchanged");
                     return Ok(IndexStats {
-                        code_files: 0,   // unknown without walk; 0 = "not re-scanned"
+                        code_files: 0, // unknown without walk; 0 = "not re-scanned"
                         knowledge_files: 0,
                         code_chunks,
                         knowledge_chunks,
@@ -54,41 +54,59 @@ impl Indexer {
         let knowledge_files = discover_knowledge_files(repo_path, &KnowledgeDirs::default());
 
         // Compute content hashes
-        let code_hashes: Vec<(PathBuf, String)> = code_files.iter()
+        let code_hashes: Vec<(PathBuf, String)> = code_files
+            .iter()
             .filter_map(|p| std::fs::read(p).ok().map(|c| (p.clone(), sha256(&c))))
             .collect();
-        let knowledge_hashes: Vec<(PathBuf, String)> = knowledge_files.iter()
+        let knowledge_hashes: Vec<(PathBuf, String)> = knowledge_files
+            .iter()
             .filter_map(|p| std::fs::read(p).ok().map(|c| (p.clone(), sha256(&c))))
             .collect();
 
         // Batch-compare with cached hashes (2 queries, not N)
-        let all_hashes: Vec<(PathBuf, String)> = code_hashes.iter()
+        let all_hashes: Vec<(PathBuf, String)> = code_hashes
+            .iter()
             .chain(knowledge_hashes.iter())
             .cloned()
             .collect();
-        let stale: std::collections::HashSet<PathBuf> = cache.stale_paths(&all_hashes).into_iter().collect();
+        let stale: std::collections::HashSet<PathBuf> =
+            cache.stale_paths(&all_hashes).into_iter().collect();
 
         for (path, hash) in &code_hashes {
-            if !stale.contains(path) { continue; }
+            if !stale.contains(path) {
+                continue;
+            }
             let content = match std::fs::read_to_string(path) {
                 Ok(c) => c,
-                Err(e) => { tracing::warn!(path = %path.display(), "read error: {e}"); continue; }
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), "read error: {e}");
+                    continue;
+                }
             };
             let rel = path.strip_prefix(repo_path).unwrap_or(path);
             let mut chunks = CodeScanner::scan_file(rel, &content);
-            for c in &mut chunks { c.path = rel.to_path_buf(); }
+            for c in &mut chunks {
+                c.path = rel.to_path_buf();
+            }
             cache.upsert_code_chunks(rel, hash, &chunks)?;
         }
 
         for (path, hash) in &knowledge_hashes {
-            if !stale.contains(path) { continue; }
+            if !stale.contains(path) {
+                continue;
+            }
             let content = match std::fs::read_to_string(path) {
                 Ok(c) => c,
-                Err(e) => { tracing::warn!(path = %path.display(), "read error: {e}"); continue; }
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), "read error: {e}");
+                    continue;
+                }
             };
             let rel = path.strip_prefix(repo_path).unwrap_or(path);
             let mut chunks = KnowledgeScanner::scan_file(rel, &content);
-            for c in &mut chunks { c.path = rel.to_path_buf(); }
+            for c in &mut chunks {
+                c.path = rel.to_path_buf();
+            }
             cache.upsert_knowledge_chunks(rel, hash, &chunks)?;
         }
 
@@ -102,15 +120,21 @@ impl Indexer {
         let duration_ms = started.elapsed().as_millis() as u64;
 
         tracing::info!(
-            code_files = code_files.len(), knowledge_files = knowledge_files.len(),
-            stale = stale.len(), code_chunks, knowledge_chunks, duration_ms,
+            code_files = code_files.len(),
+            knowledge_files = knowledge_files.len(),
+            stale = stale.len(),
+            code_chunks,
+            knowledge_chunks,
+            duration_ms,
             "codescan indexed"
         );
 
         Ok(IndexStats {
             code_files: code_files.len(),
             knowledge_files: knowledge_files.len(),
-            code_chunks, knowledge_chunks, duration_ms,
+            code_chunks,
+            knowledge_chunks,
+            duration_ms,
         })
     }
 }
@@ -135,12 +159,28 @@ fn sha256(data: &[u8]) -> String {
 fn discover_code_files(repo_path: &Path) -> Vec<PathBuf> {
     use walkdir::WalkDir;
     let exts = ["rs", "ts", "tsx", "js", "jsx", "py", "go"];
-    let skip = ["target", "node_modules", ".git", ".jj", "dist", "build", ".next"];
-    WalkDir::new(repo_path).follow_links(false).into_iter()
+    let skip = [
+        "target",
+        "node_modules",
+        ".git",
+        ".jj",
+        "dist",
+        "build",
+        ".next",
+    ];
+    WalkDir::new(repo_path)
+        .follow_links(false)
+        .into_iter()
         .filter_entry(|e| !skip.contains(&e.file_name().to_string_lossy().as_ref()))
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
-        .filter(|e| e.path().extension().and_then(|x| x.to_str()).map(|x| exts.contains(&x)).unwrap_or(false))
+        .filter(|e| {
+            e.path()
+                .extension()
+                .and_then(|x| x.to_str())
+                .map(|x| exts.contains(&x))
+                .unwrap_or(false)
+        })
         .map(|e| e.path().to_path_buf())
         .collect()
 }
@@ -151,11 +191,15 @@ fn discover_knowledge_files(repo_path: &Path, dirs: &KnowledgeDirs) -> Vec<PathB
         let full = format!("{}/{}", repo_path.to_string_lossy(), pattern);
         if let Ok(paths) = glob::glob(&full) {
             for p in paths.filter_map(|p| p.ok()) {
-                if p.is_file() { files.push(p); }
+                if p.is_file() {
+                    files.push(p);
+                }
             }
         }
     }
-    files.sort(); files.dedup(); files
+    files.sort();
+    files.dedup();
+    files
 }
 
 #[cfg(test)]
@@ -196,6 +240,9 @@ mod tests {
         // Now set env to return the same HEAD — simulate by checking counts are stable
         let s2 = Indexer::run(repo, &mut cache).unwrap();
         // Both runs should produce the same chunk count
-        assert_eq!(s1.code_chunks, s2.code_chunks, "chunk count should be stable");
+        assert_eq!(
+            s1.code_chunks, s2.code_chunks,
+            "chunk count should be stable"
+        );
     }
 }

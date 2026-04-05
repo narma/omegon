@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use omegon_memory::{
     ContextRenderer, CreateEdge, DecayProfileName, FactFilter, MarkdownRenderer, MemoryBackend,
-    Section, StoreAction, StoreFact, StoreEpisode,
+    Section, StoreAction, StoreEpisode, StoreFact,
 };
 
 /// Memory feature that provides all memory_* tools and context injection.
@@ -629,22 +629,19 @@ Also use it when you notice a gap — if you're unsure whether something was alr
 
     fn on_event(&mut self, event: &BusEvent) -> Vec<BusRequest> {
         match event {
-            BusEvent::ToolEnd {
-                name,
-                is_error,
-                ..
-            } if !is_error
-                && matches!(
-                    name.as_str(),
-                    crate::tool_registry::memory::MEMORY_STORE
-                        | crate::tool_registry::memory::MEMORY_ARCHIVE
-                        | crate::tool_registry::memory::MEMORY_SUPERSEDE
-                        | crate::tool_registry::memory::MEMORY_CONNECT
-                        | crate::tool_registry::memory::MEMORY_FOCUS
-                        | crate::tool_registry::memory::MEMORY_RELEASE
-                        | crate::tool_registry::memory::MEMORY_INGEST_LIFECYCLE
-                )
-                && self.pending_status_refresh.swap(false, Ordering::Relaxed) =>
+            BusEvent::ToolEnd { name, is_error, .. }
+                if !is_error
+                    && matches!(
+                        name.as_str(),
+                        crate::tool_registry::memory::MEMORY_STORE
+                            | crate::tool_registry::memory::MEMORY_ARCHIVE
+                            | crate::tool_registry::memory::MEMORY_SUPERSEDE
+                            | crate::tool_registry::memory::MEMORY_CONNECT
+                            | crate::tool_registry::memory::MEMORY_FOCUS
+                            | crate::tool_registry::memory::MEMORY_RELEASE
+                            | crate::tool_registry::memory::MEMORY_INGEST_LIFECYCLE
+                    )
+                    && self.pending_status_refresh.swap(false, Ordering::Relaxed) =>
             {
                 vec![BusRequest::RefreshHarnessStatus]
             }
@@ -683,9 +680,7 @@ Also use it when you notice a gap — if you're unsure whether something was alr
                                             mind,
                                             title,
                                             narrative,
-                                            date: Some(
-                                                now.format("%Y-%m-%d").to_string(),
-                                            ),
+                                            date: Some(now.format("%Y-%m-%d").to_string()),
                                             affected_nodes: vec![],
                                             affected_changes: vec![],
                                             files_changed: vec![],
@@ -694,9 +689,7 @@ Also use it when you notice a gap — if you're unsure whether something was alr
                                         })
                                         .await
                                     {
-                                        tracing::warn!(
-                                            "Session episode storage failed: {e}"
-                                        );
+                                        tracing::warn!("Session episode storage failed: {e}");
                                     }
                                 })
                             })
@@ -909,7 +902,10 @@ mod tests {
             },
             is_error: false,
         });
-        assert!(matches!(requests.as_slice(), [BusRequest::RefreshHarnessStatus]));
+        assert!(matches!(
+            requests.as_slice(),
+            [BusRequest::RefreshHarnessStatus]
+        ));
     }
 
     #[tokio::test]
@@ -937,7 +933,10 @@ mod tests {
             },
             is_error: false,
         });
-        assert!(matches!(requests.as_slice(), [BusRequest::RefreshHarnessStatus]));
+        assert!(matches!(
+            requests.as_slice(),
+            [BusRequest::RefreshHarnessStatus]
+        ));
     }
 
     #[tokio::test]

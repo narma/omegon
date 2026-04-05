@@ -276,13 +276,21 @@ mod tests {
             .unwrap();
 
         // oldText has slightly wrong content but a recognizable key line
-        let err = execute(&file, "fn hello() {\n    println!(\"wrong\");\n}", "x", dir.path())
-            .await
-            .unwrap_err();
+        let err = execute(
+            &file,
+            "fn hello() {\n    println!(\"wrong\");\n}",
+            "x",
+            dir.path(),
+        )
+        .await
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("Could not find"), "msg: {msg}");
         // Hint should be present since "fn hello()" is in the file
-        assert!(msg.contains("fn hello()"), "expected context hint, got: {msg}");
+        assert!(
+            msg.contains("fn hello()"),
+            "expected context hint, got: {msg}"
+        );
     }
 }
 

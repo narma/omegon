@@ -457,10 +457,10 @@ impl InstrumentPanel {
         // Estimate: ~5-15% overhead depending on setting.
         let thinking = if self.thinking_active {
             let estimate: f64 = match self.thinking_level_pct {
-                p if p >= 0.9 => 0.08,   // "high" → 8% of window
-                p if p >= 0.5 => 0.05,   // "medium" → 5%
-                p if p >= 0.3 => 0.03,   // "low" → 3%
-                _ => 0.015,              // "minimal" → 1.5%
+                p if p >= 0.9 => 0.08, // "high" → 8% of window
+                p if p >= 0.5 => 0.05, // "medium" → 5%
+                p if p >= 0.3 => 0.03, // "low" → 3%
+                _ => 0.015,            // "minimal" → 1.5%
             };
             estimate.min((total_used - system - memory).max(0.0))
         } else {
@@ -495,7 +495,8 @@ impl InstrumentPanel {
         self.tools
             .iter()
             .map(|tool| {
-                let recency = (1.0 - ((self.time - tool.last_called).max(0.0) / 4.0)).clamp(0.0, 1.0);
+                let recency =
+                    (1.0 - ((self.time - tool.last_called).max(0.0) / 4.0)).clamp(0.0, 1.0);
                 if tool.running { 1.0 } else { recency }
             })
             .fold(0.0_f64, f64::max)
@@ -727,7 +728,8 @@ impl InstrumentPanel {
             entry.error_ttl = 5.0;
             entry.running = false;
             if let Some(started_at) = entry.started_at.take() {
-                entry.last_duration_ms = Some(((self.time - started_at).max(0.0) * 1_000.0).round() as u64);
+                entry.last_duration_ms =
+                    Some(((self.time - started_at).max(0.0) * 1_000.0).round() as u64);
             }
         }
     }
@@ -736,7 +738,14 @@ impl InstrumentPanel {
         self.focus_mode = !self.focus_mode;
     }
 
-    fn render_inference(&self, area: Rect, frame: &mut Frame, border: Color, label: Color, t: &dyn Theme) {
+    fn render_inference(
+        &self,
+        area: Rect,
+        frame: &mut Frame,
+        border: Color,
+        label: Color,
+        t: &dyn Theme,
+    ) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border).bg(t.footer_bg()))
@@ -775,7 +784,9 @@ impl InstrumentPanel {
         if inner.height > bar_h {
             clear_row(inner.y + bar_h, inner.x, inner.right(), buf, panel_bg(t));
             let mut x = inner.x;
-            for (idx, (icon, label_text, color)) in Self::context_legend_entries().into_iter().enumerate() {
+            for (idx, (icon, label_text, color)) in
+                Self::context_legend_entries().into_iter().enumerate()
+            {
                 let entry = if idx == 0 {
                     format!("{icon} {label_text}")
                 } else {
@@ -789,7 +800,13 @@ impl InstrumentPanel {
                     inner.right(),
                     panel_bg(t),
                     buf,
-                    |ch| if icon_chars.contains(&ch) { color } else { t.dim() },
+                    |ch| {
+                        if icon_chars.contains(&ch) {
+                            color
+                        } else {
+                            t.dim()
+                        }
+                    },
                 );
                 if x >= inner.right() {
                     break;
@@ -811,8 +828,8 @@ impl InstrumentPanel {
             }
 
             let cache_pct = if self.last_input_tokens > 0 {
-                (self.last_cache_read_tokens as f64 / self.last_input_tokens as f64 * 100.0)
-                    .round() as u32
+                (self.last_cache_read_tokens as f64 / self.last_input_tokens as f64 * 100.0).round()
+                    as u32
             } else {
                 0
             };
@@ -932,9 +949,8 @@ impl InstrumentPanel {
             let (ch, fg) = match (activity, dominant) {
                 (ActivityMode::Thinking, ContextBand::Thinking) => {
                     let phase = (time * 3.0) + x as f64 * 0.35;
-                    let pulse = ((phase.sin() + 1.0) * 0.5
-                        * self.thinking_intensity.max(0.15))
-                    .clamp(0.0, 1.0);
+                    let pulse = ((phase.sin() + 1.0) * 0.5 * self.thinking_intensity.max(0.15))
+                        .clamp(0.0, 1.0);
                     let level = (pulse * 8.0).round() as usize;
                     let c = FILL[level.min(8)];
                     let color = if pulse > 0.72 {
@@ -955,7 +971,7 @@ impl InstrumentPanel {
                         '\u{28E7}' // ⣏ 6/8
                     };
                     let color = if pulse > 0.75 {
-                        Color::Rgb(255, 196, 96)  // Bright orange on peak
+                        Color::Rgb(255, 196, 96) // Bright orange on peak
                     } else {
                         Self::band_color(ContextBand::Conversation)
                     };
@@ -966,7 +982,7 @@ impl InstrumentPanel {
                     let pulse = (((time * 2.2) + x as f64 * 0.1).sin() + 1.0) * 0.5;
                     let c = if pulse > 0.6 { '\u{28C7}' } else { '\u{2847}' }; // ⣇ / ⡇
                     let color = if pulse > 0.6 {
-                        Color::Rgb(232, 186, 104)  // Lighter orange while waiting
+                        Color::Rgb(232, 186, 104) // Lighter orange while waiting
                     } else {
                         Self::band_color(ContextBand::Conversation)
                     };
@@ -977,9 +993,7 @@ impl InstrumentPanel {
 
             // Both rows identical — the 2-row height reinforces density visually.
             for row in 0..area.height.min(2) {
-                if let Some(cell) =
-                    buf.cell_mut(Position::new(area.x + x as u16, area.y + row))
-                {
+                if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, area.y + row)) {
                     cell.set_char(ch);
                     cell.set_fg(fg);
                     cell.set_bg(panel_bg(t));
@@ -988,7 +1002,13 @@ impl InstrumentPanel {
         }
     }
 
-    fn render_memory_strings(&self, active_minds: &[usize], area: Rect, buf: &mut Buffer, t: &dyn Theme) {
+    fn render_memory_strings(
+        &self,
+        active_minds: &[usize],
+        area: Rect,
+        buf: &mut Buffer,
+        t: &dyn Theme,
+    ) {
         let w = area.width as usize;
         let n = active_minds.len();
 
@@ -1179,7 +1199,9 @@ impl InstrumentPanel {
             };
             let mut x = inner.x;
             for ch in ind_ch.chars() {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(ch);
                     cell.set_fg(ind_color);
@@ -1197,7 +1219,9 @@ impl InstrumentPanel {
             };
             let display_label: String = child.label.chars().take(label_w).collect();
             for ch in display_label.chars() {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(ch);
                     cell.set_fg(label_color);
@@ -1207,7 +1231,9 @@ impl InstrumentPanel {
             }
             // Pad to label_w
             while x < inner.x + 2 + label_w as u16 {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(' ');
                     cell.set_bg(panel_bg(t));
@@ -1228,7 +1254,9 @@ impl InstrumentPanel {
             let act_color = Color::Rgb(36, 80, 96);
             let act_display: String = activity.chars().take(activity_w).collect();
             for ch in act_display.chars() {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(ch);
                     cell.set_fg(act_color);
@@ -1239,7 +1267,9 @@ impl InstrumentPanel {
             // Pad to activity_w
             let act_end_x = inner.x + 2 + label_w as u16 + activity_w as u16;
             while x < act_end_x {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(' ');
                     cell.set_bg(panel_bg(t));
@@ -1256,7 +1286,9 @@ impl InstrumentPanel {
             let elapsed_str = Self::format_elapsed(elapsed_secs);
             let elapsed_color = Color::Rgb(36, 60, 76);
             for ch in elapsed_str.chars().take(elapsed_w) {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(ch);
                     cell.set_fg(elapsed_color);
@@ -1281,7 +1313,9 @@ impl InstrumentPanel {
             let summary_color = Color::Rgb(36, 60, 76);
             let mut x = inner.x;
             for ch in summary.chars().take(w) {
-                if x >= inner.right() { break; }
+                if x >= inner.right() {
+                    break;
+                }
                 if let Some(cell) = buf.cell_mut(Position::new(x, summary_y)) {
                     cell.set_char(ch);
                     cell.set_fg(summary_color);
@@ -1302,7 +1336,14 @@ impl InstrumentPanel {
         }
     }
 
-    fn render_tools(&self, area: Rect, frame: &mut Frame, border: Color, label: Color, t: &dyn Theme) {
+    fn render_tools(
+        &self,
+        area: Rect,
+        frame: &mut Frame,
+        border: Color,
+        label: Color,
+        t: &dyn Theme,
+    ) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border).bg(t.footer_bg()))
@@ -1569,7 +1610,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn set_cleave_progress_replaces_snapshot() {
         let mut panel = InstrumentPanel::default();
@@ -1583,7 +1623,10 @@ mod tests {
             total_tokens_in: 0,
             total_tokens_out: 0,
         }));
-        assert_eq!(panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()), Some("r1"));
+        assert_eq!(
+            panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()),
+            Some("r1")
+        );
 
         panel.set_cleave_progress(Some(CleaveProgress {
             active: true,
@@ -1595,7 +1638,10 @@ mod tests {
             total_tokens_in: 0,
             total_tokens_out: 0,
         }));
-        assert_eq!(panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()), Some("r2"));
+        assert_eq!(
+            panel.cleave_progress.as_ref().map(|cp| cp.run_id.as_str()),
+            Some("r2")
+        );
     }
 
     #[test]
@@ -1704,11 +1750,35 @@ mod tests {
         let mut panel = InstrumentPanel::default();
         let base = panel.preferred_height();
         panel.update_mind_facts(18, 3, 2, 0.08);
-        panel.update_telemetry(62.0, 200_000, Some("read"), false, "medium", None, true, 0.016);
-        panel.update_telemetry(62.0, 200_000, Some("bash"), false, "medium", None, true, 0.016);
+        panel.update_telemetry(
+            62.0,
+            200_000,
+            Some("read"),
+            false,
+            "medium",
+            None,
+            true,
+            0.016,
+        );
+        panel.update_telemetry(
+            62.0,
+            200_000,
+            Some("bash"),
+            false,
+            "medium",
+            None,
+            true,
+            0.016,
+        );
         let grown = panel.preferred_height();
-        assert!(grown >= base, "footer height should not shrink after activity");
-        assert!(grown >= 10 && grown <= 16, "preferred height stays bounded: {grown}");
+        assert!(
+            grown >= base,
+            "footer height should not shrink after activity"
+        );
+        assert!(
+            grown >= 10 && grown <= 16,
+            "preferred height stays bounded: {grown}"
+        );
     }
 
     #[test]
@@ -1797,7 +1867,9 @@ mod tests {
             .map(|x| buf[(x, 5)].symbol().to_string())
             .collect::<String>();
         assert!(
-            line.contains("project ⌗0") || line.contains("working ⌗0") || line.contains("episodes ⌗0"),
+            line.contains("project ⌗0")
+                || line.contains("working ⌗0")
+                || line.contains("episodes ⌗0"),
             "narrow memory rows should preserve explicit counts before the wave: {line:?}"
         );
     }
@@ -1809,18 +1881,36 @@ mod tests {
         assert_eq!(panel.minds[0].fact_count, 18);
         assert_eq!(panel.minds[1].fact_count, 3);
         assert_eq!(panel.minds[2].fact_count, 2);
-        assert!(panel.minds[2].active, "episodes mind should activate when populated");
-        assert!(panel.memory_fill <= 0.12, "memory fill stays conservatively capped");
+        assert!(
+            panel.minds[2].active,
+            "episodes mind should activate when populated"
+        );
+        assert!(
+            panel.memory_fill <= 0.12,
+            "memory fill stays conservatively capped"
+        );
     }
 
     #[test]
     fn context_breakdown_stays_normalized_and_ordered() {
         let mut panel = InstrumentPanel::default();
         panel.update_mind_facts(18, 3, 2, 0.08);
-        panel.update_telemetry(62.0, 200_000, Some("read"), false, "medium", None, true, 0.016);
+        panel.update_telemetry(
+            62.0,
+            200_000,
+            Some("read"),
+            false,
+            "medium",
+            None,
+            true,
+            0.016,
+        );
         let breakdown = panel.context_breakdown();
         let total: f64 = breakdown.iter().map(|(_, frac)| frac).sum();
-        assert!((total - 1.0).abs() < 0.0001, "breakdown should sum to 1.0, got {total}");
+        assert!(
+            (total - 1.0).abs() < 0.0001,
+            "breakdown should sum to 1.0, got {total}"
+        );
         assert_eq!(breakdown[0].0, ContextBand::Conversation);
         assert_eq!(breakdown[1].0, ContextBand::System);
         assert_eq!(breakdown[2].0, ContextBand::Memory);
@@ -1832,7 +1922,16 @@ mod tests {
     #[test]
     fn thinking_activity_mode_beats_tool_churn() {
         let mut panel = InstrumentPanel::default();
-        panel.update_telemetry(40.0, 200_000, Some("bash"), false, "high", None, true, 0.016);
+        panel.update_telemetry(
+            40.0,
+            200_000,
+            Some("bash"),
+            false,
+            "high",
+            None,
+            true,
+            0.016,
+        );
         assert_eq!(panel.activity_mode(), ActivityMode::Thinking);
     }
 
@@ -1856,7 +1955,10 @@ mod tests {
             panel.update_telemetry(0.0, 200_000, None, false, "off", None, false, 0.016);
         }
         let after = panel.minds[0].max_amplitude();
-        assert!(after > baseline, "fact count increase should excite the project wave");
+        assert!(
+            after > baseline,
+            "fact count increase should excite the project wave"
+        );
     }
 
     #[test]
@@ -1873,13 +1975,24 @@ mod tests {
         let mut panel = InstrumentPanel::default();
         panel.update_mind_facts(180, 12, 6, 0.08);
         panel.tool_started("read");
-        panel.update_telemetry(68.0, 200_000, Some("read"), false, "high", None, true, 0.016);
+        panel.update_telemetry(
+            68.0,
+            200_000,
+            Some("read"),
+            false,
+            "high",
+            None,
+            true,
+            0.016,
+        );
 
         let area = Rect::new(0, 0, 64, 10);
         let backend = ratatui::backend::TestBackend::new(64, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let t = crate::tui::theme::Alpharius;
-        terminal.draw(|f| panel.render_inference_panel(area, f, &t)).unwrap();
+        terminal
+            .draw(|f| panel.render_inference_panel(area, f, &t))
+            .unwrap();
 
         let buf = terminal.backend().buffer();
         let legend_row: String = (0..area.width)
@@ -1891,11 +2004,26 @@ mod tests {
         // and the format's single space lands at the correct column. TestBackend treats every
         // character as width-1, so it sees an extra blank cell between the icon and the label.
         // We check icon and label independently to be robust to that 1-cell difference.
-        assert!(legend_row.contains('≡') && legend_row.contains("conv"), "conversation bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains('⊟') && legend_row.contains("sys"), "system bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains('◈') && legend_row.contains("mem"), "memory bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains('⚒') && legend_row.contains("tools"), "tools bucket legend should be visible: {legend_row}");
-        assert!(legend_row.contains('◔') && legend_row.contains("think"), "thinking bucket legend should be visible: {legend_row}");
+        assert!(
+            legend_row.contains('≡') && legend_row.contains("conv"),
+            "conversation bucket legend should be visible: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('⊟') && legend_row.contains("sys"),
+            "system bucket legend should be visible: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('◈') && legend_row.contains("mem"),
+            "memory bucket legend should be visible: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('⚒') && legend_row.contains("tools"),
+            "tools bucket legend should be visible: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('◔') && legend_row.contains("think"),
+            "thinking bucket legend should be visible: {legend_row}"
+        );
     }
 }
 

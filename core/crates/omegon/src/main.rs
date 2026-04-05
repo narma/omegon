@@ -25,8 +25,8 @@ pub mod extensions;
 pub mod features;
 mod ipc;
 mod migrate;
-mod smoke;
 mod skills;
+mod smoke;
 mod switch;
 mod update;
 mod upstream_errors;
@@ -509,12 +509,10 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Some(Commands::Doctor) => run_doctor_command(&cli).await,
-        Some(Commands::Skills { ref action }) => {
-            match action {
-                SkillsAction::List => skills::cmd_list().map_err(Into::into),
-                SkillsAction::Install => skills::cmd_install().map_err(Into::into),
-            }
-        }
+        Some(Commands::Skills { ref action }) => match action {
+            SkillsAction::List => skills::cmd_list().map_err(Into::into),
+            SkillsAction::Install => skills::cmd_install().map_err(Into::into),
+        },
         None => {
             // No subcommand: interactive if no --prompt, headless if --prompt given
             if let Some(warning) = anthropic_subscription_automation_warning(&cli) {
@@ -555,7 +553,8 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
         tokio::sync::broadcast::channel::<AgentEvent>(32).0,
     );
 
-    let (startup, _cmd_rx) = web::start_server_with_options(state, control_port, strict_port).await?;
+    let (startup, _cmd_rx) =
+        web::start_server_with_options(state, control_port, strict_port).await?;
     let event = EmbeddedStartupEvent {
         event_type: "omegon.startup",
         schema_version: startup.schema_version,
@@ -575,19 +574,16 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
 }
 
 fn anthropic_subscription_automation_warning(cli: &Cli) -> Option<String> {
-    let is_automated = cli.smoke
-        || cli.smoke_cleave
-        || cli.prompt.is_some()
-        || cli.prompt_file.is_some();
+    let is_automated =
+        cli.smoke || cli.smoke_cleave || cli.prompt.is_some() || cli.prompt_file.is_some();
     if !is_automated {
         return None;
     }
 
     use crate::providers::AnthropicCredentialMode;
     let provider = cli.model.split(':').next().unwrap_or("anthropic");
-    let targets_anthropic = provider == "anthropic"
-        || provider == "claude"
-        || cli.model.contains("claude");
+    let targets_anthropic =
+        provider == "anthropic" || provider == "claude" || cli.model.contains("claude");
     if !targets_anthropic
         || crate::providers::anthropic_credential_mode() != AnthropicCredentialMode::OAuthOnly
     {
@@ -894,12 +890,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // ─── Event channel ──────────────────────────────────────────────────
     let (events_tx, events_rx) = broadcast::channel::<AgentEvent>(256);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::channel::<tui::TuiCommand>(16);
-    
+
     // Wire command_tx to ContextProvider for tool dispatch
     if let Ok(mut shared_tx) = agent.command_tx.lock() {
         *shared_tx = Some(command_tx.clone());
     }
-    
+
     let pending_compact = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let web_command_tx = command_tx.clone(); // For forwarding web dashboard commands
     let ipc_command_tx = command_tx.clone(); // For forwarding IPC commands
@@ -996,8 +992,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
         _ => None,
     };
 
-    let login_prompt_tx: std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>> =
-        std::sync::Arc::new(tokio::sync::Mutex::new(None));
+    let login_prompt_tx: std::sync::Arc<
+        tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
+    > = std::sync::Arc::new(tokio::sync::Mutex::new(None));
     let tui_config = tui::TuiConfig {
         cwd: agent.cwd.to_string_lossy().to_string(),
         is_oauth,
@@ -1181,7 +1178,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             let est = agent.conversation.estimate_tokens();
                             if let Ok(s) = shared_settings.lock() {
                                 let ctx_window = s.context_window;
-                                
+
                                 // Update metrics
                                 if let Ok(mut metrics) = agent.context_metrics.lock() {
                                     metrics.update(
@@ -1191,7 +1188,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                         s.thinking.as_str(),
                                     );
                                 }
-                                
+
                                 if ctx_window > 0 {
                                     let _ = events_tx.send(AgentEvent::TurnEnd {
                                         turn: agent.conversation.intent.stats.turns,
@@ -1262,7 +1259,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         Ok(summary) => {
                             agent.conversation.apply_compaction(summary);
                             let est = agent.conversation.estimate_tokens();
-                            
+
                             // Update metrics
                             let settings = shared_settings.lock().unwrap();
                             if let Ok(mut metrics) = agent.context_metrics.lock() {
@@ -1273,7 +1270,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                     settings.thinking.as_str(),
                                 );
                             }
-                            
+
                             // Send authoritative context snapshot to TUI/web consumers.
                             let _ = events_tx.send(AgentEvent::ContextUpdated {
                                 tokens: est as u64,
@@ -1312,7 +1309,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 agent.conversation = crate::conversation::ConversationState::new();
                 agent.session_id = crate::session::allocate_session_id();
                 agent.resume_info = None;
-                
+
                 // Reset metrics — extract context_window in single lock scope to avoid deadlock
                 let context_window = if let Ok(mut metrics) = agent.context_metrics.lock() {
                     let context_window = metrics.context_window;
@@ -1321,7 +1318,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 } else {
                     200_000
                 };
-                
+
                 // Send authoritative context snapshot to TUI/web consumers.
                 let _ = events_tx.send(AgentEvent::ContextUpdated {
                     tokens: 0,
@@ -1329,7 +1326,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     context_class: "Squad".to_string(),
                     thinking_level: "off".to_string(),
                 });
-                
+
                 let _ = events_tx.send(AgentEvent::SystemNotification {
                     message: "Context cleared. Starting fresh conversation.".into(),
                 });
@@ -1385,7 +1382,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 match web::start_server(web_state, 7842).await {
                     Ok((startup, web_cmd_rx)) => {
                         if let Ok(startup_json) = serde_json::to_value(&startup) {
-                            let _ = events_tx.send(AgentEvent::WebDashboardStarted { startup_json });
+                            let _ =
+                                events_tx.send(AgentEvent::WebDashboardStarted { startup_json });
                         }
                         let url = format!("http://{}/?token={}", startup.addr, startup.token);
                         tui::open_browser(&url);
@@ -1566,10 +1564,10 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                             let mut guard = slot.lock().await;
                                             *guard = Some(otx);
                                         }
-                                        let _ = tx.send(AgentEvent::SystemNotification {
-                                            message: msg,
-                                        });
-                                        orx.await.map_err(|_| anyhow::anyhow!("Login prompt cancelled"))
+                                        let _ = tx
+                                            .send(AgentEvent::SystemNotification { message: msg });
+                                        orx.await
+                                            .map_err(|_| anyhow::anyhow!("Login prompt cancelled"))
                                     })
                                 });
                                 let result = match provider_clone.as_str() {
@@ -1697,7 +1695,8 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             // Re-assemble and broadcast
                             let mut status = crate::status::HarnessStatus::assemble();
                             let auth_status = auth::probe_all_providers().await;
-                            status.providers = crate::auth::auth_status_to_provider_statuses(&auth_status);
+                            status.providers =
+                                crate::auth::auth_status_to_provider_statuses(&auth_status);
                             status.annotate_provider_runtime_health();
                             status.update_from_bus(&agent.bus);
                             if let Ok(json) = serde_json::to_value(&status) {
@@ -1705,12 +1704,21 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                     .send(AgentEvent::HarnessStatusChanged { status_json: json });
                             }
                         }
-                        omegon_traits::BusRequest::AutoStoreFact { section, content, source } => {
-                            let args = serde_json::json!({ "content": content, "section": section });
+                        omegon_traits::BusRequest::AutoStoreFact {
+                            section,
+                            content,
+                            source,
+                        } => {
+                            let args =
+                                serde_json::json!({ "content": content, "section": section });
                             if let Err(e) = agent
                                 .bus
-                                .execute_tool("memory_store", "auto_ingest", args,
-                                    tokio_util::sync::CancellationToken::new())
+                                .execute_tool(
+                                    "memory_store",
+                                    "auto_ingest",
+                                    args,
+                                    tokio_util::sync::CancellationToken::new(),
+                                )
                                 .await
                             {
                                 tracing::debug!(source, "auto-store fact skipped: {e}");
@@ -1745,7 +1753,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 }
                 // Push user text and images together so attachments survive
                 // compaction, role alternation, save/resume, and provider translation.
-                agent.conversation.push_user_with_images(text.clone(), images);
+                agent
+                    .conversation
+                    .push_user_with_images(text.clone(), images);
 
                 // Read current settings for this turn
                 let (model, max_turns) = {
@@ -1951,11 +1961,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
                 cli.cwd.join(path)
             };
             std::fs::read_to_string(&resolved).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to read prompt file {}: {}",
-                    resolved.display(),
-                    e
-                )
+                anyhow::anyhow!("Failed to read prompt file {}: {}", resolved.display(), e)
             })?
         }
         (None, None) => {
@@ -2056,9 +2062,16 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
                         .unwrap_or_default();
                     tracing::info!("  {status} {text}");
                 }
-                AgentEvent::TurnEnd { turn, actual_input_tokens, actual_output_tokens, .. } => {
+                AgentEvent::TurnEnd {
+                    turn,
+                    actual_input_tokens,
+                    actual_output_tokens,
+                    ..
+                } => {
                     if actual_input_tokens > 0 || actual_output_tokens > 0 {
-                        tracing::info!("── Turn {turn} complete — in:{actual_input_tokens} out:{actual_output_tokens} ──");
+                        tracing::info!(
+                            "── Turn {turn} complete — in:{actual_input_tokens} out:{actual_output_tokens} ──"
+                        );
                     } else {
                         tracing::info!("── Turn {turn} complete ──");
                     }
@@ -2589,7 +2602,10 @@ mod tests {
 
         let (completed, failed, upstream_exhausted, unfinished) =
             summarize_cleave_child_statuses(&children);
-        assert_eq!((completed, failed, upstream_exhausted, unfinished), (1, 1, 1, 1));
+        assert_eq!(
+            (completed, failed, upstream_exhausted, unfinished),
+            (1, 1, 1, 1)
+        );
     }
 
     #[test]
@@ -2615,7 +2631,10 @@ mod tests {
             "noop-docs",
             &cleave::orchestrator::MergeOutcome::NoChanges,
         );
-        assert!(line.contains("upstream exhausted"), "unexpected line: {line}");
+        assert!(
+            line.contains("upstream exhausted"),
+            "unexpected line: {line}"
+        );
         assert!(
             !line.contains("completed (no changes)"),
             "line should not claim completion: {line}"
@@ -2683,7 +2702,10 @@ mod tests {
             .unwrap();
 
         let result = ensure_clean_cleave_repo(dir.path());
-        assert!(result.is_ok(), "clean repo should pass preflight: {result:?}");
+        assert!(
+            result.is_ok(),
+            "clean repo should pass preflight: {result:?}"
+        );
     }
 
     #[test]
@@ -2718,8 +2740,16 @@ mod tests {
 
         std::fs::write(dir.path().join("dirty.txt"), "nope\n").unwrap();
 
-        let err = ensure_clean_cleave_repo(dir.path()).unwrap_err().to_string();
-        assert!(err.contains("cleave preflight failed"), "unexpected error: {err}");
-        assert!(err.contains("dirty.txt"), "missing dirty path in error: {err}");
+        let err = ensure_clean_cleave_repo(dir.path())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("cleave preflight failed"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("dirty.txt"),
+            "missing dirty path in error: {err}"
+        );
     }
 }

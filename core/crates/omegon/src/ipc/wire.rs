@@ -2,10 +2,10 @@
 //!
 //! Framing: [u32 BE length][msgpack bytes]
 
-use anyhow::{bail, Context as _};
+use anyhow::{Context as _, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use omegon_traits::{IpcEnvelope, IPC_MAX_FRAME_BYTES};
+use omegon_traits::{IPC_MAX_FRAME_BYTES, IpcEnvelope};
 
 /// Read one framed message from the stream.
 /// Returns `None` on clean EOF.
@@ -37,10 +37,16 @@ where
     W: AsyncWriteExt + Unpin,
 {
     if data.len() > IPC_MAX_FRAME_BYTES {
-        bail!("frame too large: {} bytes (max {IPC_MAX_FRAME_BYTES})", data.len());
+        bail!(
+            "frame too large: {} bytes (max {IPC_MAX_FRAME_BYTES})",
+            data.len()
+        );
     }
     let len = (data.len() as u32).to_be_bytes();
-    writer.write_all(&len).await.context("writing frame length")?;
+    writer
+        .write_all(&len)
+        .await
+        .context("writing frame length")?;
     writer.write_all(data).await.context("writing frame body")?;
     writer.flush().await.context("flushing frame")?;
     Ok(())
@@ -48,7 +54,8 @@ where
 
 /// Encode an envelope as a framed msgpack message.
 pub fn encode_envelope(env: &IpcEnvelope) -> anyhow::Result<Vec<u8>> {
-    env.encode_msgpack().context("encoding IpcEnvelope as msgpack")
+    env.encode_msgpack()
+        .context("encoding IpcEnvelope as msgpack")
 }
 
 /// Decode a raw frame into an envelope.

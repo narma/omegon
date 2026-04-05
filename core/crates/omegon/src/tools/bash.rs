@@ -22,11 +22,7 @@ pub async fn execute(
     // This is best-effort — programs can prompt from anywhere — but catches
     // the common footguns before they wedge the process.
     static INTERACTIVE_PREFIXES: &[&str] = &[
-        "sudo ", "sudo\t",
-        "ssh ", "ssh\t",
-        "passwd",
-        "su ", "su\t",
-        "kinit",
+        "sudo ", "sudo\t", "ssh ", "ssh\t", "passwd", "su ", "su\t", "kinit",
     ];
     let trimmed = command.trim_start();
     for prefix in INTERACTIVE_PREFIXES {
@@ -54,7 +50,7 @@ pub async fn execute(
     let mut cmd = Command::new("bash");
     cmd.args(["-c", command])
         .current_dir(cwd)
-        .stdin(std::process::Stdio::null())  // /dev/null — commands needing input fail fast
+        .stdin(std::process::Stdio::null()) // /dev/null — commands needing input fail fast
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
@@ -371,12 +367,20 @@ mod tests {
     async fn stdin_is_null_so_read_fails() {
         let cancel = CancellationToken::new();
         // `read` from stdin should get immediate EOF, not hang
-        let result = execute("read -t 1 VAR; echo \"got: $VAR\"", Path::new("."), Some(5), cancel)
-            .await
-            .unwrap();
+        let result = execute(
+            "read -t 1 VAR; echo \"got: $VAR\"",
+            Path::new("."),
+            Some(5),
+            cancel,
+        )
+        .await
+        .unwrap();
         // Should complete quickly (not timeout), read gets EOF
         let text = result.content[0].as_text().unwrap();
-        assert!(text.contains("got:"), "read should get EOF, not hang: {text}");
+        assert!(
+            text.contains("got:"),
+            "read should get EOF, not hang: {text}"
+        );
     }
 
     #[tokio::test]

@@ -13,12 +13,21 @@
 pub const BUNDLED: &[(&str, &str)] = &[
     ("git", include_str!("../../../../skills/git/SKILL.md")),
     ("oci", include_str!("../../../../skills/oci/SKILL.md")),
-    ("openspec", include_str!("../../../../skills/openspec/SKILL.md")),
+    (
+        "openspec",
+        include_str!("../../../../skills/openspec/SKILL.md"),
+    ),
     ("python", include_str!("../../../../skills/python/SKILL.md")),
     ("rust", include_str!("../../../../skills/rust/SKILL.md")),
-    ("security", include_str!("../../../../skills/security/SKILL.md")),
+    (
+        "security",
+        include_str!("../../../../skills/security/SKILL.md"),
+    ),
     ("style", include_str!("../../../../skills/style/SKILL.md")),
-    ("typescript", include_str!("../../../../skills/typescript/SKILL.md")),
+    (
+        "typescript",
+        include_str!("../../../../skills/typescript/SKILL.md"),
+    ),
     ("vault", include_str!("../../../../skills/vault/SKILL.md")),
 ];
 
@@ -36,9 +45,9 @@ pub fn cmd_list() -> anyhow::Result<()> {
         // Extract description from frontmatter if present
         let description = extract_description(content).unwrap_or("(no description)");
 
-        let installed = skills_dir.as_ref().map_or(false, |d| {
-            d.join(name).join("SKILL.md").exists()
-        });
+        let installed = skills_dir
+            .as_ref()
+            .map_or(false, |d| d.join(name).join("SKILL.md").exists());
         let status = if installed { "✓" } else { "○" };
         println!("  {status} {name:<14} {description}");
     }
@@ -76,8 +85,8 @@ pub fn cmd_list() -> anyhow::Result<()> {
 /// Install all bundled skills to ~/.omegon/skills/.
 /// Existing files are overwritten. Project-local skills are never touched.
 pub fn cmd_install() -> anyhow::Result<()> {
-    let skills_dir = skills_dir()
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let skills_dir =
+        skills_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
 
     std::fs::create_dir_all(&skills_dir)?;
 

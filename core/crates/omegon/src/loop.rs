@@ -5,12 +5,12 @@
 //! context wiring, and parallel tool dispatch.
 
 use crate::bridge::{LlmBridge, LlmEvent, StreamOptions};
-use crate::ollama::{OllamaManager, WarmupResult};
 use crate::context::ContextManager;
 use crate::conversation::{AssistantMessage, ConversationState, ToolCall, ToolResultEntry};
+use crate::ollama::{OllamaManager, WarmupResult};
 use crate::upstream_errors::{
-    append_upstream_failure_log, classify_upstream_error_for_provider, is_context_overflow,
-    is_malformed_history, TransientFailureKind, UpstreamFailureLogEntry,
+    TransientFailureKind, UpstreamFailureLogEntry, append_upstream_failure_log,
+    classify_upstream_error_for_provider, is_context_overflow, is_malformed_history,
 };
 use omegon_traits::{AgentEvent, ContentBlock};
 use serde_json::Value;
@@ -106,6 +106,11 @@ pub async fn run(
         // Refresh tool_defs each turn — manage_tools may have enabled/disabled tools
         // mid-session and we must reflect that in the schema sent to the LLM.
         let tool_defs = bus.tool_definitions();
+        let context_window = config
+            .settings
+            .as_ref()
+            .and_then(|s| s.lock().ok().map(|g| g.context_window))
+            .unwrap_or(200_000);
 
         // ─── Turn limit enforcement ─────────────────────────────────
         if config.max_turns > 0 && turn > config.max_turns {
@@ -118,6 +123,8 @@ pub async fn run(
                 turn,
                 model: None,
                 provider: None,
+                estimated_tokens: conversation.estimate_tokens(),
+                context_window,
                 actual_input_tokens: 0,
                 actual_output_tokens: 0,
                 cache_read_tokens: 0,
@@ -157,11 +164,6 @@ pub async fn run(
         // If context is getting large, try LLM-driven compaction.
         // The context_window default is 200k tokens (Anthropic models).
         // Trigger at 75% utilization.
-        let context_window = config
-            .settings
-            .as_ref()
-            .and_then(|s| s.lock().ok().map(|g| g.context_window))
-            .unwrap_or(200_000);
         let forced_compact = config
             .force_compact
             .as_ref()
@@ -342,6 +344,8 @@ pub async fn run(
                     turn,
                     model: None,
                     provider: None,
+                    estimated_tokens: conversation.estimate_tokens(),
+                    context_window,
                     actual_input_tokens: 0,
                     actual_output_tokens: 0,
                     cache_read_tokens: 0,
@@ -379,7 +383,10 @@ pub async fn run(
             // Check if the agent skipped committing.
             // If the conversation has edit/write calls but hasn't been nudged yet,
             // give it one more turn to commit.
-            if !conversation.intent.commit_nudged && has_mutations(conversation) && turn < config.max_turns {
+            if !conversation.intent.commit_nudged
+                && has_mutations(conversation)
+                && turn < config.max_turns
+            {
                 conversation.intent.commit_nudged = true;
                 tracing::info!("Agent stopped without committing — nudging");
                 conversation.push_user(
@@ -391,6 +398,8 @@ pub async fn run(
                     turn,
                     model: Some(config.model.clone()),
                     provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
+                    estimated_tokens: conversation.estimate_tokens(),
+                    context_window,
                     actual_input_tokens: act_in,
                     actual_output_tokens: act_out,
                     cache_read_tokens: act_cr,
@@ -410,6 +419,8 @@ pub async fn run(
                 turn,
                 model: Some(config.model.clone()),
                 provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
+                estimated_tokens: conversation.estimate_tokens(),
+                context_window,
                 actual_input_tokens: act_in,
                 actual_output_tokens: act_out,
                 cache_read_tokens: act_cr,
@@ -488,6 +499,8 @@ pub async fn run(
             turn,
             model: Some(config.model.clone()),
             provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
+            estimated_tokens: conversation.estimate_tokens(),
+            context_window,
             actual_input_tokens: act_in,
             actual_output_tokens: act_out,
             cache_read_tokens: act_cr,
@@ -506,6 +519,21 @@ pub async fn run(
                 }
                 omegon_traits::BusRequest::RequestCompaction => {
                     tracing::info!("Bus: compaction requested by feature");
+                    if let Some((payload, _evict_count)) = conversation.build_compaction_payload() {
+                        match compact_via_llm(bridge, &payload, &base_stream_options).await {
+                            Ok(summary) => {
+                                conversation.apply_compaction(summary);
+                                bus.emit(&omegon_traits::BusEvent::Compacted);
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, "auto-compaction failed");
+                            }
+                        }
+                    } else {
+                        tracing::debug!(
+                            "auto-compaction requested but nothing was eligible to compact"
+                        );
+                    }
                 }
                 omegon_traits::BusRequest::RefreshHarnessStatus => {
                     tracing::debug!("Bus: harness status refresh requested");
@@ -514,7 +542,11 @@ pub async fn run(
                         let _ = events.send(AgentEvent::HarnessStatusChanged { status_json });
                     }
                 }
-                omegon_traits::BusRequest::AutoStoreFact { section, content, source } => {
+                omegon_traits::BusRequest::AutoStoreFact {
+                    section,
+                    content,
+                    source,
+                } => {
                     let args = serde_json::json!({ "content": content, "section": section });
                     if let Err(e) = bus
                         .execute_tool("memory_store", "auto_ingest", args, cancel.clone())
@@ -526,9 +558,28 @@ pub async fn run(
             }
         }
 
+        let estimated_tokens = conversation.estimate_tokens();
+        let _ = events.send(AgentEvent::ContextUpdated {
+            tokens: estimated_tokens as u64,
+            context_window: context_window as u64,
+            context_class: config
+                .settings
+                .as_ref()
+                .and_then(|s| s.lock().ok().map(|g| g.context_class.label().to_string()))
+                .unwrap_or_else(|| {
+                    crate::settings::ContextClass::from_tokens(context_window)
+                        .label()
+                        .to_string()
+                }),
+            thinking_level: config
+                .settings
+                .as_ref()
+                .and_then(|s| s.lock().ok().map(|g| g.thinking.as_str().to_string()))
+                .unwrap_or_else(|| "off".to_string()),
+        });
         let _ = events.send(AgentEvent::TurnEnd {
             turn,
-            estimated_tokens: conversation.estimate_tokens(),
+            estimated_tokens,
             actual_input_tokens: act_in,
             actual_output_tokens: act_out,
             cache_read_tokens: act_cr,
@@ -573,10 +624,19 @@ pub async fn run(
                 tracing::info!("Bus requested compaction (post-loop — ignored)");
             }
             omegon_traits::BusRequest::RefreshHarnessStatus => {}
-            omegon_traits::BusRequest::AutoStoreFact { section, content, source } => {
+            omegon_traits::BusRequest::AutoStoreFact {
+                section,
+                content,
+                source,
+            } => {
                 let args = serde_json::json!({ "content": content, "section": section });
                 if let Err(e) = bus
-                    .execute_tool("memory_store", "post_loop_auto_ingest", args, cancel.clone())
+                    .execute_tool(
+                        "memory_store",
+                        "post_loop_auto_ingest",
+                        args,
+                        cancel.clone(),
+                    )
                     .await
                 {
                     tracing::debug!(source, "post-loop auto-store fact skipped: {e}");
@@ -712,7 +772,12 @@ async fn stream_with_retry(
         };
 
         let err_msg = err.to_string();
-        let provider = config.model.split(':').next().unwrap_or("upstream").to_string();
+        let provider = config
+            .model
+            .split(':')
+            .next()
+            .unwrap_or("upstream")
+            .to_string();
         let upstream_class = classify_upstream_error_for_provider(&provider, &err_msg);
         let transient_kind = upstream_class.transient_kind();
         let is_transient = transient_kind.is_some();
@@ -805,8 +870,8 @@ async fn stream_with_retry(
 
         // Milestone warnings → persistent (pushed to conversation).
         // These escalate so the operator notices accumulated failures.
-        let is_milestone = matches!(attempt, 10 | 25 | 50 | 100)
-            || (attempt > 100 && attempt % 100 == 0);
+        let is_milestone =
+            matches!(attempt, 10 | 25 | 50 | 100) || (attempt > 100 && attempt % 100 == 0);
         if is_milestone {
             let elapsed = started.elapsed();
             let kind_label = transient_kind
@@ -837,7 +902,9 @@ async fn stream_with_retry(
 /// Returns true if the error was produced by `stream_with_retry` hitting the soft
 /// exhaustion threshold (max_retries consecutive transient failures).
 pub(crate) fn is_upstream_exhausted(err: &anyhow::Error) -> bool {
-    err.to_string().to_lowercase().contains("upstream exhausted:")
+    err.to_string()
+        .to_lowercase()
+        .contains("upstream exhausted:")
 }
 
 /// Consume LlmEvents from the bridge, build an AssistantMessage.
@@ -873,7 +940,13 @@ async fn consume_llm_stream(
     let initial_idle_timeout = std::time::Duration::from_secs(300);
     let content_idle_timeout = std::time::Duration::from_secs(90);
     let received_content = std::cell::Cell::new(false);
-    let idle_timeout = || if received_content.get() { content_idle_timeout } else { initial_idle_timeout };
+    let idle_timeout = || {
+        if received_content.get() {
+            content_idle_timeout
+        } else {
+            initial_idle_timeout
+        }
+    };
     while let Some(event) = match tokio::time::timeout(idle_timeout(), rx.recv()).await {
         Ok(event) => event,
         Err(_) => {
@@ -908,9 +981,7 @@ async fn consume_llm_stream(
                     if repetition_window.len() >= REPETITION_WINDOW_SIZE {
                         // Count how many of the last N chunks match the most recent
                         let latest = repetition_window.last().unwrap();
-                        let matches = repetition_window.iter()
-                            .filter(|c| c == &latest)
-                            .count();
+                        let matches = repetition_window.iter().filter(|c| c == &latest).count();
                         if matches >= REPETITION_ABORT_THRESHOLD {
                             tracing::warn!(
                                 repeated_phrase = %latest,
@@ -921,7 +992,9 @@ async fn consume_llm_stream(
                             let _ = events.send(AgentEvent::MessageAbort);
                             anyhow::bail!(
                                 "Model output degenerate: phrase {:?} repeated {}/{} recent chunks — aborting to prevent runaway",
-                                latest, matches, REPETITION_WINDOW_SIZE
+                                latest,
+                                matches,
+                                REPETITION_WINDOW_SIZE
                             );
                         }
                     }
@@ -1616,7 +1689,10 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(summary.contains("2 children"), "expected child count: {summary}");
+        assert!(
+            summary.contains("2 children"),
+            "expected child count: {summary}"
+        );
         assert!(summary.contains("api-layer"), "expected labels: {summary}");
         assert!(summary.contains("db-layer"), "expected labels: {summary}");
     }
@@ -1841,7 +1917,6 @@ mod tests {
         assert_eq!(config.retry_delay_ms, 750);
     }
 
-
     #[test]
     fn retry_backoff_is_capped() {
         let cap_ms: u64 = 15_000;
@@ -1868,7 +1943,10 @@ mod tests {
         // Under threshold
         for elapsed_secs in [30u64, 120, 300, 599] {
             let stall_exhausted = config.max_retries == 0
-                && matches!(transient_kind, Some(crate::upstream_errors::TransientFailureKind::StalledStream))
+                && matches!(
+                    transient_kind,
+                    Some(crate::upstream_errors::TransientFailureKind::StalledStream)
+                )
                 && elapsed_secs >= 600;
             assert!(!stall_exhausted, "{elapsed_secs}s should NOT exhaust");
         }
@@ -1876,7 +1954,10 @@ mod tests {
         // At threshold
         let elapsed_secs = 600u64;
         let stall_exhausted = config.max_retries == 0
-            && matches!(transient_kind, Some(crate::upstream_errors::TransientFailureKind::StalledStream))
+            && matches!(
+                transient_kind,
+                Some(crate::upstream_errors::TransientFailureKind::StalledStream)
+            )
             && elapsed_secs >= 600;
         assert!(stall_exhausted, "600s should trigger stall exhaustion");
     }
@@ -1891,9 +1972,15 @@ mod tests {
 
         let elapsed_secs = 700u64;
         let stall_exhausted = config.max_retries == 0
-            && matches!(transient_kind, Some(crate::upstream_errors::TransientFailureKind::StalledStream))
+            && matches!(
+                transient_kind,
+                Some(crate::upstream_errors::TransientFailureKind::StalledStream)
+            )
             && elapsed_secs >= 600;
-        assert!(!stall_exhausted, "rate-limit failures should not use stall path");
+        assert!(
+            !stall_exhausted,
+            "rate-limit failures should not use stall path"
+        );
     }
 
     #[test]
@@ -1910,9 +1997,15 @@ mod tests {
 
         let transient_kind = Some(crate::upstream_errors::TransientFailureKind::StalledStream);
         let stall_exhausted = config.max_retries == 0
-            && matches!(transient_kind, Some(crate::upstream_errors::TransientFailureKind::StalledStream))
+            && matches!(
+                transient_kind,
+                Some(crate::upstream_errors::TransientFailureKind::StalledStream)
+            )
             && attempt >= 4;
-        assert!(!stall_exhausted, "stall_exhausted should not fire in cleave mode (max_retries > 0)");
+        assert!(
+            !stall_exhausted,
+            "stall_exhausted should not fire in cleave mode (max_retries > 0)"
+        );
     }
 
     // ── Mutation detection ─────────────────────────────────────────────

@@ -324,13 +324,23 @@ fn apply_progress_event(shared: &Arc<Mutex<CleaveProgress>>, event: &ProgressEve
                 progress.total_children = progress.children.len();
             }
         }
-        ProgressEvent::ChildActivity { child, turn, tool, .. } => {
+        ProgressEvent::ChildActivity {
+            child, turn, tool, ..
+        } => {
             if let Some(c) = progress.children.iter_mut().find(|c| c.label == *child) {
-                if let Some(t) = turn { c.last_turn = Some(*t); }
-                if let Some(t) = tool { c.last_tool = Some(t.clone()); }
+                if let Some(t) = turn {
+                    c.last_turn = Some(*t);
+                }
+                if let Some(t) = tool {
+                    c.last_tool = Some(t.clone());
+                }
             }
         }
-        ProgressEvent::ChildTokens { child, input_tokens, output_tokens } => {
+        ProgressEvent::ChildTokens {
+            child,
+            input_tokens,
+            output_tokens,
+        } => {
             progress.total_tokens_in += input_tokens;
             progress.total_tokens_out += output_tokens;
             if let Some(c) = progress.children.iter_mut().find(|c| c.label == *child) {
@@ -599,7 +609,10 @@ impl CleaveFeature {
                 .as_deref()
                 .map(|m| format!(" `{m}`"))
                 .unwrap_or_default();
-            report.push_str(&format!("  {} **{}**{}{}\n", icon, child.label, dur, model_note));
+            report.push_str(&format!(
+                "  {} **{}**{}{}\n",
+                icon, child.label, dur, model_note
+            ));
             if child.status == ChildStatus::UpstreamExhausted {
                 report.push_str("    ⚡ Provider upstream exhausted — check inventory for available fallbacks.\n");
             }

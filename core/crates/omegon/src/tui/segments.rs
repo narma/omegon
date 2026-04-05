@@ -422,7 +422,9 @@ impl Segment {
         use SegmentContent::*;
         let presentation = self.presentation();
         match &self.content {
-            UserPrompt { text } => render_user_prompt(text, &presentation, &self.meta, area, buf, t),
+            UserPrompt { text } => {
+                render_user_prompt(text, &presentation, &self.meta, area, buf, t)
+            }
             AssistantText {
                 text,
                 thinking,
@@ -787,7 +789,11 @@ fn render_assistant_text(
     // Reasoning block — stream full reasoning live, collapse after completion.
     if !thinking.is_empty() {
         let think_lines: Vec<&str> = thinking.lines().collect();
-        let show = if complete { think_lines.len().min(6) } else { think_lines.len() };
+        let show = if complete {
+            think_lines.len().min(6)
+        } else {
+            think_lines.len()
+        };
         lines.push(Line::from(vec![
             Span::styled("◌ ", Style::default().fg(t.border()).bg(bg)),
             Span::styled(
@@ -909,7 +915,11 @@ fn render_tool_card(
             files.dedup();
             return match files.as_slice() {
                 [] => Some(format!("{} edits", edits.len())),
-                [only] => Some(format!("{only} · {} edit{}", edits.len(), if edits.len() == 1 { "" } else { "s" })),
+                [only] => Some(format!(
+                    "{only} · {} edit{}",
+                    edits.len(),
+                    if edits.len() == 1 { "" } else { "s" }
+                )),
                 [first, second, ..] => Some(format!("{first}, {second} · {} edits", edits.len())),
             };
         }
@@ -956,8 +966,9 @@ fn render_tool_card(
                     Some(format!("{path} · {old_len}→{new_len} lines"))
                 })
                 .or_else(|| Some(crate::util::truncate(args, 80))),
-            "change" => summarize_change_args(args)
-                .or_else(|| Some(crate::util::truncate(args, 80))),
+            "change" => {
+                summarize_change_args(args).or_else(|| Some(crate::util::truncate(args, 80)))
+            }
             "read" | "write" | "view" | "bash" => {
                 Some(args.lines().next().unwrap_or(args).to_string())
             }
@@ -1624,7 +1635,10 @@ mod tests {
             "should render as a bordered card: {text}"
         );
         let op_count = text.match_indices("OP").count();
-        assert!(op_count <= 1, "operator card should not duplicate the OP sigil in both title and body: {text}");
+        assert!(
+            op_count <= 1,
+            "operator card should not duplicate the OP sigil in both title and body: {text}"
+        );
     }
 
     #[test]
@@ -1762,10 +1776,22 @@ mod tests {
         let (area, mut buf) = make_buf(90, 8);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("src/main.rs"), "change cards should show a real file path: {text}");
-        assert!(text.contains("2 edits"), "change cards should summarize edit count: {text}");
-        assert!(!text.contains("oldText"), "change cards should not leak raw JSON keys: {text}");
-        assert!(!text.contains("\"edits\""), "change cards should not render the raw JSON payload: {text}");
+        assert!(
+            text.contains("src/main.rs"),
+            "change cards should show a real file path: {text}"
+        );
+        assert!(
+            text.contains("2 edits"),
+            "change cards should summarize edit count: {text}"
+        );
+        assert!(
+            !text.contains("oldText"),
+            "change cards should not leak raw JSON keys: {text}"
+        );
+        assert!(
+            !text.contains("\"edits\""),
+            "change cards should not render the raw JSON payload: {text}"
+        );
     }
 
     #[test]
@@ -1808,9 +1834,13 @@ mod tests {
         let (area, mut buf) = make_buf(80, 8);
         seg.render(area, &mut buf, &Alpharius);
 
-        let row = find_row_containing(&buf, area, "plain text with").expect("assistant row in buffer");
+        let row =
+            find_row_containing(&buf, area, "plain text with").expect("assistant row in buffer");
         let trailing_content_cell = &buf[(area.right() - 3, row)];
-        assert_eq!(trailing_content_cell.style().bg, Some(Alpharius.surface_bg()));
+        assert_eq!(
+            trailing_content_cell.style().bg,
+            Some(Alpharius.surface_bg())
+        );
     }
 
     #[test]
@@ -1835,9 +1865,18 @@ mod tests {
         let (area, mut buf) = make_buf(100, 16);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("│ File │ Lines │ Type │ Score │ Preview │"), "header row should render as a structured table: {text}");
-        assert!(text.contains("├") || text.contains("┼"), "separator row should render box drawing characters: {text}");
-        assert!(text.contains("│ src/app.rs │ 10-20 │ code │ 45.38 │ fn render() │"), "body row should render as a structured table: {text}");
+        assert!(
+            text.contains("│ File │ Lines │ Type │ Score │ Preview │"),
+            "header row should render as a structured table: {text}"
+        );
+        assert!(
+            text.contains("├") || text.contains("┼"),
+            "separator row should render box drawing characters: {text}"
+        );
+        assert!(
+            text.contains("│ src/app.rs │ 10-20 │ code │ 45.38 │ fn render() │"),
+            "body row should render as a structured table: {text}"
+        );
     }
 
     #[test]
@@ -1853,9 +1892,18 @@ mod tests {
         let (area, mut buf) = make_buf(60, 16);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("omegon"), "assistant header should name omegon as the source: {text}");
-        assert!(text.contains("reasoning"), "reasoning block should be labeled explicitly: {text}");
-        assert!(text.contains("l8"), "live reasoning should render the tail: {text}");
+        assert!(
+            text.contains("omegon"),
+            "assistant header should name omegon as the source: {text}"
+        );
+        assert!(
+            text.contains("reasoning"),
+            "reasoning block should be labeled explicitly: {text}"
+        );
+        assert!(
+            text.contains("l8"),
+            "live reasoning should render the tail: {text}"
+        );
         assert!(
             !text.contains("⋯ 2 more"),
             "incomplete assistant reasoning should not be collapsed: {text}"
@@ -1875,11 +1923,26 @@ mod tests {
         let (area, mut buf) = make_buf(60, 16);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("omegon"), "assistant header should remain stable after completion: {text}");
-        assert!(text.contains("reasoning"), "reasoning block should stay labeled after completion: {text}");
-        assert!(text.contains("answer"), "answer block should be labeled explicitly: {text}");
-        assert!(text.contains("l6"), "collapsed reasoning should keep the preview: {text}");
-        assert!(text.contains("⋯ 2 more"), "collapsed reasoning should show a summary hint: {text}");
+        assert!(
+            text.contains("omegon"),
+            "assistant header should remain stable after completion: {text}"
+        );
+        assert!(
+            text.contains("reasoning"),
+            "reasoning block should stay labeled after completion: {text}"
+        );
+        assert!(
+            text.contains("answer"),
+            "answer block should be labeled explicitly: {text}"
+        );
+        assert!(
+            text.contains("l6"),
+            "collapsed reasoning should keep the preview: {text}"
+        );
+        assert!(
+            text.contains("⋯ 2 more"),
+            "collapsed reasoning should show a summary hint: {text}"
+        );
     }
 
     #[test]
@@ -1890,7 +1953,10 @@ mod tests {
         let text = buf_text(&buf, area);
         assert!(text.contains("alpha"), "first line should render: {text}");
         assert!(text.contains("beta"), "second line should render: {text}");
-        assert!(seg.height(30, &Alpharius) >= 5, "multiline prompt should reserve height for blank lines");
+        assert!(
+            seg.height(30, &Alpharius) >= 5,
+            "multiline prompt should reserve height for blank lines"
+        );
     }
 
     #[test]
@@ -1906,9 +1972,18 @@ mod tests {
         let (area, mut buf) = make_buf(40, 10);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("│ Name │ Value │"), "header row should render as a table: {text}");
-        assert!(text.contains("├") || text.contains("┼"), "separator row should render box drawing characters: {text}");
-        assert!(text.contains("│ foo │ bar │"), "body row should render as a table: {text}");
+        assert!(
+            text.contains("│ Name │ Value │"),
+            "header row should render as a table: {text}"
+        );
+        assert!(
+            text.contains("├") || text.contains("┼"),
+            "separator row should render box drawing characters: {text}"
+        );
+        assert!(
+            text.contains("│ foo │ bar │"),
+            "body row should render as a table: {text}"
+        );
     }
 
     #[test]
@@ -1924,10 +1999,22 @@ mod tests {
         let (area, mut buf) = make_buf(70, 14);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("Here are the strongest matches:"), "leading prose should remain visible: {text}");
-        assert!(text.contains("│ File │ Score │"), "table header should still render structurally inside surrounding prose: {text}");
-        assert!(text.contains("│ src/app.rs │ 45.38 │"), "table body should still render structurally inside surrounding prose: {text}");
-        assert!(text.contains("Use "), "trailing prose should remain visible: {text}");
+        assert!(
+            text.contains("Here are the strongest matches:"),
+            "leading prose should remain visible: {text}"
+        );
+        assert!(
+            text.contains("│ File │ Score │"),
+            "table header should still render structurally inside surrounding prose: {text}"
+        );
+        assert!(
+            text.contains("│ src/app.rs │ 45.38 │"),
+            "table body should still render structurally inside surrounding prose: {text}"
+        );
+        assert!(
+            text.contains("Use "),
+            "trailing prose should remain visible: {text}"
+        );
     }
 
     #[test]
@@ -1935,7 +2022,8 @@ mod tests {
         let seg = Segment {
             meta: SegmentMeta::default(),
             content: SegmentContent::AssistantText {
-                text: "| Name | Value | Notes |\n| ---- | :----: | ----- |\n| foo | bar | baz |".into(),
+                text: "| Name | Value | Notes |\n| ---- | :----: | ----- |\n| foo | bar | baz |"
+                    .into(),
                 thinking: String::new(),
                 complete: true,
             },
@@ -1943,9 +2031,18 @@ mod tests {
         let (area, mut buf) = make_buf(60, 12);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("│ Name │ Value │ Notes │"), "header row should render with aligned separator syntax: {text}");
-        assert!(text.contains("├") || text.contains("┼"), "aligned separator row should still render box drawing characters: {text}");
-        assert!(text.contains("│ foo │ bar │ baz │"), "body row should render with aligned separator syntax: {text}");
+        assert!(
+            text.contains("│ Name │ Value │ Notes │"),
+            "header row should render with aligned separator syntax: {text}"
+        );
+        assert!(
+            text.contains("├") || text.contains("┼"),
+            "aligned separator row should still render box drawing characters: {text}"
+        );
+        assert!(
+            text.contains("│ foo │ bar │ baz │"),
+            "body row should render with aligned separator syntax: {text}"
+        );
     }
 
     #[test]
@@ -1973,7 +2070,10 @@ mod tests {
             text.contains("list"),
             "should have display name for ls: {text}"
         );
-        assert!(text.contains("▸"), "completed tools should use the same teal indicator family as the tool instrument panel: {text}");
+        assert!(
+            text.contains("▸"),
+            "completed tools should use the same teal indicator family as the tool instrument panel: {text}"
+        );
     }
 
     #[test]
@@ -2014,7 +2114,10 @@ mod tests {
         let row = (1..area.width.saturating_sub(1))
             .map(|x| buf[(x, 1)].symbol())
             .collect::<String>();
-        assert!(row.contains("src/tui/mod.rs"), "short path should render in filename row: {row}");
+        assert!(
+            row.contains("src/tui/mod.rs"),
+            "short path should render in filename row: {row}"
+        );
         assert!(
             !row.contains("really_long_filename"),
             "filename row should not keep stale suffix text from prior render: {row}"
@@ -2032,7 +2135,10 @@ mod tests {
                 id: "1".into(),
                 name: "read".into(),
                 args_summary: None,
-                detail_args: Some("/very/long/path/to/some_extremely_verbose_filename_that_used_to_bleed.rs".into()),
+                detail_args: Some(
+                    "/very/long/path/to/some_extremely_verbose_filename_that_used_to_bleed.rs"
+                        .into(),
+                ),
                 result_summary: None,
                 detail_result: Some("fn main() {}".into()),
                 is_error: false,
@@ -2045,10 +2151,22 @@ mod tests {
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
-        assert!(top_row.contains("▸"), "top row should retain completed tool icon: {top_row}");
-        assert!(top_row.contains("read") || top_row.contains("rea…"), "top row should retain truncated tool label: {top_row}");
-        assert!(!top_row.contains("◇ read"), "conversation tool titles should not duplicate status and tool icons: {top_row}");
-        assert!(!top_row.contains("filename_that_used_to_bleed"), "long header text should be truncated before colliding with the rest of the title row: {top_row}");
+        assert!(
+            top_row.contains("▸"),
+            "top row should retain completed tool icon: {top_row}"
+        );
+        assert!(
+            top_row.contains("read") || top_row.contains("rea…"),
+            "top row should retain truncated tool label: {top_row}"
+        );
+        assert!(
+            !top_row.contains("◇ read"),
+            "conversation tool titles should not duplicate status and tool icons: {top_row}"
+        );
+        assert!(
+            !top_row.contains("filename_that_used_to_bleed"),
+            "long header text should be truncated before colliding with the rest of the title row: {top_row}"
+        );
     }
 
     #[test]
@@ -2059,7 +2177,9 @@ mod tests {
                 id: "1".into(),
                 name: "read".into(),
                 args_summary: None,
-                detail_args: Some("/Users/cwilson/workspace/black-meridian/omegon/core/Cargo.toml".into()),
+                detail_args: Some(
+                    "/Users/cwilson/workspace/black-meridian/omegon/core/Cargo.toml".into(),
+                ),
                 result_summary: None,
                 detail_result: Some("[package]".into()),
                 is_error: false,
@@ -2089,7 +2209,10 @@ mod tests {
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
-        assert!(top_row.contains("read"), "top row should contain the current tool label: {top_row}");
+        assert!(
+            top_row.contains("read"),
+            "top row should contain the current tool label: {top_row}"
+        );
         assert!(
             top_row.contains("─"),
             "top border should continue after the tool title instead of stopping early: {top_row}"
@@ -2120,8 +2243,14 @@ mod tests {
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
         assert!(text.contains("✗"), "should have error icon: {text}");
-        assert!(text.contains("write"), "error cards should use the full tool name in conversation view: {text}");
-        assert!(!text.contains("◆ write"), "conversation view should not duplicate the status icon with a second tool icon: {text}");
+        assert!(
+            text.contains("write"),
+            "error cards should use the full tool name in conversation view: {text}"
+        );
+        assert!(
+            !text.contains("◆ write"),
+            "conversation view should not duplicate the status icon with a second tool icon: {text}"
+        );
     }
 
     #[test]
@@ -2143,9 +2272,18 @@ mod tests {
         let (area, mut buf) = make_buf(50, 8);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
-        assert!(text.contains("▶"), "running tools should use the amber running indicator from the instrument panel: {text}");
-        assert!(text.contains("read"), "running tools should use a readable conversation title: {text}");
-        assert!(!text.contains("◇ read"), "conversation view should not stack a second tool icon after the running indicator: {text}");
+        assert!(
+            text.contains("▶"),
+            "running tools should use the amber running indicator from the instrument panel: {text}"
+        );
+        assert!(
+            text.contains("read"),
+            "running tools should use a readable conversation title: {text}"
+        );
+        assert!(
+            !text.contains("◇ read"),
+            "conversation view should not stack a second tool icon after the running indicator: {text}"
+        );
     }
 
     #[test]

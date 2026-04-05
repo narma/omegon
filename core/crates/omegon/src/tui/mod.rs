@@ -26,8 +26,8 @@ pub mod spinner;
 pub mod splash;
 pub mod theme;
 pub mod tutorial;
-pub mod widgets;
 pub mod widget_renderer;
+pub mod widgets;
 
 #[cfg(test)]
 mod snapshot_tests;
@@ -194,7 +194,8 @@ pub struct App {
     update_tx: Option<crate::update::UpdateSender>,
     /// Headless login prompt — when set, the next Enter submits to the login
     /// flow instead of the agent. Populated by the LoginPrompt callback.
-    login_prompt_tx: std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>,
+    login_prompt_tx:
+        std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>,
     /// Whether we enabled the Kitty keyboard protocol (must pop on cleanup).
     keyboard_enhancement: bool,
     /// Whether crossterm mouse capture is enabled.
@@ -240,9 +241,9 @@ enum SlashResult {
 
 /// Compute dynamic editor height from the editor's wrapped visual rows.
 fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::Result<String> {
-    let target = detect_auspex_target().ok_or_else(|| anyhow::anyhow!(
-        "Auspex not detected. Set AUSPEX_BIN or install Auspex first."
-    ))?;
+    let target = detect_auspex_target().ok_or_else(|| {
+        anyhow::anyhow!("Auspex not detected. Set AUSPEX_BIN or install Auspex first.")
+    })?;
 
     let mut command = if let Some(explicit) = target.strip_prefix("AUSPEX_BIN=") {
         std::process::Command::new(explicit)
@@ -271,9 +272,15 @@ fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::R
 
     #[cfg(target_os = "macos")]
     if target.ends_with(".app") {
-        command.arg("--env").arg(format!("AUSPEX_OMEGON_STARTUP_URL={}", startup.startup_url));
-        command.arg("--env").arg(format!("AUSPEX_OMEGON_WS_URL={}", startup.ws_url));
-        command.arg("--env").arg(format!("AUSPEX_OMEGON_WS_TOKEN={}", startup.token));
+        command
+            .arg("--env")
+            .arg(format!("AUSPEX_OMEGON_STARTUP_URL={}", startup.startup_url));
+        command
+            .arg("--env")
+            .arg(format!("AUSPEX_OMEGON_WS_URL={}", startup.ws_url));
+        command
+            .arg("--env")
+            .arg(format!("AUSPEX_OMEGON_WS_TOKEN={}", startup.token));
     }
 
     command.spawn()?;
@@ -345,11 +352,8 @@ impl App {
 
     fn auspex_status_text(&self) -> String {
         let cwd = self.cwd().to_path_buf();
-        let ipc_cfg = crate::ipc::IpcServerConfig::from_cwd(
-            &cwd,
-            env!("CARGO_PKG_VERSION"),
-            "status-probe",
-        );
+        let ipc_cfg =
+            crate::ipc::IpcServerConfig::from_cwd(&cwd, env!("CARGO_PKG_VERSION"), "status-probe");
         let socket_exists = ipc_cfg.socket_path.exists();
         let dash_status = self
             .web_server_addr
@@ -508,11 +512,11 @@ impl App {
 
     fn open_model_selector(&mut self) {
         let current = self.settings().model.clone();
-        
+
         // Build selector options from the unified model catalog
         let catalog = self::model_catalog::ModelCatalog::discover();
         let mut options: Vec<selector::SelectOption> = Vec::new();
-        
+
         // Group models by provider for visual organization
         for (provider_name, models) in &catalog.providers {
             for model in models {
@@ -523,11 +527,7 @@ impl App {
                 } else {
                     format!(", {}", model.capability_str())
                 };
-                let label = format!(
-                    "{}: {}",
-                    provider_name,
-                    model.name
-                );
+                let label = format!("{}: {}", provider_name, model.name);
                 let description = format!(
                     "{} — {} • {}{}",
                     model.description,
@@ -535,7 +535,7 @@ impl App {
                     model.cost_tier.as_str(),
                     caps
                 );
-                
+
                 options.push(selector::SelectOption {
                     value: model.id.clone(),
                     label,
@@ -544,17 +544,16 @@ impl App {
                 });
             }
         }
-        
+
         if options.is_empty() {
-            self.conversation.push_system(
-                "Model catalog is empty. Check /model list for available options.",
-            );
+            self.conversation
+                .push_system("Model catalog is empty. Check /model list for available options.");
             return;
         }
-        
+
         // Sort by provider, then by name for consistency
         options.sort_by(|a, b| a.label.cmp(&b.label));
-        
+
         self.selector = Some(selector::Selector::new("Select Model", options));
         self.selector_kind = Some(SelectorKind::Model);
     }
@@ -1166,7 +1165,8 @@ impl App {
                      Omegon will perform real work using your Anthropic subscription.\n\n\
                      Note: Anthropic's ToS permits interactive TUI use only.\n\
                      Background tasks, /cleave, and --prompt require ANTHROPIC_API_KEY.\n\n\
-                     Tab to advance, Esc to dismiss.".into()
+                     Tab to advance, Esc to dismiss."
+                        .into(),
                 )
             }
             _ => {
@@ -1174,10 +1174,12 @@ impl App {
                 if let Some(ref overlay) = self.tutorial_overlay {
                     if overlay.active {
                         let mode_note = match overlay.mode {
-                            tutorial::TutorialMode::ConsentRequired =>
-                                "\n\nℹ Anthropic subscription detected. Type /tutorial consent\nto enable interactive agent steps (uses subscription quota).",
-                            tutorial::TutorialMode::OrientationOnly =>
-                                "\n\nℹ No Victory-tier cloud model found. Add an API key or\n/login openai-codex for the full interactive tutorial.",
+                            tutorial::TutorialMode::ConsentRequired => {
+                                "\n\nℹ Anthropic subscription detected. Type /tutorial consent\nto enable interactive agent steps (uses subscription quota)."
+                            }
+                            tutorial::TutorialMode::OrientationOnly => {
+                                "\n\nℹ No Victory-tier cloud model found. Add an API key or\n/login openai-codex for the full interactive tutorial."
+                            }
                             tutorial::TutorialMode::Interactive => "",
                         };
                         return SlashResult::Display(format!(
@@ -1192,20 +1194,25 @@ impl App {
                 let has_design = self.dashboard.status_counts.total > 0;
                 let mode = tutorial::tutorial_gate();
                 let mode_msg = match mode {
-                    tutorial::TutorialMode::Interactive =>
-                        "Tutorial started. Tab to advance, Esc to dismiss.".to_string(),
-                    tutorial::TutorialMode::ConsentRequired =>
+                    tutorial::TutorialMode::Interactive => {
+                        "Tutorial started. Tab to advance, Esc to dismiss.".to_string()
+                    }
+                    tutorial::TutorialMode::ConsentRequired => {
                         "Tutorial started (orientation mode).\n\n\
                          Anthropic subscription detected. Omegon's ToS restricts automated use\n\
                          of subscriptions without your explicit consent.\n\n\
                          Type /tutorial consent to enable interactive agent steps,\n\
                          or add an API key / /login openai-codex for automatic access.\n\n\
-                         Tab to advance orientation steps, Esc to dismiss.".to_string(),
-                    tutorial::TutorialMode::OrientationOnly =>
+                         Tab to advance orientation steps, Esc to dismiss."
+                            .to_string()
+                    }
+                    tutorial::TutorialMode::OrientationOnly => {
                         "Tutorial started (orientation mode).\n\n\
                          No Victory-tier cloud model found. Add an API key or\n\
                          /login openai-codex for the full interactive tutorial.\n\n\
-                         Tab to advance, Esc to dismiss.".to_string(),
+                         Tab to advance, Esc to dismiss."
+                            .to_string()
+                    }
                 };
                 self.tutorial_overlay = Some(tutorial::Tutorial::with_mode(has_design, mode));
                 SlashResult::Display(mode_msg)
@@ -1491,9 +1498,15 @@ impl App {
         let preview = if attachments.is_empty() {
             text.clone()
         } else {
-            format!("{} (+{} attachment{})", text, attachments.len(), if attachments.len() == 1 { "" } else { "s" })
+            format!(
+                "{} (+{} attachment{})",
+                text,
+                attachments.len(),
+                if attachments.len() == 1 { "" } else { "s" }
+            )
         };
-        self.conversation.push_system(&format!("⏳ Queued: {preview}"));
+        self.conversation
+            .push_system(&format!("⏳ Queued: {preview}"));
         self.queued_prompt = Some((text, attachments));
     }
 
@@ -1670,7 +1683,7 @@ impl App {
         // Render tab bar + conversation/widget content
         let t = &self.theme;
         let has_multiple_tabs = self.conversation.tabs.tabs.len() > 1;
-        
+
         let content_area = if has_multiple_tabs {
             // Split conversation area into tab bar + content
             let conv_chunks = Layout::default()
@@ -1844,8 +1857,12 @@ impl App {
                     };
                     self.instrument_panel.set_cleave_progress(snapshot);
                     // Roll new child tokens into session totals (delta only).
-                    let new_in = cp.total_tokens_in.saturating_sub(self.cleave_tokens_accounted_in);
-                    let new_out = cp.total_tokens_out.saturating_sub(self.cleave_tokens_accounted_out);
+                    let new_in = cp
+                        .total_tokens_in
+                        .saturating_sub(self.cleave_tokens_accounted_in);
+                    let new_out = cp
+                        .total_tokens_out
+                        .saturating_sub(self.cleave_tokens_accounted_out);
                     if new_in > 0 || new_out > 0 {
                         self.footer_data.session_input_tokens += new_in;
                         self.footer_data.session_output_tokens += new_out;
@@ -2129,7 +2146,11 @@ impl App {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(ratatui::widgets::BorderType::Rounded)
-            .border_style(Style::default().fg(self.theme.accent_muted()).bg(self.theme.surface_bg()))
+            .border_style(
+                Style::default()
+                    .fg(self.theme.accent_muted())
+                    .bg(self.theme.surface_bg()),
+            )
             .title(Span::styled(
                 " focus — selected segment ",
                 Style::default()
@@ -2140,7 +2161,9 @@ impl App {
             .title_bottom(
                 Line::from(Span::styled(
                     " drag to select · Ctrl+Y copy · Esc or /focus to return ",
-                    Style::default().fg(self.theme.dim()).bg(self.theme.surface_bg()),
+                    Style::default()
+                        .fg(self.theme.dim())
+                        .bg(self.theme.surface_bg()),
                 ))
                 .centered(),
             )
@@ -2150,8 +2173,11 @@ impl App {
         frame.render_widget(block, area);
 
         let Some(idx) = self.conversation.selected_or_focused_segment() else {
-            let empty = Paragraph::new("No segment selected.")
-                .style(Style::default().fg(self.theme.dim()).bg(self.theme.surface_bg()));
+            let empty = Paragraph::new("No segment selected.").style(
+                Style::default()
+                    .fg(self.theme.dim())
+                    .bg(self.theme.surface_bg()),
+            );
             frame.render_widget(empty, inner);
             return;
         };
@@ -2165,7 +2191,7 @@ impl App {
     /// Render an ephemeral modal from an extension widget.
     fn render_modal(&self, frame: &mut Frame, widget_id: &str, data: &serde_json::Value) {
         let area = frame.area();
-        
+
         // Center modal in viewport (40% of width, 50% of height)
         let modal_width = (area.width as f32 * 0.4) as u16;
         let modal_height = (area.height as f32 * 0.5) as u16;
@@ -2184,8 +2210,7 @@ impl App {
 
         // Modal content
         let title = widget_id.to_string();
-        let json_str = serde_json::to_string_pretty(data)
-            .unwrap_or_else(|_| "{}".to_string());
+        let json_str = serde_json::to_string_pretty(data).unwrap_or_else(|_| "{}".to_string());
 
         let block = ratatui::widgets::Block::default()
             .title(format!(" {} ", title))
@@ -2203,7 +2228,7 @@ impl App {
     /// Shows numbered buttons for each action.
     fn render_action_prompt(&self, frame: &mut Frame, widget_id: &str, actions: &[String]) {
         let area = frame.area();
-        
+
         // Center prompt in viewport (50% of width, 30% of height)
         let prompt_width = (area.width as f32 * 0.5) as u16;
         let prompt_height = (area.height as f32 * 0.3) as u16;
@@ -2224,14 +2249,12 @@ impl App {
         let mut lines = vec![ratatui::text::Line::from("Choose an action:")];
         lines.push(ratatui::text::Line::from(""));
         for (idx, action) in actions.iter().enumerate().take(9) {
-            lines.push(ratatui::text::Line::from(
-                ratatui::text::Span::styled(
-                    format!("  {} {} ", idx + 1, action),
-                    ratatui::style::Style::default()
-                        .fg(ratatui::style::Color::Yellow)
-                        .bold(),
-                ),
-            ));
+            lines.push(ratatui::text::Line::from(ratatui::text::Span::styled(
+                format!("  {} {} ", idx + 1, action),
+                ratatui::style::Style::default()
+                    .fg(ratatui::style::Color::Yellow)
+                    .bold(),
+            )));
         }
 
         let block = ratatui::widgets::Block::default()
@@ -2286,7 +2309,10 @@ impl App {
             let commands: &[(&str, &[&str])] = if std::env::var("WAYLAND_DISPLAY").is_ok() {
                 &[("wl-copy", &[])]
             } else {
-                &[("xclip", &["-selection", "clipboard"]), ("xsel", &["--clipboard", "--input"])]
+                &[
+                    ("xclip", &["-selection", "clipboard"]),
+                    ("xsel", &["--clipboard", "--input"]),
+                ]
             };
             for (cmd, args) in commands {
                 let mut child = match std::process::Command::new(cmd)
@@ -2322,7 +2348,10 @@ impl App {
 
     fn copy_selected_conversation_segment_with_mode(&mut self, mode: SegmentExportMode) {
         let Some(text) = self.conversation.selected_segment_text_with_mode(mode) else {
-            self.show_toast("Nothing selected to copy", ratatui_toaster::ToastType::Warning);
+            self.show_toast(
+                "Nothing selected to copy",
+                ratatui_toaster::ToastType::Warning,
+            );
             return;
         };
         if self.copy_text_to_clipboard(&text) {
@@ -2365,7 +2394,11 @@ impl App {
     const COMMANDS: &'static [(&'static str, &'static str, &'static [&'static str])] = &[
         ("help", "show available commands", &[]),
         ("copy", "copy selected segment", &["raw", "plain"]),
-        ("mouse", "toggle pane mouse interaction mode", &["on", "off"]),
+        (
+            "mouse",
+            "toggle pane mouse interaction mode",
+            &["on", "off"],
+        ),
         ("model", "view or switch model", &["list"]),
         (
             "think",
@@ -2384,11 +2417,17 @@ impl App {
         (
             "context",
             "context management (class selection or compaction)",
-            &["status", "compact", "clear", "squad", "maniple", "clan", "legion"],
+            &[
+                "status", "compact", "clear", "squad", "maniple", "clan", "legion",
+            ],
         ),
         ("sessions", "list saved sessions", &[]),
         ("memory", "memory stats", &[]),
-        ("skills", "list or install bundled skills", &["list", "install"]),
+        (
+            "skills",
+            "list or install bundled skills",
+            &["list", "install"],
+        ),
         (
             "plugin",
             "manage installed plugins",
@@ -2483,7 +2522,11 @@ impl App {
             &["freeze", "status"],
         ),
         ("splash", "replay splash animation", &[]),
-        ("dashboard", "open Auspex browser surface (alias for /dash)", &[]),
+        (
+            "dashboard",
+            "open Auspex browser surface (alias for /dash)",
+            &[],
+        ),
         (
             "note",
             "capture a note for later (persists across sessions)",
@@ -3610,7 +3653,9 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))?;
 
         if !plugins_dir.exists() {
-            return Ok("No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into());
+            return Ok(
+                "No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into(),
+            );
         }
 
         let entries: Vec<_> = std::fs::read_dir(&plugins_dir)?
@@ -3619,12 +3664,17 @@ impl App {
             .collect();
 
         if entries.is_empty() {
-            return Ok("No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into());
+            return Ok(
+                "No plugins installed.\nInstall with: /plugin install <git-url-or-path>".into(),
+            );
         }
 
         let mut lines = vec![
             format!("Plugins in {}\n", plugins_dir.display()),
-            format!("{:<20} {:<12} {:<10} DESCRIPTION", "NAME", "TYPE", "VERSION"),
+            format!(
+                "{:<20} {:<12} {:<10} DESCRIPTION",
+                "NAME", "TYPE", "VERSION"
+            ),
             "─".repeat(72),
         ];
 
@@ -3638,7 +3688,10 @@ impl App {
             let manifest_path = resolved.join("plugin.toml");
             if !manifest_path.exists() {
                 let name = dir.file_name().unwrap_or_default().to_string_lossy();
-                lines.push(format!("{:<20} {:<12} {:<10} (no plugin.toml)", name, "?", "?"));
+                lines.push(format!(
+                    "{:<20} {:<12} {:<10} (no plugin.toml)",
+                    name, "?", "?"
+                ));
                 continue;
             }
             match std::fs::read_to_string(&manifest_path)
@@ -3658,7 +3711,10 @@ impl App {
                 }
                 None => {
                     let name = dir.file_name().unwrap_or_default().to_string_lossy();
-                    lines.push(format!("{:<20} {:<12} {:<10} (invalid manifest)", name, "?", "?"));
+                    lines.push(format!(
+                        "{:<20} {:<12} {:<10} (invalid manifest)",
+                        name, "?", "?"
+                    ));
                 }
             }
         }
@@ -3796,40 +3852,35 @@ impl App {
 
     /// Render tab bar showing all tabs, with active tab highlighted.
     fn render_tab_bar(&self, frame: &mut Frame, area: Rect) {
-        use ratatui::widgets::Paragraph;
         use ratatui::text::{Line, Span};
-        
+        use ratatui::widgets::Paragraph;
+
         let mut line_spans = vec![];
         for (idx, tab) in self.conversation.tabs.tabs.iter().enumerate() {
             if idx > 0 {
                 line_spans.push(Span::raw(" "));
             }
-            
+
             let label = tab.label();
             let is_active = idx == self.conversation.tabs.active_tab;
-            
+
             if is_active {
                 // Active tab: reverse video
-                line_spans.push(
-                    Span::styled(
-                        format!(" {} ", label),
-                        ratatui::style::Style::default()
-                            .bg(ratatui::style::Color::Cyan)
-                            .fg(ratatui::style::Color::Black),
-                    ),
-                );
+                line_spans.push(Span::styled(
+                    format!(" {} ", label),
+                    ratatui::style::Style::default()
+                        .bg(ratatui::style::Color::Cyan)
+                        .fg(ratatui::style::Color::Black),
+                ));
             } else {
                 // Inactive tab: dim
-                line_spans.push(
-                    Span::styled(
-                        format!(" {} ", label),
-                        ratatui::style::Style::default()
-                            .fg(ratatui::style::Color::DarkGray),
-                    ),
-                );
+                line_spans.push(Span::styled(
+                    format!(" {} ", label),
+                    ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+                ));
             }
         }
-        
+
         let line = Line::from(line_spans);
         let paragraph = Paragraph::new(line);
         frame.render_widget(paragraph, area);
@@ -3898,20 +3949,17 @@ impl App {
                 let args_summary = crate::r#loop::summarize_tool_args(&name, &args);
                 // Full args for detailed view
                 let detail_args = match name.as_str() {
-                    "bash" => args
-                        .get("command")
-                        .and_then(|v| v.as_str())
-                        .map(|cmd| {
-                            // Strip `cd /path && ` wrapper so the card header shows
-                            // the actual command, not a misleading `cd`.
-                            if let Some(rest) = cmd.strip_prefix("cd ") {
-                                rest.split_once(" && ")
-                                    .map(|(_, after)| after.to_string())
-                                    .unwrap_or_else(|| cmd.to_string())
-                            } else {
-                                cmd.to_string()
-                            }
-                        }),
+                    "bash" => args.get("command").and_then(|v| v.as_str()).map(|cmd| {
+                        // Strip `cd /path && ` wrapper so the card header shows
+                        // the actual command, not a misleading `cd`.
+                        if let Some(rest) = cmd.strip_prefix("cd ") {
+                            rest.split_once(" && ")
+                                .map(|(_, after)| after.to_string())
+                                .unwrap_or_else(|| cmd.to_string())
+                        } else {
+                            cmd.to_string()
+                        }
+                    }),
                     "read" | "edit" | "write" | "view" => args
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -3934,7 +3982,8 @@ impl App {
                                         children
                                             .iter()
                                             .filter_map(|c| {
-                                                let label = c.get("label").and_then(|v| v.as_str())?;
+                                                let label =
+                                                    c.get("label").and_then(|v| v.as_str())?;
                                                 let desc = c
                                                     .get("description")
                                                     .and_then(|v| v.as_str())
@@ -3954,11 +4003,10 @@ impl App {
                         .and_then(|v| v.as_str())
                         .map(|s| crate::util::truncate(s, 120)),
                     // Suppress raw JSON dump for all other harness-internal tools
-                    "design_tree" | "design_tree_update" | "openspec_manage"
-                    | "memory_store" | "memory_recall" | "memory_focus"
-                    | "memory_supersede" | "memory_archive" | "memory_query"
-                    | "memory_episodes" | "memory_compact"
-                    | "cleave_delegate" | "lifecycle_doctor" => None,
+                    "design_tree" | "design_tree_update" | "openspec_manage" | "memory_store"
+                    | "memory_recall" | "memory_focus" | "memory_supersede" | "memory_archive"
+                    | "memory_query" | "memory_episodes" | "memory_compact" | "cleave_delegate"
+                    | "lifecycle_doctor" => None,
                     _ => Some(serde_json::to_string_pretty(&args).unwrap_or_default()),
                 };
                 self.conversation.push_tool_start(
@@ -4095,7 +4143,8 @@ impl App {
                     .push_lifecycle("⚡", &format!("Cleave {status}"));
             }
             AgentEvent::WebDashboardStarted { startup_json } => {
-                if let Ok(startup) = serde_json::from_value::<crate::web::WebStartupInfo>(startup_json)
+                if let Ok(startup) =
+                    serde_json::from_value::<crate::web::WebStartupInfo>(startup_json)
                     && let Ok(addr) = startup.addr.parse()
                 {
                     self.web_server_addr = Some(addr);
@@ -4153,8 +4202,10 @@ impl App {
             } => {
                 self.footer_data.estimated_tokens = tokens as usize;
                 self.footer_data.context_window = context_window as usize;
-                self.footer_data.context_class = crate::settings::ContextClass::parse(&context_class)
-                    .unwrap_or_else(|| crate::settings::ContextClass::from_tokens(context_window as usize));
+                self.footer_data.context_class =
+                    crate::settings::ContextClass::parse(&context_class).unwrap_or_else(|| {
+                        crate::settings::ContextClass::from_tokens(context_window as usize)
+                    });
                 self.footer_data.thinking_level = thinking_level;
                 let ctx_window = self.footer_data.context_window;
                 self.footer_data.context_percent = if ctx_window > 0 {
@@ -4196,7 +4247,8 @@ pub struct TuiConfig {
     pub start_tutorial: bool,
     /// Shared channel for headless login prompt input. The login task stores a
     /// oneshot sender here; the TUI Enter handler consumes it.
-    pub login_prompt_tx: std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>,
+    pub login_prompt_tx:
+        std::sync::Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>>,
     /// Extension widgets discovered during setup — for tab rendering.
     pub extension_widgets: Vec<crate::extensions::ExtensionTabWidget>,
     /// Widget event receivers — one per discovered extension.
@@ -4749,7 +4801,8 @@ pub async fn run_tui(
     app.keyboard_enhancement = has_keyboard_enhancement;
     // Populate extension widgets and receivers from config
     for widget in config.extension_widgets {
-        app.extension_widgets.insert(widget.widget_id.clone(), widget);
+        app.extension_widgets
+            .insert(widget.widget_id.clone(), widget);
     }
     app.widget_receivers = config.widget_receivers;
     // Respect the persisted mouse setting (default: true).
@@ -4769,10 +4822,9 @@ pub async fn run_tui(
 
     // Add extension widgets as tabs to the conversation view
     for widget in app.extension_widgets.values() {
-        app.conversation.tabs.add_extension_tab(
-            widget.widget_id.clone(),
-            widget.label.clone(),
-        );
+        app.conversation
+            .tabs
+            .add_extension_tab(widget.widget_id.clone(), widget.label.clone());
     }
 
     // Spawn widget event listener task
@@ -4933,7 +4985,9 @@ pub async fn run_tui(
                 // keep the latest one so it isn't lost before the main loop.
                 while let Ok(ev) = events_rx.try_recv() {
                     if let AgentEvent::HarnessStatusChanged { status_json } = ev {
-                        if let Ok(status) = serde_json::from_value::<crate::status::HarnessStatus>(status_json) {
+                        if let Ok(status) =
+                            serde_json::from_value::<crate::status::HarnessStatus>(status_json)
+                        {
                             app.footer_data.update_harness(status);
                         }
                     }
@@ -5051,12 +5105,10 @@ pub async fn run_tui(
                         data,
                         auto_dismiss_ms,
                     } => {
-                        app.active_modal = Some((widget_id, data, auto_dismiss_ms, std::time::Instant::now()));
+                        app.active_modal =
+                            Some((widget_id, data, auto_dismiss_ms, std::time::Instant::now()));
                     }
-                    crate::extensions::WidgetEvent::ActionRequired {
-                        widget_id,
-                        actions,
-                    } => {
+                    crate::extensions::WidgetEvent::ActionRequired { widget_id, actions } => {
                         app.active_action_prompt = Some((widget_id, actions));
                     }
                 }
@@ -5125,7 +5177,9 @@ pub async fn run_tui(
                         });
                         if over_dashboard || matches!(app.pane_focus, PaneFocus::Dashboard) {
                             app.dashboard.scroll_up(3);
-                        } else if over_conversation || matches!(app.pane_focus, PaneFocus::Conversation) {
+                        } else if over_conversation
+                            || matches!(app.pane_focus, PaneFocus::Conversation)
+                        {
                             app.conversation.scroll_up(3);
                         }
                     }
@@ -5144,7 +5198,9 @@ pub async fn run_tui(
                         });
                         if over_dashboard || matches!(app.pane_focus, PaneFocus::Dashboard) {
                             app.dashboard.scroll_down(3);
-                        } else if over_conversation || matches!(app.pane_focus, PaneFocus::Conversation) {
+                        } else if over_conversation
+                            || matches!(app.pane_focus, PaneFocus::Conversation)
+                        {
                             app.conversation.scroll_down(3);
                         }
                     }
@@ -5426,10 +5482,8 @@ pub async fn run_tui(
                                 if idx < actions.len() {
                                     let action = actions[idx].clone();
                                     // Log the action selection
-                                    app.conversation.push_system(&format!(
-                                        "✓ {}: {}",
-                                        widget_id, action
-                                    ));
+                                    app.conversation
+                                        .push_system(&format!("✓ {}: {}", widget_id, action));
                                     app.active_action_prompt = None;
                                     // TODO: Send action back to extension via IPC
                                     continue;
@@ -5636,14 +5690,18 @@ pub async fn run_tui(
                                     if attachments.is_empty() {
                                         app.conversation.push_user(&text);
                                     } else {
-                                        app.conversation.push_user_with_attachments(&text, &attachments);
+                                        app.conversation
+                                            .push_user_with_attachments(&text, &attachments);
                                     }
                                     app.history.push(text.clone());
                                     app.history_idx = None;
                                     app.agent_active = true;
                                     if !attachments.is_empty() {
                                         let _ = command_tx
-                                            .send(TuiCommand::UserPromptWithImages(text, attachments))
+                                            .send(TuiCommand::UserPromptWithImages(
+                                                text,
+                                                attachments,
+                                            ))
                                             .await;
                                     } else {
                                         let _ = command_tx.send(TuiCommand::UserPrompt(text)).await;
@@ -5759,7 +5817,8 @@ pub async fn run_tui(
             if attachments.is_empty() {
                 app.conversation.push_user(&text);
             } else {
-                app.conversation.push_user_with_attachments(&text, &attachments);
+                app.conversation
+                    .push_user_with_attachments(&text, &attachments);
             }
             app.history.push(text.clone());
             app.history_idx = None;

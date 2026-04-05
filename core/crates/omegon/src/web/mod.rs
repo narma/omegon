@@ -22,12 +22,8 @@ use axum::Router;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::tui::dashboard::DashboardHandles;
-pub use auth::{
-    WEB_AUTH_SECRET_NAME, WebAuthSource, WebAuthState,
-};
-use omegon_traits::{
-    IpcHealthSnapshot, IpcHealthState, IpcHarnessSnapshot, IpcMemorySnapshot,
-};
+pub use auth::{WEB_AUTH_SECRET_NAME, WebAuthSource, WebAuthState};
+use omegon_traits::{IpcHarnessSnapshot, IpcHealthSnapshot, IpcHealthState, IpcMemorySnapshot};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -90,7 +86,12 @@ fn project_web_instance(
             memory_available: false,
             cleave_available: false,
             memory_warning: None,
-            memory: IpcMemorySnapshot { active_facts: 0, project_facts: 0, working_facts: 0, episodes: 0 },
+            memory: IpcMemorySnapshot {
+                active_facts: 0,
+                project_facts: 0,
+                working_facts: 0,
+                episodes: 0,
+            },
             providers: vec![],
             mcp_server_count: 0,
             mcp_tool_count: 0,
@@ -118,7 +119,8 @@ fn project_web_instance(
             ControlPlaneState::Starting => IpcHealthState::Starting,
             ControlPlaneState::Failed => IpcHealthState::Failed,
         },
-        memory_ok: harness_projection.memory_available || harness_projection.memory_warning.is_none(),
+        memory_ok: harness_projection.memory_available
+            || harness_projection.memory_warning.is_none(),
         provider_ok: handles
             .harness
             .as_ref()
@@ -297,8 +299,9 @@ pub async fn start_server_with_options(
         port = bound.port(),
         auth_mode = startup.auth_mode,
         auth_source = startup.auth_source,
-        "web dashboard at {}/?token={}"
-        ,startup.http_base, startup.token
+        "web dashboard at {}/?token={}",
+        startup.http_base,
+        startup.token
     );
 
     tokio::spawn(async move {
@@ -370,7 +373,10 @@ mod tests {
 
     #[test]
     fn web_state_issues_attach_token_for_query_use() {
-        let state = WebState::new(DashboardHandles::default(), tokio::sync::broadcast::channel(16).0);
+        let state = WebState::new(
+            DashboardHandles::default(),
+            tokio::sync::broadcast::channel(16).0,
+        );
         let token = state.web_auth.issue_query_token();
 
         assert!(!token.is_empty());
@@ -413,11 +419,16 @@ mod tests {
 
     #[tokio::test]
     async fn bind_strict_fails_when_port_is_taken() {
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
         let port = listener.local_addr().unwrap().port();
 
         let err = bind_strict(port).await.unwrap_err();
-        assert!(err.to_string().contains("Failed to bind strict control port"));
+        assert!(
+            err.to_string()
+                .contains("Failed to bind strict control port")
+        );
     }
 
     #[test]

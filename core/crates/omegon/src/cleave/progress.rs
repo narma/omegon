@@ -212,12 +212,20 @@ fn extract_token_counts(s: &str) -> (u64, u64) {
     let input_tokens = s
         .find("in:")
         .and_then(|p| s[p + 3..].split_whitespace().next())
-        .and_then(|v| v.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok())
+        .and_then(|v| {
+            v.trim_end_matches(|c: char| !c.is_ascii_digit())
+                .parse()
+                .ok()
+        })
         .unwrap_or(0);
     let output_tokens = s
         .find("out:")
         .and_then(|p| s[p + 4..].split_whitespace().next())
-        .and_then(|v| v.trim_end_matches(|c: char| !c.is_ascii_digit()).parse().ok())
+        .and_then(|v| {
+            v.trim_end_matches(|c: char| !c.is_ascii_digit())
+                .parse()
+                .ok()
+        })
         .unwrap_or(0);
     (input_tokens, output_tokens)
 }

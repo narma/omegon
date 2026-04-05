@@ -34,10 +34,7 @@ pub static TOOL_GROUPS: &[(&str, &[&str])] = &[
     ),
     // cleave is enabled by default — critical subagent decomposition capability.
     // Disable only in constrained/quota contexts.
-    (
-        "cleave",
-        &["cleave_assess", "cleave_run"],
-    ),
+    ("cleave", &["cleave_assess", "cleave_run"]),
     (
         "lifecycle-advanced",
         &["lifecycle_doctor", "codebase_search", "codebase_index"],
@@ -207,8 +204,7 @@ impl Feature for ManageTools {
                     .find(|(name, _)| *name == group_name)
                     .map(|(_, tools)| *tools)
                     .ok_or_else(|| {
-                        let available: Vec<&str> =
-                            TOOL_GROUPS.iter().map(|(n, _)| *n).collect();
+                        let available: Vec<&str> = TOOL_GROUPS.iter().map(|(n, _)| *n).collect();
                         anyhow::anyhow!(
                             "Unknown group '{group_name}'. Available: {}",
                             available.join(", ")
@@ -227,10 +223,7 @@ impl Feature for ManageTools {
                             text: if changed.is_empty() {
                                 format!("Group '{group_name}' — all tools already enabled.")
                             } else {
-                                format!(
-                                    "Group '{group_name}' enabled: {}",
-                                    changed.join(", ")
-                                )
+                                format!("Group '{group_name}' enabled: {}", changed.join(", "))
                             },
                         }],
                         details: Value::Null,
@@ -246,10 +239,7 @@ impl Feature for ManageTools {
                             text: if changed.is_empty() {
                                 format!("Group '{group_name}' — all tools already disabled.")
                             } else {
-                                format!(
-                                    "Group '{group_name}' disabled: {}",
-                                    changed.join(", ")
-                                )
+                                format!("Group '{group_name}' disabled: {}", changed.join(", "))
                             },
                         }],
                         details: Value::Null,
@@ -258,10 +248,7 @@ impl Feature for ManageTools {
             }
             "list_groups" => {
                 let disabled = self.disabled.lock().unwrap();
-                let mut lines = vec![
-                    "**Tool Groups**".to_string(),
-                    String::new(),
-                ];
+                let mut lines = vec!["**Tool Groups**".to_string(), String::new()];
                 for (group_name, tools) in TOOL_GROUPS {
                     let enabled_count = tools.iter().filter(|t| !disabled.contains(**t)).count();
                     let state = if enabled_count == tools.len() {
@@ -271,10 +258,15 @@ impl Feature for ManageTools {
                     } else {
                         "partial"
                     };
-                    lines.push(format!("  {group_name:<20} [{state}]  {}", tools.join(", ")));
+                    lines.push(format!(
+                        "  {group_name:<20} [{state}]  {}",
+                        tools.join(", ")
+                    ));
                 }
                 lines.push(String::new());
-                lines.push("Use: manage_tools(enable_group|disable_group, group: \"<name>\")".into());
+                lines.push(
+                    "Use: manage_tools(enable_group|disable_group, group: \"<name>\")".into(),
+                );
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text {
                         text: lines.join("\n"),

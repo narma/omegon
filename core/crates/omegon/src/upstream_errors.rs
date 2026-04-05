@@ -116,7 +116,11 @@ const PROVIDER_ERROR_RULES: &[ErrorRule] = &[
             "ollama",
         ],
         class: UpstreamErrorClass::BadRequest,
-        substrings: &["invalid_request_error", "unsupported_parameter", "bad request"],
+        substrings: &[
+            "invalid_request_error",
+            "unsupported_parameter",
+            "bad request",
+        ],
         word_tokens: &["400"],
     },
 ];
@@ -137,7 +141,12 @@ const GLOBAL_ERROR_RULES: &[ErrorRule] = &[
     ErrorRule {
         providers: &[],
         class: UpstreamErrorClass::AuthInvalid,
-        substrings: &["invalid api key", "unauthorized", "forbidden", "authentication"],
+        substrings: &[
+            "invalid api key",
+            "unauthorized",
+            "forbidden",
+            "authentication",
+        ],
         word_tokens: &["401", "403"],
     },
     ErrorRule {
@@ -179,7 +188,12 @@ const GLOBAL_ERROR_RULES: &[ErrorRule] = &[
     ErrorRule {
         providers: &[],
         class: UpstreamErrorClass::NetworkReset,
-        substrings: &["connection reset", "reset by peer", "broken pipe", "unexpected eof"],
+        substrings: &[
+            "connection reset",
+            "reset by peer",
+            "broken pipe",
+            "unexpected eof",
+        ],
         word_tokens: &[],
     },
     ErrorRule {
@@ -289,7 +303,9 @@ impl UpstreamErrorClass {
             Self::ContextOverflow => RecoveryAction::CompactContext,
             Self::MalformedHistory => RecoveryAction::RepairConversation,
             Self::SessionExpired | Self::AuthInvalid => RecoveryAction::Reauthenticate,
-            Self::QuotaExceeded | Self::BadRequest | Self::DegenerateOutput | Self::Unknown => RecoveryAction::Fatal,
+            Self::QuotaExceeded | Self::BadRequest | Self::DegenerateOutput | Self::Unknown => {
+                RecoveryAction::Fatal
+            }
             Self::ResponseIncomplete | Self::ResponseCancelled => RecoveryAction::RetrySameProvider,
         }
     }
@@ -351,7 +367,9 @@ impl TransientFailureKind {
             Self::Dns => format!("could not resolve {provider} endpoint"),
             Self::Timeout => format!("{provider} did not respond before the timeout"),
             Self::StalledStream => format!("{provider} stream stopped producing output"),
-            Self::ResponseIncomplete => format!("{provider} truncated its response (output limit or content filter)"),
+            Self::ResponseIncomplete => {
+                format!("{provider} truncated its response (output limit or content filter)")
+            }
             Self::ResponseCancelled => format!("{provider} cancelled the response server-side"),
             _ => crate::util::truncate_str(err_msg, 300).to_string(),
         }
@@ -388,7 +406,10 @@ pub(crate) fn append_upstream_failure_log(entry: &UpstreamFailureLogEntry) {
     let _ = writeln!(file, "{line}");
 }
 
-pub(crate) fn classify_upstream_error_for_provider(provider: &str, msg: &str) -> UpstreamErrorClass {
+pub(crate) fn classify_upstream_error_for_provider(
+    provider: &str,
+    msg: &str,
+) -> UpstreamErrorClass {
     let lower = msg.to_lowercase();
     if let Some(class) = apply_error_rules(PROVIDER_ERROR_RULES, Some(provider), &lower) {
         return class;
@@ -449,7 +470,10 @@ fn apply_error_rules(
         if !provider_matches {
             return None;
         }
-        let substring_match = rule.substrings.iter().any(|needle| lower_msg.contains(needle));
+        let substring_match = rule
+            .substrings
+            .iter()
+            .any(|needle| lower_msg.contains(needle));
         let word_match = rule
             .word_tokens
             .iter()
@@ -500,7 +524,9 @@ mod tests {
 
     #[test]
     fn context_overflow_detection() {
-        assert!(is_context_overflow("This model's maximum context length is 128000 tokens"));
+        assert!(is_context_overflow(
+            "This model's maximum context length is 128000 tokens"
+        ));
         assert!(is_context_overflow("Request too large for model"));
         assert!(is_context_overflow("prompt is too long"));
         assert!(is_context_overflow("maximum number of tokens exceeded"));
@@ -511,7 +537,9 @@ mod tests {
     #[test]
     fn malformed_history_detection() {
         assert!(is_malformed_history("tool_use_id not found"));
-        assert!(is_malformed_history("role must alternate between user and assistant"));
+        assert!(is_malformed_history(
+            "role must alternate between user and assistant"
+        ));
         assert!(is_malformed_history("thinking.signature is required"));
         assert!(!is_malformed_history("rate limit exceeded"));
     }
@@ -559,7 +587,9 @@ mod tests {
     #[test]
     fn classify_degenerate_output() {
         assert_eq!(
-            classify_upstream_error("Model output degenerate: phrase \"append tests.\" repeated 30/40 recent chunks"),
+            classify_upstream_error(
+                "Model output degenerate: phrase \"append tests.\" repeated 30/40 recent chunks"
+            ),
             UpstreamErrorClass::DegenerateOutput,
         );
     }
@@ -619,7 +649,11 @@ mod tests {
             UpstreamErrorClass::ResponseIncomplete,
         );
         // Must be transient so the retry loop fires
-        assert!(UpstreamErrorClass::ResponseIncomplete.transient_kind().is_some());
+        assert!(
+            UpstreamErrorClass::ResponseIncomplete
+                .transient_kind()
+                .is_some()
+        );
         assert_eq!(
             UpstreamErrorClass::ResponseIncomplete.recovery_action(),
             RecoveryAction::RetrySameProvider,
@@ -635,7 +669,11 @@ mod tests {
             ),
             UpstreamErrorClass::ResponseCancelled,
         );
-        assert!(UpstreamErrorClass::ResponseCancelled.transient_kind().is_some());
+        assert!(
+            UpstreamErrorClass::ResponseCancelled
+                .transient_kind()
+                .is_some()
+        );
     }
 
     #[test]
@@ -677,4 +715,3 @@ mod tests {
         assert!(json.contains("\"recovery_action\":\"failover_preferred\""));
     }
 }
-

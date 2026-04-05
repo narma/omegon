@@ -12,9 +12,9 @@
 //! This prevents plain-text secrets from appearing in `/proc/<pid>/environ`,
 //! `ps` output, crash dumps, or child processes of the extension.
 
-use omegon_traits::{Feature, ToolDefinition, ToolResult, ContentBlock};
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow};
+use omegon_traits::{ContentBlock, Feature, ToolDefinition, ToolResult};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,7 +29,7 @@ pub mod widgets;
 pub use manifest::{ExtensionManifest, RuntimeConfig, WidgetConfig};
 pub use mind::{ExtensionMind, MindStats};
 pub use state::{ExtensionState, StabilityMetrics};
-pub use widgets::{WidgetDeclaration, WidgetEvent, ExtensionTabWidget};
+pub use widgets::{ExtensionTabWidget, WidgetDeclaration, WidgetEvent};
 
 /// Environment variables that are safe to inherit from the parent process.
 /// Everything else is stripped via env_clear() — secrets never leak via env.
@@ -158,7 +158,9 @@ impl ExtensionFeature {
     /// Send a JSON-RPC request and receive the response.
     async fn rpc_call(&self, method: &str, params: Value) -> Result<Value> {
         let mut guard = self.handles.lock().await;
-        let handles = guard.as_mut().ok_or_else(|| anyhow!("extension process not running"))?;
+        let handles = guard
+            .as_mut()
+            .ok_or_else(|| anyhow!("extension process not running"))?;
 
         let id = self.request_id.fetch_add(1, Ordering::SeqCst);
         let request = json!({
@@ -246,10 +248,7 @@ impl Feature for ExtensionFeature {
         _cancel: CancellationToken,
     ) -> Result<ToolResult> {
         let output = self
-            .rpc_call(
-                "execute_tool",
-                json!({ "name": tool_name, "args": args }),
-            )
+            .rpc_call("execute_tool", json!({ "name": tool_name, "args": args }))
             .await?;
 
         Ok(ToolResult {
@@ -375,8 +374,14 @@ async fn handshake(
             .rpc_call("bootstrap_secrets", Value::Object(secrets_map))
             .await
         {
-            Ok(_) => tracing::debug!(extension = name, secrets = resolved_secrets.len(), "bootstrap_secrets delivered"),
-            Err(e) => tracing::warn!(extension = name, error = %e, "bootstrap_secrets not acknowledged — extension may not support it"),
+            Ok(_) => tracing::debug!(
+                extension = name,
+                secrets = resolved_secrets.len(),
+                "bootstrap_secrets delivered"
+            ),
+            Err(e) => {
+                tracing::warn!(extension = name, error = %e, "bootstrap_secrets not acknowledged — extension may not support it")
+            }
         }
     }
 
@@ -414,7 +419,10 @@ async fn spawn_native(
 
     let (feature, widget_rx) = ExtensionFeature::new(
         manifest.extension.name.clone(),
-        binary.parent().unwrap_or(std::path::Path::new(".")).to_path_buf(),
+        binary
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .to_path_buf(),
         tools,
         widgets.clone(),
         handles,
@@ -429,7 +437,10 @@ async fn spawn_native(
             widget.renderer,
             widget.kind,
         );
-        if let Ok(data) = feature.rpc_call(&format!("get_{}", widget.id), json!({})).await {
+        if let Ok(data) = feature
+            .rpc_call(&format!("get_{}", widget.id), json!({}))
+            .await
+        {
             tab_widget.update(data);
         }
         tab_widgets.push(tab_widget);
@@ -488,7 +499,10 @@ async fn spawn_container(
             widget.renderer,
             widget.kind,
         );
-        if let Ok(data) = feature.rpc_call(&format!("get_{}", widget.id), json!({})).await {
+        if let Ok(data) = feature
+            .rpc_call(&format!("get_{}", widget.id), json!({}))
+            .await
+        {
             tab_widget.update(data);
         }
         tab_widgets.push(tab_widget);
@@ -541,7 +555,10 @@ mod tests {
         // Verify SAFE_INHERIT_ENVS doesn't include any secret-like names
         for var in SAFE_INHERIT_ENVS {
             assert!(
-                !var.contains("KEY") && !var.contains("TOKEN") && !var.contains("SECRET") && !var.contains("PASSWORD"),
+                !var.contains("KEY")
+                    && !var.contains("TOKEN")
+                    && !var.contains("SECRET")
+                    && !var.contains("PASSWORD"),
                 "SAFE_INHERIT_ENVS contains potentially secret var: {var}"
             );
         }

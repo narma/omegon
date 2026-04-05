@@ -566,8 +566,9 @@ pub fn is_headless() -> bool {
 /// by the user (e.g. `http://localhost:53692/callback?code=abc&state=xyz`).
 fn parse_callback_url(url: &str) -> anyhow::Result<(String, String)> {
     let url = url.trim();
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|_| anyhow::anyhow!("Invalid URL. Paste the full URL from your browser's address bar."))?;
+    let parsed = reqwest::Url::parse(url).map_err(|_| {
+        anyhow::anyhow!("Invalid URL. Paste the full URL from your browser's address bar.")
+    })?;
     let code = parsed
         .query_pairs()
         .find(|(k, _)| k == "code")
@@ -652,8 +653,7 @@ pub async fn login_anthropic_with_callbacks(
         parse_callback_url(&pasted)?
     } else {
         // ── Normal browser flow ────────────────────────────────────────
-        let listener =
-            tokio::net::TcpListener::bind(format!("127.0.0.1:{CALLBACK_PORT}")).await?;
+        let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{CALLBACK_PORT}")).await?;
         tracing::debug!(port = CALLBACK_PORT, "OAuth callback server listening");
 
         progress("Opening browser for Anthropic login…");

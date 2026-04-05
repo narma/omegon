@@ -1,8 +1,8 @@
 //! RPC protocol types (JSON-RPC 2.0 over stdin/stdout).
 
+use crate::ErrorCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::ErrorCode;
 
 /// Top-level RPC message — either a request or notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,10 +101,7 @@ mod tests {
 
     #[test]
     fn test_rpc_response_success() {
-        let resp = RpcResponse::success(
-            Some("1".to_string()),
-            serde_json::json!({"status": "ok"}),
-        );
+        let resp = RpcResponse::success(Some("1".to_string()), serde_json::json!({"status": "ok"}));
 
         assert_eq!(resp.id, Some("1".to_string()));
         assert!(resp.result.is_some());

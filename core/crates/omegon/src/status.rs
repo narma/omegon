@@ -356,7 +356,11 @@ impl HarnessStatus {
             .query_row("SELECT COUNT(*) FROM episodes", [], |r| r.get(0))
             .ok()?;
         let edges: usize = conn
-            .query_row("SELECT COUNT(*) FROM edges WHERE status = 'active'", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE status = 'active'",
+                [],
+                |r| r.get(0),
+            )
             .ok()?;
         let active_persona_mind: Option<String> = conn
             .query_row(
@@ -844,7 +848,10 @@ mod tests {
         ];
         let refs: Vec<&RecentUpstreamFailure> = recent.iter().collect();
         apply_provider_runtime_health(&mut provider, &refs);
-        assert_eq!(provider.runtime_status, Some(ProviderRuntimeStatus::Healthy));
+        assert_eq!(
+            provider.runtime_status,
+            Some(ProviderRuntimeStatus::Healthy)
+        );
         assert_eq!(provider.recent_failure_count, Some(2));
         assert_eq!(provider.last_failure_kind.as_deref(), Some("timeout"));
     }
@@ -880,7 +887,10 @@ mod tests {
         ];
         let refs: Vec<&RecentUpstreamFailure> = recent.iter().collect();
         apply_provider_runtime_health(&mut provider, &refs);
-        assert_eq!(provider.runtime_status, Some(ProviderRuntimeStatus::Degraded));
+        assert_eq!(
+            provider.runtime_status,
+            Some(ProviderRuntimeStatus::Degraded)
+        );
         assert_eq!(provider.recent_failure_count, Some(3));
     }
 }

@@ -428,7 +428,8 @@ impl ConversationState {
         if !text.starts_with("[System:") {
             self.intent.set_task_from_prompt(&text);
         }
-        self.canonical.push(AgentMessage::User { text, images, turn });
+        self.canonical
+            .push(AgentMessage::User { text, images, turn });
     }
 
     pub fn push_assistant(&mut self, msg: AssistantMessage) {
@@ -1930,8 +1931,8 @@ mod tests {
                 thinking: None,
                 tool_calls: vec![],
                 raw: serde_json::Value::Null,
-            provider_tokens: (0, 0, 0),
-            provider_telemetry: None,
+                provider_tokens: (0, 0, 0),
+                provider_telemetry: None,
             });
         }
 
@@ -2009,7 +2010,10 @@ mod tests {
             assert_eq!(content, "describe this");
             assert_eq!(images.len(), 1);
             assert_eq!(images[0].media_type, "image/png");
-            assert_eq!(images[0].source_path.as_deref(), Some("/tmp/describe-this.png"));
+            assert_eq!(
+                images[0].source_path.as_deref(),
+                Some("/tmp/describe-this.png")
+            );
         } else {
             panic!("expected user message");
         }
@@ -2037,7 +2041,10 @@ mod tests {
             assert_eq!(content, "describe this");
             assert_eq!(images.len(), 1);
             assert_eq!(images[0].media_type, "image/png");
-            assert_eq!(images[0].source_path.as_deref(), Some("/tmp/saved-image.png"));
+            assert_eq!(
+                images[0].source_path.as_deref(),
+                Some("/tmp/saved-image.png")
+            );
         } else {
             panic!("expected user message");
         }

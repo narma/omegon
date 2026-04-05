@@ -3,12 +3,12 @@
 //! GET /api/state — full agent state snapshot.
 //! Designed to be the canonical state shape that any web UI consumes.
 
+use crate::status::HarnessStatus;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use serde::Serialize;
-use crate::status::HarnessStatus;
 use omegon_traits::OmegonInstanceDescriptor;
+use serde::Serialize;
 
 use super::{ControlPlaneState, WebState};
 use crate::lifecycle::types::*;
@@ -146,7 +146,10 @@ pub async fn get_startup(
     State(state): State<WebState>,
 ) -> Result<Json<super::WebStartupInfo>, StatusCode> {
     match state.startup_info.lock() {
-        Ok(guard) => guard.clone().map(Json).ok_or(StatusCode::SERVICE_UNAVAILABLE),
+        Ok(guard) => guard
+            .clone()
+            .map(Json)
+            .ok_or(StatusCode::SERVICE_UNAVAILABLE),
         Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
@@ -421,7 +424,11 @@ pub fn build_snapshot(state: &WebState) -> StateSnapshot {
         .startup_info
         .lock()
         .ok()
-        .and_then(|guard| guard.as_ref().and_then(|startup| startup.instance_descriptor.clone()))
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .and_then(|startup| startup.instance_descriptor.clone())
+        })
         .unwrap_or_else(|| {
             let cwd = std::env::current_dir()
                 .ok()
@@ -440,29 +447,57 @@ pub fn build_snapshot(state: &WebState) -> StateSnapshot {
                 session_id: None,
             };
             let harness_projection = omegon_traits::IpcHarnessSnapshot {
-                context_class: harness.as_ref().map(|h| h.context_class.clone()).unwrap_or_else(|| "Squad".into()),
-                thinking_level: harness.as_ref().map(|h| h.thinking_level.clone()).unwrap_or_else(|| "Medium".into()),
-                capability_tier: harness.as_ref().map(|h| h.capability_tier.clone()).unwrap_or_else(|| "victory".into()),
+                context_class: harness
+                    .as_ref()
+                    .map(|h| h.context_class.clone())
+                    .unwrap_or_else(|| "Squad".into()),
+                thinking_level: harness
+                    .as_ref()
+                    .map(|h| h.thinking_level.clone())
+                    .unwrap_or_else(|| "Medium".into()),
+                capability_tier: harness
+                    .as_ref()
+                    .map(|h| h.capability_tier.clone())
+                    .unwrap_or_else(|| "victory".into()),
                 memory_available: harness.as_ref().is_some_and(|h| h.memory_available),
                 cleave_available: harness.as_ref().is_some_and(|h| h.cleave_available),
                 memory_warning: harness.as_ref().and_then(|h| h.memory_warning.clone()),
                 memory: omegon_traits::IpcMemorySnapshot {
                     active_facts: harness.as_ref().map(|h| h.memory.active_facts).unwrap_or(0),
-                    project_facts: harness.as_ref().map(|h| h.memory.project_facts).unwrap_or(0),
-                    working_facts: harness.as_ref().map(|h| h.memory.working_facts).unwrap_or(0),
+                    project_facts: harness
+                        .as_ref()
+                        .map(|h| h.memory.project_facts)
+                        .unwrap_or(0),
+                    working_facts: harness
+                        .as_ref()
+                        .map(|h| h.memory.working_facts)
+                        .unwrap_or(0),
                     episodes: harness.as_ref().map(|h| h.memory.episodes).unwrap_or(0),
                 },
                 providers: vec![],
-                mcp_server_count: harness.as_ref().map(|h| h.mcp_servers.iter().filter(|s| s.connected).count()).unwrap_or(0),
+                mcp_server_count: harness
+                    .as_ref()
+                    .map(|h| h.mcp_servers.iter().filter(|s| s.connected).count())
+                    .unwrap_or(0),
                 mcp_tool_count: harness.as_ref().map(|h| h.mcp_tool_count()).unwrap_or(0),
-                active_persona: harness.as_ref().and_then(|h| h.active_persona.as_ref().map(|p| p.name.clone())),
-                active_tone: harness.as_ref().and_then(|h| h.active_tone.as_ref().map(|t| t.name.clone())),
-                active_delegate_count: harness.as_ref().map(|h| h.active_delegates.len()).unwrap_or(0),
+                active_persona: harness
+                    .as_ref()
+                    .and_then(|h| h.active_persona.as_ref().map(|p| p.name.clone())),
+                active_tone: harness
+                    .as_ref()
+                    .and_then(|h| h.active_tone.as_ref().map(|t| t.name.clone())),
+                active_delegate_count: harness
+                    .as_ref()
+                    .map(|h| h.active_delegates.len())
+                    .unwrap_or(0),
             };
             let health = omegon_traits::IpcHealthSnapshot {
                 state: omegon_traits::IpcHealthState::Ready,
-                memory_ok: harness_projection.memory_available || harness_projection.memory_warning.is_none(),
-                provider_ok: harness.as_ref().is_some_and(|h| h.providers.iter().any(|p| p.authenticated)),
+                memory_ok: harness_projection.memory_available
+                    || harness_projection.memory_warning.is_none(),
+                provider_ok: harness
+                    .as_ref()
+                    .is_some_and(|h| h.providers.iter().any(|p| p.authenticated)),
                 checked_at: chrono::Utc::now().to_rfc3339(),
             };
             crate::ipc::snapshot::project_instance_descriptor(
@@ -555,7 +590,10 @@ mod tests {
 
     #[tokio::test]
     async fn startup_payload_is_available() {
-        let payload = get_startup(axum::extract::State(test_state())).await.unwrap().0;
+        let payload = get_startup(axum::extract::State(test_state()))
+            .await
+            .unwrap()
+            .0;
 
         assert_eq!(payload.schema_version, 2);
         assert_eq!(payload.state_url, "http://127.0.0.1:7842/api/state");
@@ -568,8 +606,14 @@ mod tests {
     #[test]
     fn fallback_instance_descriptor_carries_control_plane_version_identity() {
         let snap = build_snapshot(&test_state());
-        assert_eq!(snap.instance.control_plane.schema_version, omegon_traits::IPC_PROTOCOL_VERSION);
-        assert_eq!(snap.instance.control_plane.omegon_version, env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            snap.instance.control_plane.schema_version,
+            omegon_traits::IPC_PROTOCOL_VERSION
+        );
+        assert_eq!(
+            snap.instance.control_plane.omegon_version,
+            env!("CARGO_PKG_VERSION")
+        );
     }
 
     #[tokio::test]

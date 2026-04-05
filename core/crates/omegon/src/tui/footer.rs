@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 
+use super::model_catalog::ModelCatalog;
 use super::theme::Theme;
 use super::widgets::{self, GaugeConfig};
-use super::model_catalog::ModelCatalog;
 
 use crate::settings::{ContextClass, ContextMode};
 use crate::status::HarnessStatus;
@@ -249,9 +249,19 @@ impl FooterData {
                 self.session_output_tokens,
             );
 
-            push_row(&mut lines, "provider", provider_text, t.border_dim(), t.fg(), true);
+            push_row(
+                &mut lines,
+                "provider",
+                provider_text,
+                t.border_dim(),
+                t.fg(),
+                true,
+            );
             if let Some(provider) = provider_runtime
-                && matches!(provider.runtime_status, Some(crate::status::ProviderRuntimeStatus::Degraded))
+                && matches!(
+                    provider.runtime_status,
+                    Some(crate::status::ProviderRuntimeStatus::Degraded)
+                )
             {
                 let failures = provider.recent_failure_count.unwrap_or(0);
                 let kind = provider
@@ -318,14 +328,28 @@ impl FooterData {
                     false,
                 );
             }
-            push_row(&mut lines, "version", version_text, t.border_dim(), t.accent(), false);
+            push_row(
+                &mut lines,
+                "version",
+                version_text,
+                t.border_dim(),
+                t.accent(),
+                false,
+            );
 
             if !self.cwd.is_empty() {
                 let cwd_display = shorten_cwd(
                     &self.cwd,
                     inner.width.saturating_sub(label_width as u16 + 3) as usize,
                 );
-                push_row(&mut lines, "path", cwd_display, t.border_dim(), t.dim(), false);
+                push_row(
+                    &mut lines,
+                    "path",
+                    cwd_display,
+                    t.border_dim(),
+                    t.dim(),
+                    false,
+                );
             }
 
             for event in self.operator_events.iter().take(2) {
@@ -833,7 +857,11 @@ fn shorten_cwd(cwd: &str, max_chars: usize) -> String {
     format!("{prefix}…/{file_name}")
 }
 
-fn format_context_text(context_class: ContextClass, context_percent: f32, context_window: usize) -> String {
+fn format_context_text(
+    context_class: ContextClass,
+    context_percent: f32,
+    context_window: usize,
+) -> String {
     if context_window > 0 {
         format!(
             "{} {:.0}% / ¤{}",
@@ -861,7 +889,12 @@ fn short_model(model_id: &str) -> String {
     crate::settings::humanize_model_id(model_id)
 }
 
-fn format_session_text(model_id: &str, turn: u32, session_input_tokens: u64, session_output_tokens: u64) -> String {
+fn format_session_text(
+    model_id: &str,
+    turn: u32,
+    session_input_tokens: u64,
+    session_output_tokens: u64,
+) -> String {
     let mut parts = vec![format!("T{turn}")];
 
     if session_input_tokens > 0 || session_output_tokens > 0 {
@@ -872,7 +905,8 @@ fn format_session_text(model_id: &str, turn: u32, session_input_tokens: u64, ses
         ));
     }
 
-    if let Some(cost) = estimate_session_cost_usd(model_id, session_input_tokens, session_output_tokens)
+    if let Some(cost) =
+        estimate_session_cost_usd(model_id, session_input_tokens, session_output_tokens)
     {
         parts.push(format_cost_usd(cost));
     }
@@ -941,7 +975,11 @@ fn format_provider_telemetry_line(
                 parts.push(format!("secondary↻ {}", format_duration_compact(secs)));
             }
             if let Some(unlimited) = t.codex_credits_unlimited {
-                parts.push(if unlimited { "credits ∞".into() } else { "credits metered".into() });
+                parts.push(if unlimited {
+                    "credits ∞".into()
+                } else {
+                    "credits metered".into()
+                });
             }
         }
         _ => {
@@ -949,7 +987,10 @@ fn format_provider_telemetry_line(
                 parts.push(format!("req {}", rem));
             }
             if let Some(rem) = t.tokens_remaining {
-                parts.push(format!("tok {}", widgets::format_tokens_compact(rem as usize)));
+                parts.push(format!(
+                    "tok {}",
+                    widgets::format_tokens_compact(rem as usize)
+                ));
             }
             if let Some(secs) = t.retry_after_secs {
                 parts.push(format!("retry {}", format_duration_compact(secs)));
@@ -957,7 +998,11 @@ fn format_provider_telemetry_line(
         }
     }
 
-    if parts.is_empty() { None } else { Some(parts.join(" · ")) }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
 }
 
 fn format_failure_age(timestamp: &str) -> Option<String> {
@@ -981,7 +1026,11 @@ fn format_failure_age(timestamp: &str) -> Option<String> {
     Some(format!("last {}d ago", age.num_days()))
 }
 
-fn estimate_session_cost_usd(model_id: &str, session_input_tokens: u64, session_output_tokens: u64) -> Option<f64> {
+fn estimate_session_cost_usd(
+    model_id: &str,
+    session_input_tokens: u64,
+    session_output_tokens: u64,
+) -> Option<f64> {
     let pricing = ModelCatalog::pricing_for_model(model_id)?;
     Some(pricing.estimate_cost_usd(session_input_tokens, session_output_tokens))
 }
@@ -1103,7 +1152,10 @@ mod tests {
         let home = std::env::var("HOME").unwrap();
         let path = format!("{home}/workspace/black-meridian/omegon");
         let shortened = shorten_cwd(&path, 128);
-        assert!(shortened.starts_with("~/"), "expected ~ prefix: {shortened}");
+        assert!(
+            shortened.starts_with("~/"),
+            "expected ~ prefix: {shortened}"
+        );
     }
 
     #[test]
@@ -1119,15 +1171,16 @@ mod tests {
 
     #[test]
     fn provider_telemetry_line_formats_unified_usage() {
-        let text = format_provider_telemetry_line(&Some(omegon_traits::ProviderTelemetrySnapshot {
-            provider: "anthropic".into(),
-            source: "response_headers".into(),
-            unified_5h_utilization_pct: Some(42.0),
-            unified_7d_utilization_pct: Some(64.0),
-            retry_after_secs: Some(17),
-            ..Default::default()
-        }))
-        .expect("telemetry line");
+        let text =
+            format_provider_telemetry_line(&Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "anthropic".into(),
+                source: "response_headers".into(),
+                unified_5h_utilization_pct: Some(42.0),
+                unified_7d_utilization_pct: Some(64.0),
+                retry_after_secs: Some(17),
+                ..Default::default()
+            }))
+            .expect("telemetry line");
         assert!(text.contains("5h 42%"), "got {text}");
         assert!(text.contains("7d 64%"), "got {text}");
         assert!(text.contains("retry 17s"), "got {text}");
@@ -1135,18 +1188,19 @@ mod tests {
 
     #[test]
     fn provider_telemetry_line_formats_codex_headers() {
-        let text = format_provider_telemetry_line(&Some(omegon_traits::ProviderTelemetrySnapshot {
-            provider: "openai-codex".into(),
-            source: "response_headers".into(),
-            codex_active_limit: Some("codex".into()),
-            codex_primary_pct: Some(0),
-            codex_primary_reset_secs: Some(13648),
-            codex_secondary_reset_secs: Some(348644),
-            codex_credits_unlimited: Some(false),
-            codex_limit_name: Some("GPT-5.3-Codex-Spark".into()),
-            ..Default::default()
-        }))
-        .expect("telemetry line");
+        let text =
+            format_provider_telemetry_line(&Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "openai-codex".into(),
+                source: "response_headers".into(),
+                codex_active_limit: Some("codex".into()),
+                codex_primary_pct: Some(0),
+                codex_primary_reset_secs: Some(13648),
+                codex_secondary_reset_secs: Some(348644),
+                codex_credits_unlimited: Some(false),
+                codex_limit_name: Some("GPT-5.3-Codex-Spark".into()),
+                ..Default::default()
+            }))
+            .expect("telemetry line");
         assert!(text.contains("GPT-5.3-Codex-Spark"), "got {text}");
         assert!(text.contains("codex"), "got {text}");
         assert!(text.contains("primary 0%"), "got {text}");
@@ -1234,9 +1288,15 @@ mod tests {
         };
         let text = render_left_panel_text(&data, 38, 8);
 
-        assert!(text.contains("v<version> → v9.9.9") || text.contains("v0.15."), "got {text}");
+        assert!(
+            text.contains("v<version> → v9.9.9") || text.contains("v0.15."),
+            "got {text}"
+        );
         assert!(text.contains("gpt-5.4"), "got {text}");
-        assert!(text.contains("Victory") || text.contains("victory"), "got {text}");
+        assert!(
+            text.contains("Victory") || text.contains("victory"),
+            "got {text}"
+        );
         assert!(text.contains("High") || text.contains("high"), "got {text}");
     }
 
@@ -1259,11 +1319,17 @@ mod tests {
         };
         let text = render_left_panel_text(&data, 64, 8);
 
-        assert!(text.contains("⤴ OpenAI") || text.contains("⤴ openai"), "got {text}");
+        assert!(
+            text.contains("⤴ OpenAI") || text.contains("⤴ openai"),
+            "got {text}"
+        );
         assert!(text.contains("↻ sub"), "got {text}");
         // model name is on its own row; tier + thinking on the next
         assert!(text.contains("gpt-5.4"), "got {text}");
-        assert!(text.contains("Victory · High") || text.contains("victory · high"), "got {text}");
+        assert!(
+            text.contains("Victory · High") || text.contains("victory · high"),
+            "got {text}"
+        );
         assert!(text.contains("Maniple 68% / ¤272k"), "got {text}");
     }
 
@@ -1291,7 +1357,10 @@ mod tests {
         };
         let text = render_left_panel_text(&data, 72, 8);
 
-        assert!(text.contains("6× stalled stream · last 2m ago"), "got {text}");
+        assert!(
+            text.contains("6× stalled stream · last 2m ago"),
+            "got {text}"
+        );
     }
 
     #[test]
@@ -1349,7 +1418,10 @@ mod tests {
         let just_now = (Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
         let hourly = (Utc::now() - chrono::Duration::hours(3)).to_rfc3339();
 
-        assert_eq!(format_failure_age(&just_now).as_deref(), Some("last just now"));
+        assert_eq!(
+            format_failure_age(&just_now).as_deref(),
+            Some("last just now")
+        );
         assert_eq!(format_failure_age(&hourly).as_deref(), Some("last 3h ago"));
         assert_eq!(format_failure_age("not-a-time"), None);
     }

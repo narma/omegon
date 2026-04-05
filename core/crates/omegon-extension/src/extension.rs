@@ -6,7 +6,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
 /// Extension trait — implement this to create an extension.
-/// 
+///
 /// The extension SDK will handle all RPC protocol details. You only need
 /// to implement method dispatch and return JSON results.
 #[async_trait]
@@ -18,7 +18,7 @@ pub trait Extension: Send + Sync {
     fn version(&self) -> &str;
 
     /// Handle an RPC method call.
-    /// 
+    ///
     /// Return `Ok(Value)` on success, or an `Err(Error)` with a typed error code.
     /// Unknown methods should return `Error::method_not_found(method)`.
     ///
@@ -63,11 +63,8 @@ impl<E: Extension> ExtensionServe<E> {
             let msg: RpcMessage = match serde_json::from_str(line.trim()) {
                 Ok(msg) => msg,
                 Err(e) => {
-                    let error_response = RpcResponse::error(
-                        None,
-                        crate::ErrorCode::ParseError,
-                        e.to_string(),
-                    );
+                    let error_response =
+                        RpcResponse::error(None, crate::ErrorCode::ParseError, e.to_string());
                     let response_json = serde_json::to_string(&error_response)?;
                     writer.write_all(response_json.as_bytes()).await?;
                     writer.write_all(b"\n").await?;

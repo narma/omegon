@@ -35,7 +35,8 @@ pub struct AgentSetup {
     /// get a generated id at startup; resumed sessions reuse their saved id.
     pub session_id: String,
     /// Shared context metrics — updated each turn, read by ContextProvider
-    pub context_metrics: std::sync::Arc<std::sync::Mutex<crate::features::context::SharedContextMetrics>>,
+    pub context_metrics:
+        std::sync::Arc<std::sync::Mutex<crate::features::context::SharedContextMetrics>>,
     /// Shared command channel — set by main after TUI init
     pub command_tx: crate::features::context::SharedCommandTx,
     pub context_manager: ContextManager,
@@ -194,7 +195,7 @@ impl AgentSetup {
         // Replaces the sync preflight_session_cache() which silently skips vault recipes.
         secrets.preflight_session_cache_async(preflight).await;
         let session_secret_env = secrets.session_env();
-        
+
         // Web auth secret: Try to load from preflight cache; fall back to ephemeral.
         // OMEGON_WEB_AUTH_SECRET is NOT preflighted (see above), so we'll get
         // an ephemeral root and will prompt for keychain access only if the user
@@ -320,7 +321,12 @@ impl AgentSetup {
                     edges: stats.edges,
                     active_persona_mind: None,
                 };
-                tracing::info!(facts = initial_memory_status.active_facts, episodes = initial_memory_status.episodes, edges = initial_memory_status.edges, "memory snapshot for TUI");
+                tracing::info!(
+                    facts = initial_memory_status.active_facts,
+                    episodes = initial_memory_status.episodes,
+                    edges = initial_memory_status.edges,
+                    "memory snapshot for TUI"
+                );
             }
 
             // Import JSONL if database is empty (but not in child processes)
@@ -426,17 +432,22 @@ impl AgentSetup {
         // ─── Context management provider ───────────────────────────────
         let context_metrics = features::context::SharedContextMetrics::new();
         let command_tx = features::context::new_shared_command_tx();
-        bus.register(Box::new(features::context::ContextProvider::new(context_metrics.clone(), command_tx.clone())));
+        bus.register(Box::new(features::context::ContextProvider::new(
+            context_metrics.clone(),
+            command_tx.clone(),
+        )));
 
         // ─── Operator-installed extensions (RPC + OCI) ────────────────
         // All extensions, including bundled ones (scribe-rpc), are discovered here
-        let (extension_widgets, widget_receivers) = match discover_and_register_extensions(&mut bus, std::sync::Arc::clone(&secrets)).await {
-            Ok((widgets, receivers)) => (widgets, receivers),
-            Err(e) => {
-                tracing::warn!("extension discovery failed: {}", e);
-                (vec![], vec![])
-            }
-        };
+        let (extension_widgets, widget_receivers) =
+            match discover_and_register_extensions(&mut bus, std::sync::Arc::clone(&secrets)).await
+            {
+                Ok((widgets, receivers)) => (widgets, receivers),
+                Err(e) => {
+                    tracing::warn!("extension discovery failed: {}", e);
+                    (vec![], vec![])
+                }
+            };
 
         // ─── External plugins (TOML manifests) ────────────────────────
         let plugins = crate::plugins::discover_plugins(&cwd, Some(secrets.as_ref())).await;
@@ -517,7 +528,10 @@ impl AgentSetup {
             container = harness_status.container_runtime.is_some(),
             facts = harness_status.memory.total_facts,
             web_auth_mode = harness_status.web_auth_mode.as_deref().unwrap_or("unknown"),
-            web_auth_source = harness_status.web_auth_source.as_deref().unwrap_or("unknown"),
+            web_auth_source = harness_status
+                .web_auth_source
+                .as_deref()
+                .unwrap_or("unknown"),
             "harness status assembled"
         );
 
@@ -555,7 +569,9 @@ impl AgentSetup {
                             // Read the companion meta file to populate the resumption brief
                             let meta_path = path.with_extension("meta.json");
                             if let Ok(json) = std::fs::read_to_string(&meta_path) {
-                                if let Ok(meta) = serde_json::from_str::<session::SessionMeta>(&json) {
+                                if let Ok(meta) =
+                                    serde_json::from_str::<session::SessionMeta>(&json)
+                                {
                                     resume_info = Some(ResumeInfo {
                                         session_id: meta.session_id,
                                         turns: meta.turns,
@@ -727,7 +743,9 @@ fn collect_plugin_secret_requirements(cwd: &std::path::Path) -> Vec<String> {
             if bytes[i] == b'{' {
                 if let Some(end) = s[i + 1..].find('}') {
                     let var = &s[i + 1..i + 1 + end];
-                    if !var.is_empty() && var.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_') {
+                    if !var.is_empty()
+                        && var.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+                    {
                         out.push(var.to_string());
                     }
                     i += end + 2;
@@ -760,10 +778,14 @@ fn collect_plugin_secret_requirements(cwd: &std::path::Path) -> Vec<String> {
     .collect();
 
     for dir in &plugin_dirs {
-        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let manifest_path = entry.path().join("plugin.toml");
-            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+                continue;
+            };
             // Try armory-style manifest (has MCP servers)
             if let Ok(manifest) = crate::plugins::armory::ArmoryManifest::parse(&content) {
                 scan_servers(&manifest.mcp_servers, &mut names);
@@ -776,7 +798,8 @@ fn collect_plugin_secret_requirements(cwd: &std::path::Path) -> Vec<String> {
     if let Ok(content) = std::fs::read_to_string(&mcp_toml) {
         if let Ok(servers) = toml::from_str::<
             std::collections::HashMap<String, crate::plugins::mcp::McpServerConfig>,
-        >(&content) {
+        >(&content)
+        {
             scan_servers(&servers, &mut names);
         }
     }
@@ -797,7 +820,10 @@ fn collect_plugin_secret_requirements(cwd: &std::path::Path) -> Vec<String> {
 async fn discover_and_register_extensions(
     bus: &mut crate::bus::EventBus,
     secrets: std::sync::Arc<omegon_secrets::SecretsManager>,
-) -> anyhow::Result<(Vec<crate::extensions::ExtensionTabWidget>, Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>)> {
+) -> anyhow::Result<(
+    Vec<crate::extensions::ExtensionTabWidget>,
+    Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>,
+)> {
     let ext_dir = dirs::home_dir()
         .map(|h| h.join(".omegon/extensions"))
         .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -829,7 +855,12 @@ async fn discover_and_register_extensions(
         let resolved_secrets: Vec<(String, String)> = {
             if let Ok(manifest) = crate::extensions::ExtensionManifest::from_extension_dir(&path) {
                 let mut pairs = Vec::new();
-                for name in manifest.secrets.required.iter().chain(manifest.secrets.optional.iter()) {
+                for name in manifest
+                    .secrets
+                    .required
+                    .iter()
+                    .chain(manifest.secrets.optional.iter())
+                {
                     if let Some(v) = secrets.resolve_async(name).await {
                         pairs.push((name.clone(), v));
                     }
@@ -843,7 +874,8 @@ async fn discover_and_register_extensions(
         // Try to spawn this extension
         match crate::extensions::spawn_from_manifest(&path, &resolved_secrets).await {
             Ok(spawned) => {
-                let ext_name = path.file_name()
+                let ext_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
                 let tool_count = spawned.feature.tools().len();
@@ -862,7 +894,8 @@ async fn discover_and_register_extensions(
                 count += 1;
             }
             Err(e) => {
-                let ext_name = path.file_name()
+                let ext_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
                 tracing::warn!(

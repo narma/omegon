@@ -140,7 +140,10 @@ fn editor_cursor_screen_position_wraps_at_expected_column() {
         height: 6,
     };
     let (x, y) = editor.cursor_screen_position(area);
-    assert_eq!(x, 3, "9 chars in 6 content columns should wrap to the fourth visible column");
+    assert_eq!(
+        x, 3,
+        "9 chars in 6 content columns should wrap to the fourth visible column"
+    );
     assert_eq!(
         y, 2,
         "9 chars in 6 content columns should land on the second wrapped row beneath the top border"
@@ -160,8 +163,14 @@ fn editor_cursor_advances_to_next_visual_row_after_first_wrap() {
     };
 
     let (x, y) = editor.cursor_screen_position(area);
-    assert_eq!(y, 2, "cursor should move onto wrapped row 2 after column 6 overflows");
-    assert_eq!(x, 1, "cursor should be at the second visible column on the wrapped row");
+    assert_eq!(
+        y, 2,
+        "cursor should move onto wrapped row 2 after column 6 overflows"
+    );
+    assert_eq!(
+        x, 1,
+        "cursor should be at the second visible column on the wrapped row"
+    );
 }
 
 #[test]
@@ -210,8 +219,15 @@ fn editor_visible_visual_lines_follow_cursor_scroll() {
     let (_x, y) = editor.cursor_screen_position(area);
     let visible = editor.visible_visual_lines(6, 2);
 
-    assert_eq!(y, 2, "cursor should stay inside the second visible editor row beneath the top border");
-    assert_eq!(visible, vec!["90ab", "cdef"], "render should follow editor scroll state");
+    assert_eq!(
+        y, 2,
+        "cursor should stay inside the second visible editor row beneath the top border"
+    );
+    assert_eq!(
+        visible,
+        vec!["90ab", "cdef"],
+        "render should follow editor scroll state"
+    );
 }
 
 #[test]
@@ -270,7 +286,8 @@ fn operator_event_queue_keeps_most_recent_entries() {
 fn mouse_wheel_scroll_direction_latches_manual_scroll() {
     let mut app = test_app();
     app.conversation.push_user("user");
-    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    app.conversation
+        .append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
 
     assert_eq!(app.conversation.conv_state.scroll_offset, 0);
     app.conversation.scroll_up(3);
@@ -279,8 +296,7 @@ fn mouse_wheel_scroll_direction_latches_manual_scroll() {
 
     app.conversation.append_streaming("\nnew line");
     assert_eq!(
-        app.conversation.conv_state.scroll_offset,
-        3,
+        app.conversation.conv_state.scroll_offset, 3,
         "streaming should not pull the viewport back to bottom once manually scrolled"
     );
 }
@@ -289,11 +305,15 @@ fn mouse_wheel_scroll_direction_latches_manual_scroll() {
 fn mouse_wheel_scroll_up_matches_natural_scroll_direction() {
     let mut app = test_app();
     app.conversation.push_user("user");
-    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    app.conversation
+        .append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
 
     app.conversation.scroll_up(3);
     let after_scroll_up = app.conversation.conv_state.scroll_offset;
-    assert!(after_scroll_up > 0, "scroll up should move into conversation history");
+    assert!(
+        after_scroll_up > 0,
+        "scroll up should move into conversation history"
+    );
 
     app.conversation.scroll_down(3);
     assert!(
@@ -309,7 +329,8 @@ fn conversation_scroll_does_not_recall_input_history() {
     app.editor.set_text("draft");
 
     app.conversation.push_user("user");
-    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    app.conversation
+        .append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
 
     app.conversation.scroll_up(3);
     assert_eq!(app.editor.render_text(), "draft");
@@ -328,7 +349,8 @@ fn conversation_focus_blocks_history_recall_on_up_down() {
     app.pane_focus = PaneFocus::Conversation;
 
     app.conversation.push_user("user");
-    app.conversation.append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    app.conversation
+        .append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
 
     let before_offset = app.conversation.conv_state.scroll_offset;
 
@@ -342,8 +364,15 @@ fn conversation_focus_blocks_history_recall_on_up_down() {
         app.conversation.conv_state.scroll_offset > before_offset,
         "conversation focus should route Up into conversation scrolling"
     );
-    assert_eq!(app.history_idx, None, "conversation focus must not enter history recall");
-    assert_eq!(app.editor.render_text(), "", "conversation focus must not rewrite the composer");
+    assert_eq!(
+        app.history_idx, None,
+        "conversation focus must not enter history recall"
+    );
+    assert_eq!(
+        app.editor.render_text(),
+        "",
+        "conversation focus must not rewrite the composer"
+    );
 
     let after_up_offset = app.conversation.conv_state.scroll_offset;
     if matches!(app.pane_focus, PaneFocus::Conversation) {
@@ -452,10 +481,19 @@ fn selected_tool_segment_exports_args_and_result() {
         .conversation
         .selected_segment_text()
         .expect("tool text should export");
-    assert!(selected.contains("tool: bash"), "missing tool header: {selected}");
+    assert!(
+        selected.contains("tool: bash"),
+        "missing tool header: {selected}"
+    );
     assert!(selected.contains("args:"), "missing args block: {selected}");
-    assert!(selected.contains("echo hi"), "missing args body: {selected}");
-    assert!(selected.contains("result:"), "missing result block: {selected}");
+    assert!(
+        selected.contains("echo hi"),
+        "missing args body: {selected}"
+    );
+    assert!(
+        selected.contains("result:"),
+        "missing result block: {selected}"
+    );
     assert!(selected.contains("hi"), "missing result body: {selected}");
 }
 
@@ -508,8 +546,14 @@ fn startup_initialization_prefers_mouse_interaction_mode() {
     app.mouse_capture_enabled = true;
     app.terminal_copy_mode = false;
 
-    assert!(!app.terminal_copy_mode, "startup should prefer robust mouse interaction");
-    assert!(app.mouse_capture_enabled, "startup should enable mouse capture to receive wheel events directly");
+    assert!(
+        !app.terminal_copy_mode,
+        "startup should prefer robust mouse interaction"
+    );
+    assert!(
+        app.mouse_capture_enabled,
+        "startup should enable mouse capture to receive wheel events directly"
+    );
 }
 
 #[test]
@@ -561,12 +605,18 @@ fn mouse_slash_command_toggles_interaction_mode() {
     app.terminal_copy_mode = true;
     app.mouse_capture_enabled = false;
 
-    assert!(matches!(app.handle_slash_command("/mouse", &tx), SlashResult::Handled));
+    assert!(matches!(
+        app.handle_slash_command("/mouse", &tx),
+        SlashResult::Handled
+    ));
     assert!(!app.terminal_copy_mode);
     assert!(app.mouse_capture_enabled);
     assert!(!app.focus_mode);
 
-    assert!(matches!(app.handle_slash_command("/mouse off", &tx), SlashResult::Handled));
+    assert!(matches!(
+        app.handle_slash_command("/mouse off", &tx),
+        SlashResult::Handled
+    ));
     assert!(app.terminal_copy_mode);
     assert!(!app.mouse_capture_enabled);
     assert!(!app.focus_mode);
@@ -684,9 +734,7 @@ fn bare_down_advances_history_in_terminal_copy_mode() {
         app.dashboard.scroll_down(3);
     } else if app.agent_active {
         app.conversation.scroll_down(3);
-    } else if app.editor.line_count() > 1
-        && app.editor.cursor_row() < app.editor.line_count() - 1
-    {
+    } else if app.editor.line_count() > 1 && app.editor.cursor_row() < app.editor.line_count() - 1 {
         app.editor.move_down();
     } else if app.should_use_arrow_history_recall() {
         app.history_recall_down();
@@ -704,7 +752,10 @@ fn multiline_up_uses_editor_navigation_before_history_recall() {
     app.editor.move_end();
 
     app.editor.move_up();
-    assert_eq!(app.history_idx, None, "moving within multiline text should not start history recall");
+    assert_eq!(
+        app.history_idx, None,
+        "moving within multiline text should not start history recall"
+    );
     assert_eq!(app.editor.render_text(), "top\nbottom");
 }
 
@@ -923,7 +974,10 @@ fn slash_context_compress_alias_requests_compaction() {
     let result = app.handle_slash_command("/context compress", &tx);
     assert!(!matches!(result, SlashResult::NotACommand));
     if let SlashResult::Display(text) = result {
-        assert!(text.contains("compaction"), "should confirm compaction request: {text}");
+        assert!(
+            text.contains("compaction"),
+            "should confirm compaction request: {text}"
+        );
     }
 }
 
@@ -1313,7 +1367,10 @@ fn model_selector_confirmation_does_not_optimistically_mutate_settings() {
 
     let result = app.confirm_selector(&tx);
 
-    assert_eq!(result.as_deref(), Some("Switching model → openai-codex:gpt-5.4"));
+    assert_eq!(
+        result.as_deref(),
+        Some("Switching model → openai-codex:gpt-5.4")
+    );
     assert_eq!(
         app.settings().model,
         original_model,
@@ -1473,7 +1530,8 @@ fn slash_cleave_warns_on_anthropic_subscription_but_proceeds() {
     assert!(
         app.operator_events
             .iter()
-            .any(|e| e.message.contains("risk is yours") || e.message.contains("may violate Anthropic")),
+            .any(|e| e.message.contains("risk is yours")
+                || e.message.contains("may violate Anthropic")),
         "expected warning toast in operator events"
     );
 
@@ -1531,7 +1589,10 @@ fn slash_auspex_open_requests_bridge_start_when_dashboard_not_running() {
     let SlashResult::Display(text) = result else {
         panic!("expected Display result");
     };
-    assert!(text.contains("Starting the local compatibility surface first"), "got: {text}");
+    assert!(
+        text.contains("Starting the local compatibility surface first"),
+        "got: {text}"
+    );
 }
 
 #[test]
@@ -1550,9 +1611,11 @@ fn slash_auspex_status_reports_attach_metadata() {
     assert!(text.contains("protocol: v1"), "got: {text}");
     assert!(text.contains("ipc.sock"), "got: {text}");
     assert!(text.contains("session id: not yet exposed"), "got: {text}");
-    assert!(text.contains("`/dash` remains the local compatibility path"), "got: {text}");
+    assert!(
+        text.contains("`/dash` remains the local compatibility path"),
+        "got: {text}"
+    );
 }
-
 
 #[test]
 fn web_dashboard_started_event_updates_cached_addr() {

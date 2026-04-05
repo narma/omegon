@@ -79,8 +79,7 @@ pub fn automation_safe_model() -> Option<String> {
     // Cached in a OnceLock so repeated calls (TUI event loop, orchestrator) are instant.
     static OLLAMA_AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     let ollama_up = OLLAMA_AVAILABLE.get_or_init(|| {
-        let host = std::env::var("OLLAMA_HOST")
-            .unwrap_or_else(|_| "127.0.0.1:11434".to_string());
+        let host = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "127.0.0.1:11434".to_string());
         let addr_str = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
@@ -94,11 +93,8 @@ pub fn automation_safe_model() -> Option<String> {
             .parse::<std::net::SocketAddr>()
             .ok()
             .and_then(|addr| {
-                std::net::TcpStream::connect_timeout(
-                    &addr,
-                    std::time::Duration::from_millis(50),
-                )
-                .ok()
+                std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(50))
+                    .ok()
             })
             .is_some()
     });
@@ -403,9 +399,8 @@ fn parse_rate_limit_snapshot(
     headers: &reqwest::header::HeaderMap,
 ) -> Option<omegon_traits::ProviderTelemetrySnapshot> {
     let get = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
-    let parse_pct = |name: &str| {
-        get(name).and_then(|v| v.trim().trim_end_matches('%').parse::<f32>().ok())
-    };
+    let parse_pct =
+        |name: &str| get(name).and_then(|v| v.trim().trim_end_matches('%').parse::<f32>().ok());
     let parse_u64 = |name: &str| get(name).and_then(|v| v.trim().parse::<u64>().ok());
     let parse_duration_secs = |name: &str| {
         get(name).and_then(|v| {
@@ -431,8 +426,8 @@ fn parse_rate_limit_snapshot(
         .or_else(|| parse_u64("x-codex-bengalfox-primary-reset-after-seconds"));
     let codex_secondary_reset_secs = parse_u64("x-codex-secondary-reset-after-seconds")
         .or_else(|| parse_u64("x-codex-bengalfox-secondary-reset-after-seconds"));
-    let codex_credits_unlimited = get("x-codex-credits-unlimited")
-        .map(|v| v.eq_ignore_ascii_case("true"));
+    let codex_credits_unlimited =
+        get("x-codex-credits-unlimited").map(|v| v.eq_ignore_ascii_case("true"));
     let codex_limit_name = get("x-codex-bengalfox-limit-name").map(ToOwned::to_owned);
 
     let snapshot = omegon_traits::ProviderTelemetrySnapshot {
@@ -487,10 +482,7 @@ fn collect_headers(
             if !predicate(&name_str) {
                 return None;
             }
-            value
-                .to_str()
-                .ok()
-                .map(|v| (name_str, v.to_string()))
+            value.to_str().ok().map(|v| (name_str, v.to_string()))
         })
         .collect()
 }
@@ -527,7 +519,10 @@ fn log_rate_limit_headers(provider: &str, headers: &reqwest::header::HeaderMap) 
     // actually returned instead of guessing.
     if provider == "openai-codex" {
         let all_headers = collect_headers(headers, |_| true);
-        let pairs: Vec<String> = all_headers.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        let pairs: Vec<String> = all_headers
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
         tracing::info!(
             provider,
             header_count = all_headers.len(),
@@ -1243,7 +1238,8 @@ impl OpenAIClient {
                 LlmMessage::ToolResult {
                     call_id, content, ..
                 } => {
-                    wire_msgs.push(json!({"role": "tool", "tool_call_id": call_id, "content": content}));
+                    wire_msgs
+                        .push(json!({"role": "tool", "tool_call_id": call_id, "content": content}));
                 }
             }
         }
@@ -1351,8 +1347,12 @@ async fn parse_openai_stream(
         if let Some(usage) = event.get("usage") {
             let pt = usage["prompt_tokens"].as_u64().unwrap_or(0);
             let ct = usage["completion_tokens"].as_u64().unwrap_or(0);
-            if pt > 0 { acc_input_tokens  = pt; }
-            if ct > 0 { acc_output_tokens = ct; }
+            if pt > 0 {
+                acc_input_tokens = pt;
+            }
+            if ct > 0 {
+                acc_output_tokens = ct;
+            }
             tracing::info!(
                 prompt_tokens = pt,
                 completion_tokens = ct,
@@ -1740,7 +1740,9 @@ impl LlmBridge for CodexClient {
                     log_rate_limit_headers("openai-codex", resp.headers());
                     let tx_clone = tx.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = parse_codex_stream(resp, provider_telemetry, &tx_clone).await {
+                        if let Err(e) =
+                            parse_codex_stream(resp, provider_telemetry, &tx_clone).await
+                        {
                             let _ = tx_clone
                                 .send(LlmEvent::Error {
                                     message: format!("{e}"),
@@ -1823,7 +1825,10 @@ async fn parse_codex_stream(
     // returns, using `.send().await` for guaranteed delivery. `try_send` inside
     // the sync closure can silently drop on a full channel (capacity 256).
     enum TerminalEvent {
-        Done { input_tokens: u64, output_tokens: u64 },
+        Done {
+            input_tokens: u64,
+            output_tokens: u64,
+        },
         Error(String),
     }
     let mut terminal: Option<TerminalEvent> = None;
@@ -1931,12 +1936,12 @@ async fn parse_codex_stream(
                 let mut codex_input: u64 = 0;
                 let mut codex_output: u64 = 0;
                 if let Some(usage) = event.pointer("/response/usage") {
-                    codex_input  = usage["input_tokens"].as_u64().unwrap_or(0);
+                    codex_input = usage["input_tokens"].as_u64().unwrap_or(0);
                     codex_output = usage["output_tokens"].as_u64().unwrap_or(0);
                     tracing::info!(
-                        input_tokens  = codex_input,
+                        input_tokens = codex_input,
                         output_tokens = codex_output,
-                        total_tokens  = usage["total_tokens"].as_u64().unwrap_or(0),
+                        total_tokens = usage["total_tokens"].as_u64().unwrap_or(0),
                         "Codex usage"
                     );
                 }
@@ -1974,16 +1979,16 @@ async fn parse_codex_stream(
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 tracing::warn!(reason, "Codex response.incomplete — output was truncated");
-                terminal = Some(TerminalEvent::Error(
-                    format!("Codex: response incomplete ({reason}) — output was truncated")
-                ));
+                terminal = Some(TerminalEvent::Error(format!(
+                    "Codex: response incomplete ({reason}) — output was truncated"
+                )));
                 return false;
             }
             // response.cancelled: request was cancelled server-side.
             "response.cancelled" => {
                 tracing::warn!("Codex response.cancelled");
                 terminal = Some(TerminalEvent::Error(
-                    "Codex: response cancelled by server".to_string()
+                    "Codex: response cancelled by server".to_string(),
                 ));
                 return false;
             }
@@ -2006,7 +2011,10 @@ async fn parse_codex_stream(
 
     // Deliver the terminal event with guaranteed async send.
     match terminal {
-        Some(TerminalEvent::Done { input_tokens, output_tokens }) => {
+        Some(TerminalEvent::Done {
+            input_tokens,
+            output_tokens,
+        }) => {
             let _ = tx
                 .send(LlmEvent::Done {
                     message: json!({"text": full_text, "tool_calls": completed_tool_calls}),
@@ -2179,12 +2187,16 @@ impl LlmBridge for OpenAICompatClient {
                 .ok()
                 .and_then(|v| v.parse::<u32>().ok())
                 .unwrap_or(32_768);
-            let keep_alive = std::env::var("OMEGON_OLLAMA_KEEP_ALIVE")
-                .unwrap_or_else(|_| "30m".to_string());
-            opts.extra_body
-                .insert("options".to_string(), serde_json::json!({"num_ctx": num_ctx}));
-            opts.extra_body
-                .insert("keep_alive".to_string(), serde_json::Value::String(keep_alive));
+            let keep_alive =
+                std::env::var("OMEGON_OLLAMA_KEEP_ALIVE").unwrap_or_else(|_| "30m".to_string());
+            opts.extra_body.insert(
+                "options".to_string(),
+                serde_json::json!({"num_ctx": num_ctx}),
+            );
+            opts.extra_body.insert(
+                "keep_alive".to_string(),
+                serde_json::Value::String(keep_alive),
+            );
         }
 
         self.inner
@@ -2251,13 +2263,34 @@ mod tests {
     #[test]
     fn parse_rate_limit_snapshot_extracts_codex_headers() {
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-codex-active-limit", reqwest::header::HeaderValue::from_static("codex"));
-        headers.insert("x-codex-primary-over-secondary-limit-percent", reqwest::header::HeaderValue::from_static("0"));
-        headers.insert("x-codex-primary-reset-after-seconds", reqwest::header::HeaderValue::from_static("13648"));
-        headers.insert("x-codex-secondary-reset-after-seconds", reqwest::header::HeaderValue::from_static("348644"));
-        headers.insert("x-codex-credits-unlimited", reqwest::header::HeaderValue::from_static("False"));
-        headers.insert("x-codex-bengalfox-limit-name", reqwest::header::HeaderValue::from_static("GPT-5.3-Codex-Spark"));
-        headers.insert("x-oai-request-id", reqwest::header::HeaderValue::from_static("abc-123"));
+        headers.insert(
+            "x-codex-active-limit",
+            reqwest::header::HeaderValue::from_static("codex"),
+        );
+        headers.insert(
+            "x-codex-primary-over-secondary-limit-percent",
+            reqwest::header::HeaderValue::from_static("0"),
+        );
+        headers.insert(
+            "x-codex-primary-reset-after-seconds",
+            reqwest::header::HeaderValue::from_static("13648"),
+        );
+        headers.insert(
+            "x-codex-secondary-reset-after-seconds",
+            reqwest::header::HeaderValue::from_static("348644"),
+        );
+        headers.insert(
+            "x-codex-credits-unlimited",
+            reqwest::header::HeaderValue::from_static("False"),
+        );
+        headers.insert(
+            "x-codex-bengalfox-limit-name",
+            reqwest::header::HeaderValue::from_static("GPT-5.3-Codex-Spark"),
+        );
+        headers.insert(
+            "x-oai-request-id",
+            reqwest::header::HeaderValue::from_static("abc-123"),
+        );
 
         let snapshot = parse_rate_limit_snapshot("openai-codex", &headers).expect("snapshot");
         assert_eq!(snapshot.provider, "openai-codex");
@@ -2266,7 +2299,10 @@ mod tests {
         assert_eq!(snapshot.codex_primary_reset_secs, Some(13648));
         assert_eq!(snapshot.codex_secondary_reset_secs, Some(348644));
         assert_eq!(snapshot.codex_credits_unlimited, Some(false));
-        assert_eq!(snapshot.codex_limit_name.as_deref(), Some("GPT-5.3-Codex-Spark"));
+        assert_eq!(
+            snapshot.codex_limit_name.as_deref(),
+            Some("GPT-5.3-Codex-Spark")
+        );
         assert_eq!(snapshot.request_id.as_deref(), Some("abc-123"));
     }
 
@@ -2286,8 +2322,14 @@ mod tests {
         assert_eq!(filtered, vec![("x-request-id".into(), "req_123".into())]);
 
         let all = collect_headers(&headers, |_| true);
-        assert!(all.iter().any(|(k, v)| k == "x-request-id" && v == "req_123"));
-        assert!(all.iter().any(|(k, v)| k == "content-type" && v == "text/event-stream"));
+        assert!(
+            all.iter()
+                .any(|(k, v)| k == "x-request-id" && v == "req_123")
+        );
+        assert!(
+            all.iter()
+                .any(|(k, v)| k == "content-type" && v == "text/event-stream")
+        );
     }
 
     #[test]
@@ -2408,7 +2450,10 @@ mod tests {
         let wire = OpenAIClient::build_wire_messages("system", &messages);
         assert_eq!(wire[1]["role"], "user");
         assert_eq!(wire[1]["content"][0]["type"], "image_url");
-        assert_eq!(wire[1]["content"][0]["image_url"]["url"], "data:image/png;base64,abc123");
+        assert_eq!(
+            wire[1]["content"][0]["image_url"]["url"],
+            "data:image/png;base64,abc123"
+        );
         assert_eq!(wire[1]["content"][1]["type"], "text");
         assert_eq!(wire[1]["content"][1]["text"], "describe this");
     }
@@ -2426,7 +2471,10 @@ mod tests {
         let input = CodexClient::build_input(&messages);
         assert_eq!(input[0]["role"], "user");
         assert_eq!(input[0]["content"][0]["type"], "input_image");
-        assert_eq!(input[0]["content"][0]["image_url"], "data:image/png;base64,abc123");
+        assert_eq!(
+            input[0]["content"][0]["image_url"],
+            "data:image/png;base64,abc123"
+        );
         assert_eq!(input[0]["content"][1]["type"], "input_text");
         assert_eq!(input[0]["content"][1]["text"], "describe this");
     }
@@ -2444,15 +2492,24 @@ mod tests {
 
         let anthropic = AnthropicClient::build_messages(std::slice::from_ref(&user));
         assert_eq!(anthropic[0]["content"][0]["type"], "image");
-        assert_eq!(anthropic[0]["content"][0]["source"]["media_type"], "image/png");
+        assert_eq!(
+            anthropic[0]["content"][0]["source"]["media_type"],
+            "image/png"
+        );
 
         let openai = OpenAIClient::build_wire_messages("system", std::slice::from_ref(&user));
         assert_eq!(openai[1]["content"][0]["type"], "image_url");
-        assert_eq!(openai[1]["content"][0]["image_url"]["url"], "data:image/png;base64,abc123");
+        assert_eq!(
+            openai[1]["content"][0]["image_url"]["url"],
+            "data:image/png;base64,abc123"
+        );
 
         let codex = CodexClient::build_input(&[user]);
         assert_eq!(codex[0]["content"][0]["type"], "input_image");
-        assert_eq!(codex[0]["content"][0]["image_url"], "data:image/png;base64,abc123");
+        assert_eq!(
+            codex[0]["content"][0]["image_url"],
+            "data:image/png;base64,abc123"
+        );
     }
 
     #[test]

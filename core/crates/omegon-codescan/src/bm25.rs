@@ -30,7 +30,10 @@ pub enum ChunkType {
 
 impl ChunkType {
     pub fn as_str(&self) -> &'static str {
-        match self { ChunkType::Code => "code", ChunkType::Knowledge => "knowledge" }
+        match self {
+            ChunkType::Code => "code",
+            ChunkType::Knowledge => "knowledge",
+        }
     }
 }
 
@@ -54,22 +57,35 @@ pub struct BM25Index {
 
 impl BM25Index {
     pub fn build(code: &[CodeChunk], knowledge: &[KnowledgeChunk]) -> Self {
-        let code_docs: Vec<_> = code.iter().map(|c| {
-            let text = format!("{} {} {}", c.item_name, c.item_kind, c.text);
-            (c.clone(), tokenize(&text))
-        }).collect();
-        let knowledge_docs: Vec<_> = knowledge.iter().map(|c| {
-            let text = format!("{} {} {}", c.heading, c.tags.join(" "), c.text);
-            (c.clone(), tokenize(&text))
-        }).collect();
+        let code_docs: Vec<_> = code
+            .iter()
+            .map(|c| {
+                let text = format!("{} {} {}", c.item_name, c.item_kind, c.text);
+                (c.clone(), tokenize(&text))
+            })
+            .collect();
+        let knowledge_docs: Vec<_> = knowledge
+            .iter()
+            .map(|c| {
+                let text = format!("{} {} {}", c.heading, c.tags.join(" "), c.text);
+                (c.clone(), tokenize(&text))
+            })
+            .collect();
         let avg_code_len = avg_len(&code_docs);
         let avg_knowledge_len = avg_len(&knowledge_docs);
-        Self { code_docs, knowledge_docs, avg_code_len, avg_knowledge_len }
+        Self {
+            code_docs,
+            knowledge_docs,
+            avg_code_len,
+            avg_knowledge_len,
+        }
     }
 
     pub fn search(&self, query: &str, scope: SearchScope, max_results: usize) -> Vec<SearchChunk> {
         let qtoks = tokenize(query);
-        if qtoks.is_empty() { return vec![]; }
+        if qtoks.is_empty() {
+            return vec![];
+        }
         let mut results = Vec::new();
 
         if matches!(scope, SearchScope::All | SearchScope::Code) {
@@ -80,8 +96,10 @@ impl BM25Index {
                 if score > 0.0 {
                     results.push(SearchChunk {
                         file: chunk.path.to_string_lossy().to_string(),
-                        start_line: chunk.start_line, end_line: chunk.end_line,
-                        chunk_type: ChunkType::Code, score,
+                        start_line: chunk.start_line,
+                        end_line: chunk.end_line,
+                        chunk_type: ChunkType::Code,
+                        score,
                         preview: trunc(&chunk.text, 1000),
                         label: format!("{}::{}", chunk.item_kind, chunk.item_name),
                     });
@@ -97,8 +115,10 @@ impl BM25Index {
                 if score > 0.0 {
                     results.push(SearchChunk {
                         file: chunk.path.to_string_lossy().to_string(),
-                        start_line: chunk.start_line, end_line: chunk.end_line,
-                        chunk_type: ChunkType::Knowledge, score,
+                        start_line: chunk.start_line,
+                        end_line: chunk.end_line,
+                        chunk_type: ChunkType::Knowledge,
+                        score,
                         preview: trunc(&chunk.text, 1000),
                         label: chunk.heading.clone(),
                     });
@@ -106,39 +126,62 @@ impl BM25Index {
             }
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(max_results);
         results
     }
 }
 
 fn tokenize(text: &str) -> Vec<String> {
-    text.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|t| t.len() >= 2).map(|t| t.to_string()).collect()
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| t.len() >= 2)
+        .map(|t| t.to_string())
+        .collect()
 }
 
 fn avg_len<T>(docs: &[(T, Vec<String>)]) -> f64 {
-    if docs.is_empty() { 1.0 } else { docs.iter().map(|(_, t)| t.len() as f64).sum::<f64>() / docs.len() as f64 }
+    if docs.is_empty() {
+        1.0
+    } else {
+        docs.iter().map(|(_, t)| t.len() as f64).sum::<f64>() / docs.len() as f64
+    }
 }
 
 fn build_df<'a>(docs: impl Iterator<Item = &'a [String]>) -> HashMap<String, f64> {
     let mut df: HashMap<String, f64> = HashMap::new();
     for doc in docs {
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
-        for t in doc { if seen.insert(t.as_str()) { *df.entry(t.clone()).or_default() += 1.0; } }
+        for t in doc {
+            if seen.insert(t.as_str()) {
+                *df.entry(t.clone()).or_default() += 1.0;
+            }
+        }
     }
     df
 }
 
 fn bm25(query: &[String], doc: &[String], n: f64, df: &HashMap<String, f64>, avg_dl: f64) -> f64 {
-    if n == 0.0 { return 0.0; }
-    let k1 = 1.5; let b = 0.75;
+    if n == 0.0 {
+        return 0.0;
+    }
+    let k1 = 1.5;
+    let b = 0.75;
     let dl = doc.len() as f64;
     let mut tf_map: HashMap<&str, f64> = HashMap::new();
-    for t in doc { *tf_map.entry(t.as_str()).or_default() += 1.0; }
+    for t in doc {
+        *tf_map.entry(t.as_str()).or_default() += 1.0;
+    }
     let mut score = 0.0;
     for q in query {
         let tf = *tf_map.get(q.as_str()).unwrap_or(&0.0);
-        if tf == 0.0 { continue; }
+        if tf == 0.0 {
+            continue;
+        }
         let df_val = *df.get(q.as_str()).unwrap_or(&0.0);
         let idf = ((n - df_val + 0.5) / (df_val + 0.5) + 1.0).ln();
         score += idf * (tf * (k1 + 1.0)) / (tf + k1 * (1.0 - b + b * dl / avg_dl.max(1.0)));
@@ -147,7 +190,11 @@ fn bm25(query: &[String], doc: &[String], n: f64, df: &HashMap<String, f64>, avg
 }
 
 fn trunc(s: &str, max: usize) -> String {
-    if s.chars().count() <= max { s.to_string() } else { s.chars().take(max).collect::<String>() + "…" }
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        s.chars().take(max).collect::<String>() + "…"
+    }
 }
 
 #[cfg(test)]
@@ -156,10 +203,24 @@ mod tests {
     use std::path::PathBuf;
 
     fn mk_code(name: &str, text: &str) -> CodeChunk {
-        CodeChunk { path: PathBuf::from("src/f.rs"), start_line: 1, end_line: 10, item_name: name.into(), item_kind: "fn".into(), text: text.into() }
+        CodeChunk {
+            path: PathBuf::from("src/f.rs"),
+            start_line: 1,
+            end_line: 10,
+            item_name: name.into(),
+            item_kind: "fn".into(),
+            text: text.into(),
+        }
     }
     fn mk_knowledge(heading: &str, text: &str) -> KnowledgeChunk {
-        KnowledgeChunk { path: PathBuf::from("docs/f.md"), heading: heading.into(), start_line: 1, end_line: 10, tags: vec![], text: text.into() }
+        KnowledgeChunk {
+            path: PathBuf::from("docs/f.md"),
+            heading: heading.into(),
+            start_line: 1,
+            end_line: 10,
+            tags: vec![],
+            text: text.into(),
+        }
     }
 
     #[test]
@@ -177,7 +238,10 @@ mod tests {
     #[test]
     fn knowledge_search() {
         let k = vec![
-            mk_knowledge("LSP integration", "Language Server Protocol code navigation"),
+            mk_knowledge(
+                "LSP integration",
+                "Language Server Protocol code navigation",
+            ),
             mk_knowledge("Memory system", "Fact storage retrieval sessions"),
         ];
         let idx = BM25Index::build(&[], &k);
@@ -205,7 +269,9 @@ mod tests {
 
     #[test]
     fn max_results_respected() {
-        let code: Vec<_> = (0..20).map(|i| mk_code(&format!("fn_{i}"), "common token here")).collect();
+        let code: Vec<_> = (0..20)
+            .map(|i| mk_code(&format!("fn_{i}"), "common token here"))
+            .collect();
         let idx = BM25Index::build(&code, &[]);
         let res = idx.search("common token", SearchScope::Code, 5);
         assert!(res.len() <= 5);

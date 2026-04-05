@@ -235,7 +235,9 @@ impl SecretsManager {
                     let mut cache = self.session_cache.write().unwrap();
                     cache.insert(name.clone(), SecretString::from(value));
                     let use_case = match name.as_str() {
-                        "BRAVE_API_KEY" | "TAVILY_API_KEY" | "SERPER_API_KEY" => SecretUse::WebSearch,
+                        "BRAVE_API_KEY" | "TAVILY_API_KEY" | "SERPER_API_KEY" => {
+                            SecretUse::WebSearch
+                        }
                         _ => SecretUse::LlmProvider,
                     };
                     let mut meta = self.session_meta.write().unwrap();
@@ -271,7 +273,7 @@ impl SecretsManager {
 
     /// Startup preflight: warm known interactive/runtime secrets once so the
     /// rest of the session can read them headlessly from memory/env.
-    /// 
+    ///
     /// Batches all keyring lookups into a single prompt by pre-loading all
     /// recipes that need keyring access before resolving any of them.
     pub fn preflight_session_cache<I, S>(&self, names: I)
@@ -293,7 +295,7 @@ impl SecretsManager {
         let recipes = self.recipes.read().unwrap();
         let mut keyring_names: Vec<&String> = Vec::new();
         let mut env_fallback_names: Vec<&String> = Vec::new();
-        
+
         for name in &requested {
             // Check if it has a recipe first (keyring is authoritative)
             if recipes.get(name).is_some() {
@@ -590,7 +592,9 @@ impl SecretsManager {
         // Keyring values will be resolved on-demand when actually needed (lazy resolution).
         for (name, recipe) in self.recipes.read().unwrap().iter() {
             match recipe {
-                crate::recipes::Recipe::String(recipe_str) if recipe_str.starts_with("keyring:") => {
+                crate::recipes::Recipe::String(recipe_str)
+                    if recipe_str.starts_with("keyring:") =>
+                {
                     // Skip keyring recipes at startup — will resolve on-demand
                     tracing::debug!(
                         name = name,

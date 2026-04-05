@@ -7,7 +7,7 @@
 
 use async_trait::async_trait;
 use omegon_traits::{ContentBlock, Feature, ToolDefinition, ToolResult};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
@@ -49,7 +49,13 @@ impl SharedContextMetrics {
         }
     }
 
-    pub fn update(&mut self, tokens_used: usize, context_window: usize, context_class: &str, thinking_level: &str) {
+    pub fn update(
+        &mut self,
+        tokens_used: usize,
+        context_window: usize,
+        context_class: &str,
+        thinking_level: &str,
+    ) {
         self.tokens_used = tokens_used;
         self.context_window = context_window;
         self.context_class = context_class.to_string();
@@ -71,7 +77,10 @@ pub struct ContextProvider {
 
 impl ContextProvider {
     pub fn new(metrics: Arc<Mutex<SharedContextMetrics>>, command_tx: SharedCommandTx) -> Self {
-        Self { command_tx, metrics }
+        Self {
+            command_tx,
+            metrics,
+        }
     }
 }
 
@@ -181,7 +190,6 @@ impl Feature for ContextProvider {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,8 +215,14 @@ mod tests {
 
         match &result.content[0] {
             ContentBlock::Text { text } => {
-                assert!(text.contains("Context: 96433/272000 tokens (35%)"), "unexpected text: {text}");
-                assert!(text.contains("Class: Maniple (272k)"), "unexpected text: {text}");
+                assert!(
+                    text.contains("Context: 96433/272000 tokens (35%)"),
+                    "unexpected text: {text}"
+                );
+                assert!(
+                    text.contains("Class: Maniple (272k)"),
+                    "unexpected text: {text}"
+                );
                 assert!(text.contains("Thinking: medium"), "unexpected text: {text}");
             }
             other => panic!("unexpected content block: {other:?}"),
@@ -235,7 +249,10 @@ mod tests {
 
         match &result.content[0] {
             ContentBlock::Text { text } => {
-                assert!(text.contains("unavailable in this mode"), "unexpected text: {text}");
+                assert!(
+                    text.contains("unavailable in this mode"),
+                    "unexpected text: {text}"
+                );
             }
             other => panic!("unexpected content block: {other:?}"),
         }

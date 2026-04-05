@@ -342,10 +342,7 @@ mod tests {
 
     #[test]
     fn test_episode_creation() {
-        let episode = Episode::new(
-            "ep-001".to_string(),
-            "Architecture Review".to_string(),
-        );
+        let episode = Episode::new("ep-001".to_string(), "Architecture Review".to_string());
 
         assert_eq!(episode.id, "ep-001");
         assert_eq!(episode.title, "Architecture Review");

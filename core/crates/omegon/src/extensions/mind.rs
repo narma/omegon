@@ -1,12 +1,12 @@
 //! Extension mind persistence — in-memory fact storage with JSONL disk backing.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
+use chrono::Utc;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use chrono::Utc;
 
 // Import types from omegon-extension SDK
-use omegon_extension::{Fact, Episode, MindMetadata};
+use omegon_extension::{Episode, Fact, MindMetadata};
 
 /// In-memory extension mind with persistent backing.
 /// Manages facts and episodes, persists to JSONL files.
@@ -124,7 +124,10 @@ impl ExtensionMind {
             .filter(|fact| {
                 fact.content.to_lowercase().contains(&query_lower)
                     || fact.section.to_lowercase().contains(&query_lower)
-                    || fact.tags.iter().any(|tag| tag.to_lowercase().contains(&query_lower))
+                    || fact
+                        .tags
+                        .iter()
+                        .any(|tag| tag.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect();
@@ -291,7 +294,11 @@ mod tests {
             mind_dir: PathBuf::from("/tmp/test-mind"),
             facts: HashMap::new(),
             episodes: HashMap::new(),
-            metadata: MindMetadata::new("test-ext".to_string(), "0.1.0".to_string(), "0.15.0".to_string()),
+            metadata: MindMetadata::new(
+                "test-ext".to_string(),
+                "0.1.0".to_string(),
+                "0.15.0".to_string(),
+            ),
         };
 
         assert_eq!(mind.fact_count(), 0);
@@ -305,7 +312,11 @@ mod tests {
             mind_dir: PathBuf::from("/tmp/test-mind"),
             facts: HashMap::new(),
             episodes: HashMap::new(),
-            metadata: MindMetadata::new("test-ext".to_string(), "0.1.0".to_string(), "0.15.0".to_string()),
+            metadata: MindMetadata::new(
+                "test-ext".to_string(),
+                "0.1.0".to_string(),
+                "0.15.0".to_string(),
+            ),
         };
 
         let fact = Fact::new(
@@ -328,7 +339,11 @@ mod tests {
             mind_dir: PathBuf::from("/tmp/test-mind"),
             facts: HashMap::new(),
             episodes: HashMap::new(),
-            metadata: MindMetadata::new("test-ext".to_string(), "0.1.0".to_string(), "0.15.0".to_string()),
+            metadata: MindMetadata::new(
+                "test-ext".to_string(),
+                "0.1.0".to_string(),
+                "0.15.0".to_string(),
+            ),
         };
 
         mind.add_fact(Fact::new(
@@ -358,7 +373,11 @@ mod tests {
             mind_dir: PathBuf::from("/tmp/test-mind"),
             facts: HashMap::new(),
             episodes: HashMap::new(),
-            metadata: MindMetadata::new("test-ext".to_string(), "0.1.0".to_string(), "0.15.0".to_string()),
+            metadata: MindMetadata::new(
+                "test-ext".to_string(),
+                "0.1.0".to_string(),
+                "0.15.0".to_string(),
+            ),
         };
 
         let id = mind.add_fact(Fact::new(
