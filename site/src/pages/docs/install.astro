@@ -2,21 +2,21 @@
 import Docs from "../../layouts/Docs.astro";
 ---
 
-<Docs title="Installation" description="Install omegon on macOS or Linux.">
+<Docs title="Installation" description="Install Omegon on macOS or Linux.">
   <h1>Installation</h1>
 
   <h2>Quick Install (Recommended)</h2>
   <pre><code>curl -fsSL https://omegon.styrene.dev/install.sh | sh</code></pre>
   <p>
     Downloads the latest signed binary for your platform (macOS arm64/x86_64, Linux x86_64/aarch64),
-    verifies the SHA-256 checksum, and installs to <code>/usr/local/bin</code>.
+    verifies the SHA-256 checksum, and installs to <code>/usr/local/bin</code> by default.
   </p>
 
   <h3>Options</h3>
   <pre><code># Install to a custom directory
 INSTALL_DIR=~/.local/bin curl -fsSL https://omegon.styrene.dev/install.sh | sh
 
-# Install a specific version
+# Install a specific stable or RC version
 VERSION=0.15.10 curl -fsSL https://omegon.styrene.dev/install.sh | sh
 # Replace 0.15.10 with the release you actually want
 
@@ -27,7 +27,7 @@ curl -fsSL https://omegon.styrene.dev/install.sh | sh -s -- --no-confirm</code><
   <pre><code>brew tap styrene-lab/tap
 brew install omegon</code></pre>
   <p>
-    The Homebrew formula downloads the latest release from GitHub, verifies the checksum,
+    The Homebrew formula downloads the latest GitHub release, verifies the checksum,
     and installs to your Homebrew prefix. Updates via <code>brew upgrade omegon</code>.
   </p>
 
@@ -43,7 +43,7 @@ brew install omegon</code></pre>
     <li><a href="https://www.sigstore.dev/">Sigstore cosign</a> signatures (keyless)</li>
     <li>CycloneDX SBOM</li>
     <li>GitHub Attestations (build provenance)</li>
-    <li>Installer/update metadata used by <code>/update</code> for release verification before install</li>
+    <li>Installer/update metadata used by <code>/update</code> for verification before install</li>
   </ul>
 
   <h3>Verify a Download</h3>
@@ -54,33 +54,49 @@ cosign verify-blob omegon-0.15.10-aarch64-apple-darwin.tar.gz \
   --certificate omegon-0.15.10-aarch64-apple-darwin.tar.gz.pem \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre>
+  <p>
+    The versioned filenames above are examples. Replace them with the exact artifact you downloaded.
+  </p>
 
   <h2>Provider Setup</h2>
   <p>
-    After installing, you need at least one inference provider configured. The fastest path:
+    After installing, you need at least one inference provider configured. Three fast paths:
   </p>
 
-  <h3>Option A: Claude Pro/Max Subscription (Free)</h3>
-  <pre><code>omegon login</code></pre>
-  <p>Opens a browser for OAuth authentication. No API key needed.</p>
+  <h3>Option A: Anthropic/Claude interactive subscription path</h3>
+  <pre><code>omegon login anthropic
+omegon</code></pre>
+  <p>
+    Opens a browser for OAuth authentication. This path is for interactive TUI use.
+    Omegon will block headless and automated entry points when this is your only Anthropic credential.
+  </p>
 
-  <h3>Option B: API Key</h3>
+  <h3>Option B: API key path</h3>
   <pre><code>export ANTHROPIC_API_KEY="sk-ant-..."
 omegon</code></pre>
+  <p>
+    Use this when you want clean automation semantics for prompts, smoke runs, or cleave workers.
+  </p>
 
-  <h3>Option C: Local Inference (Ollama)</h3>
-  <pre><code># Install Ollama (https://ollama.ai)
+  <h3>Option C: OpenAI/Codex OAuth or local Ollama</h3>
+  <pre><code># OpenAI/Codex OAuth
+omegon login openai-codex
+omegon
+
+# Or local inference
 ollama pull qwen3:32b
 omegon</code></pre>
-  <p>Omegon auto-detects Ollama and routes local-tier requests to it.</p>
+  <p>
+    Omegon auto-detects Ollama for local-tier work. OpenAI/Codex gives you the ChatGPT/Codex-backed route
+    without requiring an OpenAI API key.
+  </p>
 
-  <p>See <a href="/docs/providers">Providers</a> for all 10 supported inference providers.</p>
+  <p>See <a href="/docs/providers">Providers</a> for all supported auth modes and boundaries.</p>
 
   <h2>Updates</h2>
   <p>
-    Omegon checks for updates automatically at startup (5-second delay, non-blocking).
-    When a newer version is available, you'll see a toast notification and can run
-    <code>/update</code> to view release notes.
+    Omegon checks for updates automatically at startup (non-blocking).
+    When a newer version is available, you can run <code>/update</code> to inspect and install it.
   </p>
   <pre><code># Re-run the install script to update
 curl -fsSL https://omegon.styrene.dev/install.sh | sh</code></pre>

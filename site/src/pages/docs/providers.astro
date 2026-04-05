@@ -1,12 +1,12 @@
 ---
 import Docs from "../../layouts/Docs.astro";
 ---
-<Docs title="Providers" description="Provider authentication modes, allowed usage, and subscription restrictions.">
+<Docs title="Providers" description="Provider authentication modes, runtime identity, and usage boundaries.">
   <h1>Providers</h1>
   <p>
-    Omegon treats provider authentication as a usage boundary, not just a login choice. Some
-    providers are fully unrestricted, some are API-key only, and Anthropic subscription auth carries
-    a clear automation-risk warning rather than an absolute block.
+    Omegon treats provider authentication as a runtime boundary, not just a login convenience.
+    The active provider affects routing, allowed entry points, quota semantics, and what the
+    operator sees in the engine footer.
   </p>
 
   <h2>Current provider auth modes</h2>
@@ -21,28 +21,36 @@ import Docs from "../../layouts/Docs.astro";
     </thead>
     <tbody>
       <tr>
-        <td><strong>Anthropic API key</strong></td>
+        <td><strong>Anthropic/Claude API key</strong></td>
         <td><code>export ANTHROPIC_API_KEY="sk-ant-..."</code></td>
         <td>All Omegon entry points, including TUI, prompts, smoke, and cleave.</td>
         <td>Subject to Anthropic API terms, quota, and model limits.</td>
       </tr>
       <tr>
-        <td><strong>Anthropic OAuth / subscription</strong></td>
+        <td><strong>Anthropic/Claude OAuth / subscription</strong></td>
         <td><code>omegon login anthropic</code> or <code>/login anthropic</code></td>
-        <td>Interactive TUI sessions are the intended path. Omegon also permits automated flows, but warns explicitly when you use this credential for headless/background work.</td>
-        <td>Anthropic's consumer terms may restrict automated or non-human access for this credential class; use <code>ANTHROPIC_API_KEY</code> for clean automation.</td>
+        <td>Interactive TUI sessions.</td>
+        <td>
+          Omegon hard-blocks headless and automated entry points for this credential class.
+          If you want prompts, smoke tests, cleave, or unattended automation, use
+          <code>ANTHROPIC_API_KEY</code> instead.
+        </td>
       </tr>
       <tr>
-        <td><strong>OpenAI API key</strong></td>
+        <td><strong>OpenAI API</strong></td>
         <td><code>export OPENAI_API_KEY="sk-..."</code></td>
         <td>All supported Omegon entry points.</td>
         <td>Subject to OpenAI billing, quota, and model limits.</td>
       </tr>
       <tr>
-        <td><strong>Codex OAuth</strong></td>
+        <td><strong>OpenAI/Codex OAuth</strong></td>
         <td><code>omegon login openai-codex</code> or <code>/login openai-codex</code></td>
-        <td>Supported Codex flows in Omegon.</td>
-        <td>No Omegon-specific automation restriction like Anthropic subscription auth.</td>
+        <td>Supported Codex-backed Omegon flows, including interactive work and supported automation.</td>
+        <td>
+          The engine footer may show a selected model such as <code>gpt-5.4</code> while the limit row
+          shows an upstream bucket name such as <code>GPT-5.3-Codex-Spark</code>. That limit row is provider
+          telemetry, not a second model selector.
+        </td>
       </tr>
       <tr>
         <td><strong>Ollama</strong></td>
@@ -65,12 +73,24 @@ import Docs from "../../layouts/Docs.astro";
     </tbody>
   </table>
 
+  <h2>Runtime identity honesty</h2>
+  <p>
+    Omegon now keeps provider identity explicit in operator-facing surfaces:
+  </p>
+  <ul>
+    <li><strong>Anthropic/Claude</strong> means Anthropic-backed execution</li>
+    <li><strong>OpenAI API</strong> means API-key execution against OpenAI's API surfaces</li>
+    <li><strong>OpenAI/Codex</strong> means the ChatGPT/Codex OAuth-backed route</li>
+  </ul>
+  <p>
+    The footer's <strong>model</strong> row shows the selected runtime model. The <strong>limit</strong> row,
+    when present, shows upstream provider quota telemetry. Those are intentionally different fields.
+  </p>
+
   <h2>Anthropic subscription boundary</h2>
   <p>
-    Anthropic subscription auth is the only mode above with a prominent automation-risk warning.
-    Omegon surfaces that risk clearly because Anthropic's Consumer Terms appear to prohibit
-    automated or non-human access unless you are using an Anthropic API key or have explicit
-    permission.
+    Anthropic/Claude subscription auth is the one credential class with a hard Omegon runtime boundary.
+    Interactive TUI use is allowed. Headless and automated paths are blocked.
   </p>
   <p>
     The consumer terms page is here:
@@ -79,19 +99,16 @@ import Docs from "../../layouts/Docs.astro";
 
   <h2>Practical guidance</h2>
   <ul>
-    <li>If you want to work in the TUI by hand, Anthropic OAuth/subscription is fine.</li>
-    <li>If you want prompts, smoke tests, cleave, or other background automation, configure <code>ANTHROPIC_API_KEY</code>.</li>
+    <li>If you want to work in the TUI by hand, Anthropic/Claude OAuth is a valid path.</li>
+    <li>If you want unattended or scripted automation, configure <code>ANTHROPIC_API_KEY</code>.</li>
+    <li>If you want GPT-family routing without API-key setup, try <code>omegon login openai-codex</code>.</li>
     <li>If you want local-only inference, use Ollama.</li>
-    <li>If you want a provider with no subscription-style automation restriction, use an API-key-based mode.</li>
+    <li>If you want predictable automation with commercial API terms, prefer API-key-backed providers.</li>
   </ul>
 
   <h2>How this fits the rest of Omegon</h2>
   <p>
-    The provider layer feeds the TUI, slash commands, smoke paths, and cleave orchestration. That
-    means auth mode affects not just model access, but which entry points Omegon can safely expose.
-  </p>
-  <p>
-    The Anthropic subscription rule is disclosed separately in the runtime and here so the
-    operator can choose the right credential before starting work.
+    The provider layer feeds the TUI, slash commands, smoke paths, and cleave orchestration. That means
+    auth mode affects not just model access, but which entry points Omegon can honestly and safely expose.
   </p>
 </Docs>

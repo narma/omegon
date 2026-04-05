@@ -1,15 +1,15 @@
 ---
 import Docs from "../../layouts/Docs.astro";
 ---
-<Docs title="TUI & Dashboard" description="Terminal UI with status footer, segment rendering, and a live web dashboard.">
+<Docs title="TUI & Dashboard" description="Terminal UI with status footer, segment rendering, and a live local browser surface.">
   <h1>TUI &amp; Dashboard</h1>
 
   <h2>Layout</h2>
   <p>The terminal UI has three main regions:</p>
   <ul>
-    <li><strong>Conversation view</strong> (center) — segments: user prompts, assistant responses, tool cards, system notifications, lifecycle events</li>
-    <li><strong>Editor</strong> (bottom) — multi-line input with history, slash command palette</li>
-    <li><strong>Status footer</strong> (bottom bar) — status cards: context fill, active model/provider, memory count, system health. Expands to unified console (engine / inference / tools) when telemetry is active.</li>
+    <li><strong>Conversation view</strong> (center) — user prompts, assistant responses, tool cards, system notifications, lifecycle events</li>
+    <li><strong>Editor</strong> (bottom) — wrapped multiline input with history and slash-command palette</li>
+    <li><strong>Status footer</strong> (bottom bar) — ambient runtime telemetry. Expands into a unified console when deeper instrumentation is active.</li>
   </ul>
 
   <h2>Segments</h2>
@@ -20,128 +20,107 @@ import Docs from "../../layouts/Docs.astro";
     <thead><tr><th>Segment Type</th><th>Rendering</th></tr></thead>
     <tbody>
       <tr><td><strong>UserPrompt</strong></td><td>Your input, right-aligned with <code>&gt;</code> gutter</td></tr>
-      <tr><td><strong>AssistantText</strong></td><td>Response with teal <code>│</code> gutter, meta tag header, markdown highlighting</td></tr>
-      <tr><td><strong>ToolCard</strong></td><td>Collapsible card: tool name + glyph, args summary, result preview</td></tr>
-      <tr><td><strong>SystemNotification</strong></td><td>System messages (compaction, errors)</td></tr>
-      <tr><td><strong>LifecycleEvent</strong></td><td>Single-line status: turn separators, state changes</td></tr>
+      <tr><td><strong>AssistantText</strong></td><td>Response with teal <code>│</code> gutter, meta header, and markdown highlighting</td></tr>
+      <tr><td><strong>ToolCard</strong></td><td>Collapsible card: tool name, args summary, and result preview</td></tr>
+      <tr><td><strong>SystemNotification</strong></td><td>System messages such as compaction and errors</td></tr>
+      <tr><td><strong>LifecycleEvent</strong></td><td>Single-line status changes and turn transitions</td></tr>
       <tr><td><strong>TurnSeparator</strong></td><td>Thin horizontal rule between turns</td></tr>
     </tbody>
   </table>
 
-  <h3>SegmentMeta</h3>
+  <h3>Segment metadata</h3>
   <p>
-    Every segment carries metadata stamped at creation time — visible as a dim header line
-    on assistant responses:
+    Assistant responses carry a dim metadata header stamped at creation time, for example:
   </p>
-  <pre><code>claude-sonnet-4-6 · anthropic · victory · think:medium</code></pre>
+  <pre><code>gpt-5.4 · openai-codex · victory · think:medium</code></pre>
   <p>
-    Fields: model ID, provider, capability tier, thinking level, active persona, turn number,
-    estimated tokens, context fill percentage.
+    Fields include model ID, provider, capability tier, thinking level, and other runtime details.
   </p>
 
-  <h2>Tool Cards</h2>
+  <h2>Tool cards</h2>
   <p>
-    Each tool call renders as a compact card with the tool name (glyph + label), a one-line
-    args summary, and a collapsible result preview. 53 tools are mapped to distinctive glyphs.
+    Each tool call renders as a compact card with the tool name, one-line args summary,
+    and a collapsible result preview.
   </p>
   <ul>
-    <li><strong>Collapsed</strong> — shows tool name, args summary, first 12 lines of result</li>
-    <li><strong>Expanded</strong> — shows full result (up to 200 lines) with syntax highlighting</li>
-    <li><strong>Error cards</strong> — red separator, formatted error message</li>
-    <li>JSON results are automatically pretty-printed with <code>serde_json</code></li>
+    <li><strong>Collapsed</strong> — tool name, args summary, and a short result preview</li>
+    <li><strong>Expanded</strong> — larger result body with formatting where appropriate</li>
+    <li><strong>Error cards</strong> — explicit error styling instead of pretending failure is normal output</li>
   </ul>
 
   <h3>Expansion</h3>
   <table>
     <thead><tr><th>Key</th><th>Behavior</th></tr></thead>
     <tbody>
-      <tr><td><code>Ctrl+O</code></td><td>Pin/unpin: expands the nearest tool card and locks it visible. Press again to unpin and collapse.</td></tr>
-      <tr><td><code>Tab</code></td><td>Toggle expand on nearest tool card (when editor is empty). Backward compatibility.</td></tr>
-      <tr><td><code>Esc</code></td><td>Unpin any pinned segment.</td></tr>
+      <tr><td><code>Ctrl+O</code></td><td>Pin or unpin the nearest tool card</td></tr>
+      <tr><td><code>Tab</code></td><td>Toggle expand on the nearest tool card when the editor is empty</td></tr>
+      <tr><td><code>Esc</code></td><td>Unpin any pinned segment or close the active popup</td></tr>
     </tbody>
   </table>
 
-  <h2>Status Footer</h2>
+  <h2>Status footer</h2>
   <p>
-    The footer shows real-time system state at all times:
+    The footer is an operator instrument panel, not decorative chrome. It is meant to answer
+    “what engine am I actually on, what state is it in, and how much runway do I have?”
   </p>
   <ul>
-    <li><strong>Context card</strong> — braille-character density bar showing context fill in real provider token counts. Bucket legend identifies composition zones (cached / input / output / reasoning). Per-turn token stats row shows last-turn input/output tokens.</li>
-    <li><strong>Model card</strong> — active provider, model ID, capability tier</li>
-    <li><strong>Memory card</strong> — active facts count, working memory pins</li>
-    <li><strong>System card</strong> — tool call count, session duration, health indicator</li>
+    <li><strong>Context</strong> — context class, fill percentage, and token-aware usage display</li>
+    <li><strong>Engine</strong> — provider identity, selected model, tier, thinking level, and optional limit telemetry</li>
+    <li><strong>Memory</strong> — durable fact counts and working-memory activity</li>
+    <li><strong>System</strong> — runtime health, versions, and related state</li>
   </ul>
   <p>
-    When an agent turn is running, the footer expands into the unified console — engine block
-    (provider/model/route), inference panel (context composition), and live tools strip with
-    per-tool runtimes.
+    In the engine panel specifically:
+  </p>
+  <ul>
+    <li><strong>provider</strong> = concrete runtime backend identity, such as <code>OpenAI/Codex</code> or <code>Anthropic/Claude</code></li>
+    <li><strong>model</strong> = selected runtime model</li>
+    <li><strong>limit</strong> = upstream quota or bucket telemetry, when the provider exposes it</li>
+  </ul>
+  <p>
+    That separation is intentional. A Codex bucket name in the limit row is not a second model selector.
   </p>
 
-  <h2>Sidebar Navigation</h2>
+  <h2>Sidebar navigation</h2>
   <p>
-    Press <code>Ctrl+D</code> to enter sidebar navigation mode. The dashboard border turns
-    accent-colored and keyboard input routes to the design tree:
+    Press <code>Ctrl+D</code> to enter sidebar navigation mode and steer the design tree directly.
   </p>
   <table>
     <thead><tr><th>Key</th><th>Action</th></tr></thead>
     <tbody>
-      <tr><td><code>Ctrl+D</code></td><td>Toggle sidebar navigation mode</td></tr>
-      <tr><td><code>Up / k</code></td><td>Navigate up in the tree</td></tr>
-      <tr><td><code>Down / j</code></td><td>Navigate down in the tree</td></tr>
+      <tr><td><code>Ctrl+D</code></td><td>Toggle sidebar mode</td></tr>
+      <tr><td><code>Up / k</code></td><td>Navigate up</td></tr>
+      <tr><td><code>Down / j</code></td><td>Navigate down</td></tr>
       <tr><td><code>Left / h</code></td><td>Collapse node</td></tr>
       <tr><td><code>Right / l</code></td><td>Expand node</td></tr>
-      <tr><td><code>Enter</code></td><td>Focus the selected node (inject its context into the agent)</td></tr>
-      <tr><td><code>Home / End</code></td><td>Jump to first / last node</td></tr>
+      <tr><td><code>Enter</code></td><td>Focus the selected node</td></tr>
       <tr><td><code>Esc</code></td><td>Exit sidebar mode</td></tr>
     </tbody>
   </table>
-  <p>
-    Nodes show status icons, open question counts, priority badges, and OpenSpec bindings.
-    The tree is sorted by actionability: implementing nodes first, then blocked, decided,
-    exploring, and seed.
-  </p>
-
-  <h2>Visual Style</h2>
-  <p>
-    The TUI uses the <strong>Alpharius</strong> theme — a teal-dominant dark palette:
-  </p>
-  <ul>
-    <li>All borders use rounded corners (╭╮╰╯) — no square corners anywhere</li>
-    <li>Teal accent ramp for intensity-dependent elements</li>
-    <li>IBM Plex Mono (or system monospace) for code</li>
-    <li>Tomorrow (Google Fonts) for UI chrome</li>
-  </ul>
 
   <h2>Mouse</h2>
   <p>
-    Mouse capture is <strong>on by default</strong>. Scroll events pan the conversation; click-drag does not
-    select text in this mode. To select and copy text with your terminal's native selection, press
-    <code>Ctrl+M</code> to toggle mouse scroll off. Press again to re-enable. <code>Esc</code> no longer
-    silently disables mouse mode.
-  </p>
-  <p>
-    Press <code>Ctrl+Y</code> to copy the currently selected conversation segment as plain text
-    to the system clipboard.
+    Mouse capture is on by default. To use your terminal's native text selection,
+    toggle mouse handling with <code>Ctrl+M</code>. Press <code>Ctrl+Y</code> to copy the selected
+    conversation segment as plain text.
   </p>
 
   <h2>Editor</h2>
   <p>
-    The operator input area is a wrapped multiline editor rather than an infinitely wrapping single line.
-    It supports cursor navigation, visible cursor placement, prompt history, and proportional height growth
-    as your prompt wraps.
+    The input area is a real wrapped multiline editor with visible cursor placement,
+    prompt history, and proportional height growth.
   </p>
   <ul>
     <li><strong>Enter</strong> sends the prompt</li>
     <li><strong>Shift+Enter</strong> inserts a newline</li>
-    <li><strong>Arrow keys</strong> navigate within wrapped input and prompt history</li>
-    <li><strong>Visible cursor</strong> shows the real insertion point instead of guessing by wrap position</li>
+    <li><strong>Arrow keys</strong> navigate text and history</li>
   </ul>
 
-  <h2>Web Dashboard</h2>
+  <h2>Browser surface</h2>
   <pre><code>/dash</code></pre>
   <p>
-    Opens a live web dashboard in your browser that connects over WebSocket. Shows real-time
-    conversation, tool calls, memory state, design tree status, and session telemetry.
-    Useful for remote monitoring, screen sharing, or when you want a wider viewport.
+    Opens Omegon's local compatibility browser surface over WebSocket. It is useful for a wider viewport,
+    remote monitoring, demos, or local in-process inspection. It is not the same thing as a broader external
+    browser portal; it is Omegon's own local live surface.
   </p>
 </Docs>

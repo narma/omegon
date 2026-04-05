@@ -21,6 +21,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic V
 - **`/tutorial consent` acknowledgment** — Consent message now includes the automation restriction note alongside the quota usage warning.
 - **`/cleave` guard** — Changed from a flat block to a smart dispatch: routes to fallback when available, blocks only when no automation-safe provider exists.
 - **Startup gate is model-aware** — The Anthropic subscription gate now only fires when the requested `--model` is Anthropic. A child process explicitly running `--model ollama:llama3` is not blocked even when `ANTHROPIC_OAUTH_TOKEN` is set.
+- **OpenAI/Codex provider naming** — Operator-facing surfaces now use `OpenAI/Codex` and `Anthropic/Claude` as canonical labels instead of mixed branding.
+- **Engine footer limit wording** — The footer now labels Codex upstream quota telemetry as `limit` and prefixes model-family bucket names as buckets, reducing confusion between selected model and provider quota metadata.
+- **Embedded web identity parity** — The local web control plane now mirrors the canonical Omegon instance descriptor in startup and state payloads so browser consumers can see the same instance identity model as IPC consumers.
 
 ### Fixed
 

@@ -1,7 +1,7 @@
 ---
 import Docs from "../../layouts/Docs.astro";
 ---
-<Docs title="Commands" description="Complete reference for slash commands available in omegon sessions.">
+<Docs title="Commands" description="Complete reference for slash commands available in Omegon sessions.">
   <h1>Command Reference</h1>
   <p>
     Type <code>/</code> in the editor to see the command palette with fuzzy search.
@@ -25,7 +25,7 @@ import Docs from "../../layouts/Docs.astro";
     <tbody>
       <tr><td><code>/stats</code></td><td>Session telemetry — turns, tool calls, tokens, duration.</td></tr>
       <tr><td><code>/compact</code></td><td>Trigger context compaction to free context window space.</td></tr>
-      <tr><td><code>/clear</code></td><td>Clear conversation display (doesn't affect memory).</td></tr>
+      <tr><td><code>/clear</code></td><td>Clear conversation display (doesn't affect durable memory).</td></tr>
       <tr><td><code>/memory</code></td><td>Memory statistics — facts, episodes, working memory.</td></tr>
       <tr><td><code>/sessions</code></td><td>List saved sessions. Resume with <code>--resume</code> flag.</td></tr>
       <tr><td><code>/note [text]</code></td><td>Capture a note for later (persists across sessions).</td></tr>
@@ -37,7 +37,7 @@ import Docs from "../../layouts/Docs.astro";
   <table>
     <thead><tr><th>Command</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>/login [provider]</code></td><td>Log in to a provider: <code>anthropic</code>, <code>openai</code>, <code>openrouter</code>, <code>github</code>.</td></tr>
+      <tr><td><code>/login [provider]</code></td><td>Log in to a provider such as <code>anthropic</code>, <code>openai-codex</code>, <code>openai</code>, <code>openrouter</code>, or <code>github</code>.</td></tr>
       <tr><td><code>/logout [provider]</code></td><td>Log out of a provider.</td></tr>
       <tr><td><code>/auth [action]</code></td><td>Authentication management: <code>status</code>, <code>login</code>, <code>logout</code>, <code>unlock</code>.</td></tr>
       <tr><td><code>/secrets [action]</code></td><td>Manage stored secrets: <code>list</code>, <code>set</code>, <code>get</code>, <code>delete</code>.</td></tr>
@@ -45,14 +45,14 @@ import Docs from "../../layouts/Docs.astro";
     </tbody>
   </table>
 
-  <h2>Development Lifecycle</h2>
+  <h2>Development lifecycle</h2>
   <table>
     <thead><tr><th>Command</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>/init [action]</code></td><td>Initialize project — scan &amp; migrate agent conventions. Args: <code>scan</code>, <code>migrate</code>.</td></tr>
       <tr><td><code>/migrate [source]</code></td><td>Import from other tools: <code>auto</code>, <code>claude-code</code>, <code>codex</code>, <code>cursor</code>, <code>aider</code>.</td></tr>
       <tr><td><code>/checkin</code></td><td>Triage what needs attention now — open designs, active changes, recent issues.</td></tr>
-      <tr><td><code>/status</code></td><td>Show harness status — providers, MCP servers, secrets, routing state.</td></tr>
+      <tr><td><code>/status</code></td><td>Show harness status — providers, secrets, routing state, and runtime health.</td></tr>
       <tr><td><code>/milestone [action]</code></td><td>Release milestone management: <code>freeze</code>, <code>status</code>.</td></tr>
       <tr><td><code>/delegate [status]</code></td><td>Delegate task management across sessions.</td></tr>
       <tr><td><code>/chronos [sub]</code></td><td>Date/time context: <code>week</code>, <code>month</code>, <code>quarter</code>, <code>relative</code>, <code>iso</code>, <code>epoch</code>, <code>tz</code>, <code>range</code>, <code>all</code>.</td></tr>
@@ -73,23 +73,14 @@ import Docs from "../../layouts/Docs.astro";
     </tbody>
   </table>
 
-  <h2>Plugins &amp; Personas</h2>
-  <table>
-    <thead><tr><th>Command</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>/persona [name|off]</code></td><td>Switch persona or deactivate. Personas carry their own memory and cognitive style.</td></tr>
-      <tr><td><code>/tone [name|off]</code></td><td>Switch tone or deactivate. Adjusts communication style without changing capabilities.</td></tr>
-    </tbody>
-  </table>
-
   <h2>Interface</h2>
   <table>
     <thead><tr><th>Command</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>/dash</code></td><td>Open web dashboard in browser (real-time WebSocket connection).</td></tr>
+      <tr><td><code>/dash</code></td><td>Open Omegon's local browser compatibility surface (real-time live state over WebSocket).</td></tr>
       <tr><td><code>/dashboard</code></td><td>Alias for <code>/dash</code>.</td></tr>
       <tr><td><code>/focus</code></td><td>Toggle unified console footer (full engine/inference/tools panel).</td></tr>
-      <tr><td><code>/tree [sub]</code></td><td>Design tree summary: <code>list</code>, <code>frontier</code> (open questions), <code>ready</code> (decided, deps met), <code>blocked</code>.</td></tr>
+      <tr><td><code>/tree [sub]</code></td><td>Design tree summary: <code>list</code>, <code>frontier</code>, <code>ready</code>, <code>blocked</code>.</td></tr>
       <tr><td><code>/tutorial [action]</code></td><td>Interactive tutorial overlay. Primary paths: <code>/tutorial</code> for the current-project flow and <code>/tutorial demo</code> for the scripted showcase. Management args: <code>status</code>, <code>reset</code>.</td></tr>
       <tr><td><code>/splash</code></td><td>Replay the splash animation.</td></tr>
     </tbody>
@@ -106,39 +97,21 @@ import Docs from "../../layouts/Docs.astro";
     </tbody>
   </table>
 
-  <h2>Agent Tools</h2>
-  <p>In addition to slash commands, the agent has access to 53 structured tools that it calls autonomously:</p>
+  <h2>Agent tools</h2>
+  <p>In addition to slash commands, the agent has access to structured tools that it calls autonomously:</p>
   <ul>
-    <li><code>set_model_tier</code> / <code>set_thinking_level</code> / <code>switch_to_offline_driver</code> — adjust inference parameters mid-conversation or drop to local/offline execution</li>
+    <li><code>set_model_tier</code> / <code>set_thinking_level</code> / <code>switch_to_offline_driver</code> — adjust inference parameters or drop to local/offline execution</li>
     <li><code>memory_store</code> / <code>memory_recall</code> / <code>memory_query</code> / <code>memory_episodes</code> / <code>session_log</code> — manage persistent project and session memory</li>
     <li><code>design_tree</code> / <code>design_tree_update</code> / <code>lifecycle_doctor</code> — query, mutate, and audit lifecycle/design state</li>
     <li><code>cleave_assess</code> / <code>cleave_run</code> — assess complexity and execute parallel decomposition</li>
     <li><code>openspec_manage</code> — manage OpenSpec lifecycle</li>
     <li><code>codebase_search</code> / <code>codebase_index</code> — ranked discovery across code and project knowledge</li>
-    <li><code>web_search</code> — multi-provider web search (Brave, Tavily, Serper)</li>
+    <li><code>web_search</code> — multi-provider web search</li>
     <li><code>ask_local_model</code> / <code>list_local_models</code> / <code>manage_ollama</code> — local inference and Ollama control</li>
-    <li><code>speculate_start</code> / <code>speculate_check</code> / <code>speculate_commit</code> / <code>speculate_rollback</code> — git-checkpoint sandbox for exploratory changes; commit to keep or rollback to discard</li>
-    <li><code>read</code> / <code>edit</code> / <code>write</code> / <code>bash</code> / <code>view</code> / <code>change</code> / <code>commit</code> — file and system operations with atomic edits and git commits</li>
-    <li><code>serve</code> — manage long-lived background processes (dev servers, watchers, MCP servers). Start, stop, list, logs, check.</li>
-    <li><code>chronos</code> — authoritative date/time (never calculates dates manually)</li>
-    <li><code>whoami</code> — check auth status across all dev tools</li>
-    <li><code>manage_tools</code> — enable/disable individual tools or entire groups (<code>memory-advanced</code>, <code>delegate</code>, <code>cleave</code>, <code>lifecycle-advanced</code>, <code>model-control</code>). Actions: <code>list</code>, <code>enable</code>, <code>disable</code>, <code>enable_group</code>, <code>disable_group</code>, <code>list_groups</code>.</li>
+    <li><code>read</code> / <code>edit</code> / <code>write</code> / <code>bash</code> / <code>view</code> / <code>change</code> / <code>commit</code> — file and system operations with atomic edits and commits</li>
+    <li><code>serve</code> — manage long-lived background processes</li>
+    <li><code>chronos</code> — authoritative date/time</li>
+    <li><code>whoami</code> — auth status across development tools</li>
+    <li><code>manage_tools</code> — enable/disable tools or whole tool groups</li>
   </ul>
-
-  <h2>Keyboard Shortcuts</h2>
-  <table>
-    <thead><tr><th>Key</th><th>Action</th></tr></thead>
-    <tbody>
-      <tr><td><code>Ctrl+D</code></td><td>Toggle sidebar navigation mode — arrow keys/hjkl navigate the design tree, Enter focuses a node, Esc exits</td></tr>
-      <tr><td><code>Ctrl+O</code></td><td>Pin/unpin segment expansion (locks tool card open at bottom of viewport)</td></tr>
-      <tr><td><code>Ctrl+Y</code></td><td>Copy the currently selected conversation segment as plain text to the clipboard</td></tr>
-      <tr><td><code>Ctrl+M</code></td><td>Toggle mouse scroll mode (mouse is on by default; <code>Ctrl+M</code> switches between scroll and terminal-native selection)</td></tr>
-      <tr><td><code>Tab</code></td><td>Expand nearest tool card (when editor is empty)</td></tr>
-      <tr><td><code>Esc</code></td><td>Cancel active agent turn / unpin segment / close selector</td></tr>
-      <tr><td><code>Ctrl+C</code></td><td>Cancel turn (single) / quit (double-tap)</td></tr>
-      <tr><td><code>↑/↓</code></td><td>Scroll conversation / navigate history (in editor)</td></tr>
-      <tr><td><code>Enter</code></td><td>Send prompt</td></tr>
-      <tr><td><code>Shift+Enter</code></td><td>Newline in editor</td></tr>
-    </tbody>
-  </table>
 </Docs>

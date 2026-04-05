@@ -1,12 +1,39 @@
 # Omegon
 
-**Native AI agent harness — for agents, by agents.**
+**The AI agent harness with enough nerve to act like an operating system for software work.**
 
-Single binary. Zero dependencies. Full autonomy.
+Single binary. Native Rust. Real memory. Parallel worktrees. Design and spec lifecycles built in.
 
-Omegon is a Rust-native AI coding agent that runs entirely in your terminal. It connects to 10 inference providers through native Rust clients, manages project memory across sessions, decomposes complex tasks into parallel workers, and tracks design decisions in a persistent knowledge graph — all from a ~19MB binary with no runtime dependencies.
+Omegon is not a chatbot in your terminal. It is a systems engineering harness for operators who build: a terminal-native agent that can read and edit code, run commands, manage project memory across sessions, decompose work into parallel children, and track design intent as a first-class artifact.
 
-[![omegon.styrene.dev](https://img.shields.io/badge/docs-omegon.styrene.dev-2ab4c8)](https://omegon.styrene.dev)
+[![docs](https://img.shields.io/badge/docs-omegon.styrene.dev-2ab4c8)](https://omegon.styrene.dev)
+[![license](https://img.shields.io/badge/license-BSL%201.1-344858)](LICENSE)
+
+---
+
+## Why Omegon exists
+
+Most “coding agents” are thin wrappers around an API call, a file picker, and some hopeful marketing.
+
+Omegon takes the opposite position.
+
+Software work is a live system with:
+- state
+- memory
+- lifecycle artifacts
+- source control boundaries
+- multiple inference backends
+- cost and quota pressure
+- operator intent that must survive more than one session
+
+So Omegon treats the agent as one subsystem inside a larger harness.
+
+That means you get:
+- a **real terminal UI** instead of a transcript dump
+- **provider honesty** instead of vague “smart routing” slogans
+- **persistent project memory** instead of amnesia between runs
+- **design-tree and OpenSpec lifecycles** instead of planning in random markdown scraps
+- **parallel git worktree execution** instead of praying one giant prompt does the right thing
 
 ---
 
@@ -16,231 +43,270 @@ Omegon is a Rust-native AI coding agent that runs entirely in your terminal. It 
 curl -fsSL https://omegon.styrene.dev/install.sh | sh
 ```
 
-This downloads the correct binary for your platform and adds it to your PATH.
-
-### Supported Platforms
-
-| Platform | Architecture |
-|----------|-------------|
-| macOS    | arm64 (Apple Silicon) |
-| macOS    | x86_64 (Intel) |
-| Linux    | x86_64 |
-| Linux    | arm64 / aarch64 |
-
-### Version Pinning
-
-Pin a project to a specific Omegon version by creating an `.omegon-version` file:
+Or with Homebrew:
 
 ```sh
-echo "0.14.1" > .omegon-version
+brew tap styrene-lab/tap
+brew install omegon
 ```
 
-Omegon detects this file from the current directory upward and warns if the active version doesn't match.
+Docs: <https://omegon.styrene.dev/docs/install>
 
 ---
 
-## Quick Start
+## Get working fast
+
+### Fastest interactive path
 
 ```sh
-# Launch Omegon in your project directory
+omegon login openai-codex
 omegon
+```
 
-# Set your API key on first run (or export ANTHROPIC_API_KEY)
+### API-key path
+
+```sh
 export ANTHROPIC_API_KEY=sk-ant-...
+omegon
 ```
 
-Omegon opens a terminal UI where you interact with the agent through natural language. It can read and edit files, run commands, search the web, manage git, and orchestrate multi-step workflows.
+### Local path
+
+```sh
+ollama pull qwen3:32b
+omegon
+```
+
+If you want the shortest happy path instead of a full tour, start here:
+- <https://omegon.styrene.dev/docs/get-started>
 
 ---
 
-## Key Features
+## What it does
 
-### Three-Axis Model Routing
+### 1. Runs as a native terminal harness
 
-Omegon routes every request through three independent axes:
+Omegon is a Rust-native binary with no Node.js runtime dependency.
 
-- **Capability tier** — `local` → `retribution` → `victory` → `gloriana` (cheapest to most capable)
-- **Thinking level** — `off` / `minimal` / `low` / `medium` / `high` (controls reasoning budget)
-- **Context class** — routes based on task type and provider availability
+It gives you:
+- structured conversation rendering
+- collapsible tool cards
+- wrapped multiline editor
+- live engine, memory, and system telemetry
+- local browser compatibility surface via `/dash`
 
-The agent automatically adjusts tier and thinking level based on task complexity. You can also set them manually with `/model` and `/think`, while the agent can self-adjust with `set_model_tier` and `set_thinking_level`.
+### 2. Keeps provider identity honest
 
-### Project Memory
+Omegon distinguishes concrete runtime backends instead of hiding them behind mushy branding.
 
-Facts persist across sessions in a local SQLite database:
+Examples:
+- **Anthropic/Claude**
+- **OpenAI API**
+- **OpenAI/Codex**
+- **Ollama**
 
-- **Architecture** — system structure, component relationships
-- **Decisions** — choices made and their rationale
-- **Constraints** — hard limits and invariants
-- **Known Issues** — tracked problems and workarounds
-- **Patterns & Conventions** — coding standards and project norms
+The footer separates:
+- **provider** → concrete backend identity
+- **model** → selected runtime model
+- **limit** → upstream quota/bucket telemetry when available
 
-Memory supports semantic search (vector embeddings), episodic recall (session narratives), and a knowledge graph with typed relationships between facts. Stale facts decay automatically.
+That sounds small until you’ve spent an hour debugging a system that lied about what model path it was actually using.
 
-### Design Tree
+### 3. Persists project memory across sessions
 
-A persistent knowledge graph for tracking design exploration:
+Omegon stores durable facts under typed sections:
+- Architecture
+- Decisions
+- Constraints
+- Known Issues
+- Patterns & Conventions
+- Specs
 
-- Create nodes for features, bugs, tasks, and epics
-- Track status: `seed` → `exploring` → `resolved` → `decided` → `implementing` → `implemented`
-- Record research findings, open questions, and design decisions
-- Branch child nodes from open questions
-- Declare dependencies between nodes
-- Query for `ready` (decided + deps met) or `blocked` nodes
+This is not “chat history with search.”
+It is a project memory system with recall, persistence, and lifecycle-aware usage.
 
-### Parallel Task Execution (Cleave)
+### 4. Tracks design and specification as first-class work
 
-Decompose complex work into parallel subtasks:
+Omegon ships with two durable lifecycle systems:
 
-1. **Assess** — score task complexity against patterns
-2. **Plan** — split into independent children with file scopes
-3. **Execute** — each child runs in an isolated git worktree on its own branch
-4. **Merge** — automatic conflict detection and branch integration
+- **Design Tree** — explore questions, record research, dependencies, and decisions
+- **OpenSpec** — write Given/When/Then specs, generate plans, verify implementation, archive change history
 
-```
-/cleave "add authentication with JWT tokens, rate limiting, and audit logging"
-```
+This makes the agent better at long-running work because intent is written down in forms the harness can query.
 
-### Spec-Driven Development (OpenSpec)
+### 5. Executes parallel work in real git worktrees
 
-Every non-trivial change follows a lifecycle:
+For larger tasks, Omegon can assess complexity and split work into child tasks with isolated scopes.
 
-```
-propose → spec → plan → implement → verify → archive
-```
-
-Specs use **Given/When/Then** scenarios to define what must be true *before* code is written. After implementation, `/assess spec` validates the code against the scenarios.
-
-### Codebase Search & Lifecycle Diagnostics
-
-The agent has native retrieval and audit tools for project-scale work:
-
-- `codebase_search` / `codebase_index` — ranked discovery across code and project knowledge
-- `lifecycle_doctor` — audit suspicious design/OpenSpec lifecycle drift before release or implementation
-- `session_log` — inspect recent session narratives for continuity across runs
-
-### Status Footer
-
-Real-time system state visible at all times in the terminal footer:
-
-- **Four-card layout** — Context fill gauge, active model/provider, memory count, system health
-- **Wrapped multiline editor** — visible cursor, Shift+Enter newline insertion, and proportional growth with prompt length
-- **Unified console mode** — expanded engine/inference/tools panel for deeper telemetry when needed
-- **Ambient awareness** — the panel favors actionable runtime state over decorative effects
-
-### Skills
-
-Markdown-based skill definitions that inject domain expertise into the agent context:
-
-| Skill | Domain |
-|-------|--------|
-| `git` | Conventional commits, semantic versioning, branch naming |
-| `typescript` | Strict typing, async patterns, node:test |
-| `rust` | Cargo, clippy, Zellij plugin development |
-| `python` | pyproject.toml, pytest, ruff, mypy |
-| `openspec` | Spec lifecycle, Given/When/Then scenarios |
-| `cleave` | Task decomposition, parallel execution |
-| `security` | Input escaping, injection prevention, secrets |
-| `oci` | Container builds, multi-arch, registries |
-| `style` | Alpharius color system, visual consistency |
-| `vault` | Obsidian-compatible markdown conventions |
-
-### Built-in Tools
-
-Omegon exposes tools to the agent model:
-
-| Tool | Purpose |
-|------|---------|
-| `read` / `write` / `edit` | File operations |
-| `bash` | Shell command execution |
-| `web_search` | Multi-provider search (Brave, Tavily, Serper) |
-| `memory_*` | Store, recall, query, connect, archive facts |
-| `design_tree` / `design_tree_update` | Query and mutate the design graph |
-| `cleave_assess` / `cleave_run` | Task decomposition and parallel execution |
-| `openspec_manage` | Spec lifecycle management |
-| `chronos` | Authoritative date/time (no hallucinated dates) |
-| `set_model_tier` / `set_thinking_level` | Runtime model routing control |
-| `ask_local_model` | Delegate to local Ollama for zero-cost inference |
+That means:
+- separate worktrees
+- concrete file boundaries
+- merge and conflict detection
+- better operator control over risky multi-file changes
 
 ---
 
-## Project Structure
+## Quick example
 
+Launch Omegon in a repo:
+
+```sh
+omegon
 ```
+
+Then prompt it normally:
+
+```text
+Read README.md and summarize the architecture.
+```
+
+Or make it do real systems work:
+
+```text
+Inspect the auth flow, identify the weakest boundary, propose a minimal fix, add tests, and commit it.
+```
+
+Or lean into lifecycle mode:
+
+```text
+We need to refactor the session model. Explore the design space, surface assumptions, write a spec, and then implement it.
+```
+
+---
+
+## Core capabilities
+
+### Three-axis inference control
+
+Omegon treats inference as three separate controls:
+
+- **Capability tier** — `local` → `retribution` → `victory` → `gloriana`
+- **Thinking level** — `off` / `minimal` / `low` / `medium` / `high`
+- **Context class** — `squad` / `maniple` / `clan` / `legion`
+
+This is the right model because “which model?” is not the only question that matters.
+Capability, reasoning effort, and context budget are different levers.
+
+### Built-in tools
+
+Omegon exposes structured tools for:
+- file reads/writes/edits
+- shell execution
+- web search
+- git operations
+- date/time resolution
+- memory management
+- design-tree queries and mutations
+- OpenSpec lifecycle management
+- codebase retrieval
+- model control
+- background services
+
+### 10 inference providers
+
+Current surfaces include:
+- Anthropic
+- OpenAI API
+- OpenAI/Codex
+- OpenRouter
+- Groq
+- xAI
+- Mistral
+- Cerebras
+- Hugging Face
+- Ollama
+
+### Tutorial that actually does work
+
+`/tutorial` is an interactive overlay, not a static lesson reader.
+It can read code, store memory, create lifecycle artifacts, and walk an operator through real work.
+
+---
+
+## Project structure
+
+```text
 core/                       Rust workspace
   crates/
-    omegon/                 Main binary — TUI, tools, agent loop
-    omegon-git/             Git operations
-    omegon-memory/          Memory system (SQLite, vectors, decay)
-    omegon-secrets/         Secret resolution, redaction, tool guards
-    omegon-traits/          Shared trait definitions
-  site/                     omegon.styrene.dev landing page
-design/                     Design exploration tree (markdown nodes)
-docs/                       Architecture docs and design decisions
-graphics/                   Logo and icon assets
-openspec/                   Spec-driven development artifacts
-prompts/                    Prompt templates
-skills/                     Markdown skill definitions
-themes/                     Alpharius terminal theme
+    omegon/                 Main binary — TUI, agent loop, tools, web surface
+    omegon-git/             Git and worktree operations
+    omegon-memory/          Project memory runtime
+    omegon-secrets/         Secret resolution and redaction
+    omegon-traits/          Shared protocol and event types
+site/                       Public docs site
+openspec/                   Spec-driven lifecycle artifacts
+docs/                       Durable architecture and design docs
+skills/                     Markdown skill packs
+themes/                     Alpharius theme assets
 ```
 
 ---
 
-## Building from Source
+## Build from source
 
 ```sh
 cd core
 cargo build --release
 ```
 
-The release binary is at `core/target/release/omegon`.
+Release binary:
 
-For faster iteration during development (thin LTO, ~90% of release performance):
-
-```sh
-cargo build --profile dev-release -p omegon
+```text
+core/target/release/omegon
 ```
+
+Type-check and test path for TypeScript and Rust changes lives in repo-local commands and release validation.
 
 ---
 
 ## Configuration
 
-Omegon stores mutable state under `~/.config/omegon/`:
+Mutable user state lives under:
 
-| Path | Contents |
-|------|----------|
-| `~/.config/omegon/auth.json` | API keys and provider credentials |
-| `~/.config/omegon/settings.json` | User preferences |
-| `~/.config/omegon/AGENTS.md` | Global operator directives (apply to all projects) |
+```text
+~/.config/omegon/
+```
 
-Project-level configuration lives in the repository:
+Common files:
+- `auth.json` — provider credentials
+- `settings.json` — user settings
+- `AGENTS.md` — global directives
 
-| Path | Contents |
-|------|----------|
-| `AGENTS.md` | Project-specific agent directives |
-| `.omegon-version` | Pinned Omegon version |
-| `ai/memory/facts.jsonl` | Project memory (tracked in git) |
-
----
-
-## Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic API key (Claude models) |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `BRAVE_API_KEY` | Brave Search API |
-| `TAVILY_API_KEY` | Tavily Search API |
-| `SERPER_API_KEY` | Serper (Google) Search API |
+Project-local control surfaces include:
+- `AGENTS.md`
+- `.omegon-version`
+- `ai/memory/facts.jsonl`
+- `openspec/`
+- `docs/`
 
 ---
 
-## Legacy
+## Release hygiene
 
-The original TypeScript/pi-based harness is archived at [omegon-pi](https://github.com/styrene-lab/omegon-pi). The Rust native rewrite is the active development target.
+Omegon ships signed releases with:
+- SHA-256 checksums
+- cosign signatures
+- CycloneDX SBOMs
+- GitHub build attestations
+
+Install/update docs:
+- <https://omegon.styrene.dev/docs/install>
+
+---
+
+## Read the docs
+
+Start here:
+- <https://omegon.styrene.dev/docs/>
+- <https://omegon.styrene.dev/docs/quickstart>
+- <https://omegon.styrene.dev/docs/providers>
+- <https://omegon.styrene.dev/docs/tui>
+- <https://omegon.styrene.dev/docs/tutorial>
+
+---
 
 ## License
 
 [BSL 1.1](LICENSE) — © 2024–2026 Black Meridian, LLC
 
-BSL 1.1 means the source is fully visible and unrestricted for personal and production use. The one restriction: you cannot use Omegon to offer a competing hosted agent service. If that is not you, BSL 1.1 is functionally identical to MIT for your purposes.
+In practical terms: if you are not trying to offer Omegon itself as a competing hosted agent service, the license is unlikely to be the part that ruins your day.
