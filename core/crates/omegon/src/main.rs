@@ -1042,7 +1042,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // ─── Emit session start to bus features ────────────────────────────
     agent.bus.emit(&omegon_traits::BusEvent::SessionStart {
         cwd: agent.cwd.clone(),
-        session_id: "interactive".into(),
+        session_id: agent.session_id.clone(),
     });
     // Drain any requests from session_start handlers
     for request in agent.bus.drain_requests() {
@@ -1302,10 +1302,14 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 tracing::info!("context clear requested via /context clear");
                 // Same as /new: save session, reset conversation
                 if !cli.no_session {
-                    let rid = agent.resume_info.as_ref().map(|r| r.session_id.as_str());
-                    let _ = session::save_session(&agent.conversation, &agent.cwd, rid);
+                    let _ = session::save_session(
+                        &agent.conversation,
+                        &agent.cwd,
+                        Some(agent.session_id.as_str()),
+                    );
                 }
                 agent.conversation = crate::conversation::ConversationState::new();
+                agent.session_id = crate::session::allocate_session_id();
                 agent.resume_info = None;
                 
                 // Reset metrics — extract context_window in single lock scope to avoid deadlock
@@ -1359,10 +1363,14 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
             tui::TuiCommand::NewSession => {
                 // Save the current session before resetting
                 if !cli.no_session {
-                    let rid = agent.resume_info.as_ref().map(|r| r.session_id.as_str());
-                    let _ = session::save_session(&agent.conversation, &agent.cwd, rid);
+                    let _ = session::save_session(
+                        &agent.conversation,
+                        &agent.cwd,
+                        Some(agent.session_id.as_str()),
+                    );
                 }
                 agent.conversation = crate::conversation::ConversationState::new();
+                agent.session_id = crate::session::allocate_session_id();
                 agent.resume_info = None;
                 let _ = events_tx.send(AgentEvent::SessionReset);
             }
@@ -1867,7 +1875,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
         && let Err(e) = session::save_session(
             &agent.conversation,
             &agent.cwd,
-            agent.resume_info.as_ref().map(|r| r.session_id.as_str()),
+            Some(agent.session_id.as_str()),
         )
     {
         tracing::debug!("Session save failed: {e}");

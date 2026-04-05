@@ -46,7 +46,7 @@ fn cwd_slug(cwd: &Path) -> String {
 }
 
 /// Generate a session ID: `<timestamp>_<short-random>.json`
-fn generate_session_id() -> String {
+pub fn allocate_session_id() -> String {
     let now = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
@@ -106,7 +106,7 @@ pub fn save_session(
     // When starting fresh, generate a new timestamped ID.
     let session_id = resume_id
         .map(|s| s.to_string())
-        .unwrap_or_else(generate_session_id);
+        .unwrap_or_else(allocate_session_id);
     let filename = format!("{session_id}.json");
     let path = dir.join(&filename);
 
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn session_id_contains_timestamp() {
-        let id = generate_session_id();
+        let id = allocate_session_id();
         // Should start with a date-like pattern: YYYY-MM-DD
         assert!(id.len() > 20, "ID too short: {id}");
         assert!(id.contains('T'), "ID should contain T separator: {id}");
@@ -295,7 +295,7 @@ mod tests {
         let dir = tmp.join("sessions").join("--test--");
         fs::create_dir_all(&dir).unwrap();
 
-        let session_id = generate_session_id();
+        let session_id = allocate_session_id();
         let path = dir.join(format!("{session_id}.json"));
         conv.save_session(&path).unwrap();
 

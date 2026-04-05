@@ -31,6 +31,9 @@ pub struct AgentSetup {
     /// The event bus — owns all features. The loop dispatches tools and
     /// emits events through the bus.
     pub bus: EventBus,
+    /// Stable session id for the current live conversation. Fresh sessions
+    /// get a generated id at startup; resumed sessions reuse their saved id.
+    pub session_id: String,
     /// Shared context metrics — updated each turn, read by ContextProvider
     pub context_metrics: std::sync::Arc<std::sync::Mutex<crate::features::context::SharedContextMetrics>>,
     /// Shared command channel — set by main after TUI init
@@ -589,10 +592,16 @@ impl AgentSetup {
             lifecycle: lifecycle_snapshot,
         };
 
+        let session_id = resume_info
+            .as_ref()
+            .map(|r| r.session_id.clone())
+            .unwrap_or_else(crate::session::allocate_session_id);
+
         let initial_harness_status = harness_status;
 
         Ok(Self {
             bus,
+            session_id,
             context_metrics,
             command_tx,
             context_manager,
