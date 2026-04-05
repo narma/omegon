@@ -59,6 +59,9 @@ pub fn anthropic_credential_mode() -> AnthropicCredentialMode {
 ///   4. Ollama          → `ollama:llama3` (local, always unrestricted)
 ///
 /// Returns `None` only when no provider other than Anthropic subscription is available.
+///
+/// Ollama availability is probed once per process lifetime (50ms TCP connect) and
+/// cached — safe to call from the TUI event loop and async orchestrator paths.
 pub fn automation_safe_model() -> Option<String> {
     // 1. OpenAI direct API key
     if resolve_api_key_sync("openai").is_some_and(|(_, oauth)| !oauth) {
@@ -72,34 +75,36 @@ pub fn automation_safe_model() -> Option<String> {
     if resolve_api_key_sync("openrouter").is_some() {
         return Some("openrouter:openai/gpt-4o".to_string());
     }
-    // 4. Ollama — local inference, always unrestricted
-    // Check if Ollama is reachable via a quick non-blocking stat.
-    // We use env var OLLAMA_HOST or default localhost:11434.
-    let ollama_host = std::env::var("OLLAMA_HOST")
-        .unwrap_or_else(|_| "http://localhost:11434".to_string());
-    // Attempt a TCP connect with a short timeout to confirm Ollama is up.
-    if let Ok(addr) = ollama_host
-        .trim_start_matches("http://")
-        .trim_start_matches("https://")
-        .parse::<std::net::SocketAddr>()
-    {
-        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
-        {
-            return Some("ollama:llama3".to_string());
-        }
-    } else {
-        // Parse failed — try the default port directly
-        let default_addr = "127.0.0.1:11434"
+    // 4. Ollama — local inference, always unrestricted.
+    // Probe once per process with a tight 50ms timeout (localhost should respond in <5ms).
+    // Cached in a OnceLock so repeated calls (TUI event loop, orchestrator) are instant.
+    static OLLAMA_AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let ollama_up = OLLAMA_AVAILABLE.get_or_init(|| {
+        let host = std::env::var("OLLAMA_HOST")
+            .unwrap_or_else(|_| "127.0.0.1:11434".to_string());
+        let addr_str = host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        // Normalise: if no port, append :11434
+        let addr_str = if addr_str.contains(':') {
+            addr_str.to_string()
+        } else {
+            format!("{addr_str}:11434")
+        };
+        addr_str
             .parse::<std::net::SocketAddr>()
-            .expect("hardcoded addr");
-        if std::net::TcpStream::connect_timeout(
-            &default_addr,
-            std::time::Duration::from_millis(300),
-        )
-        .is_ok()
-        {
-            return Some("ollama:llama3".to_string());
-        }
+            .ok()
+            .and_then(|addr| {
+                std::net::TcpStream::connect_timeout(
+                    &addr,
+                    std::time::Duration::from_millis(50),
+                )
+                .ok()
+            })
+            .is_some()
+    });
+    if *ollama_up {
+        return Some("ollama:llama3".to_string());
     }
     None
 }

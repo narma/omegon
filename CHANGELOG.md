@@ -3,7 +3,29 @@
 All notable changes to Omegon are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic Versioning](https://semver.org/).
 
-## [0.15.9] - 2026-04-03
+## [Unreleased]
+
+## [0.15.10] - 2026-04-05
+
+### Added
+
+- **Anthropic subscription ToS compliance** — Omegon now enforces Anthropic's Consumer Terms restriction on automated use of subscription (Claude.ai / Claude Pro) credentials. Affected paths (`--prompt`, `--prompt-file`, `--smoke`) are hard-blocked at startup with a clear error citing the ToS URL. Interactive TUI sessions are fully permitted.
+- **Subscription-aware cleave fallback routing** — When only an Anthropic subscription credential is present, cleave workers are automatically rerouted to the best available automation-safe provider (OpenAI API key → Codex OAuth → OpenRouter → Ollama) rather than failing. The TUI shows a toast with the fallback model. If no fallback exists, a clear block message lists three concrete options to fix it.
+- **`AnthropicCredentialMode` enum and helpers** — `providers.rs` now exports `AnthropicCredentialMode` (ApiKey / OAuthOnly / None), `anthropic_credential_mode()`, and `automation_safe_model()` for credential-aware routing decisions across the codebase.
+- **Tutorial orientation mode** — `/tutorial` now calls `tutorial_gate()` to detect auth state and presents an orientation-only tour (Tab steps, no agent AutoPrompt) when no Victory-tier cloud model is available. `/tutorial consent` upgrades to Interactive mode when an Anthropic subscription is detected.
+- **Provider documentation** — New `docs/anthropic-subscription-tos.md` documents the exact ToS clause, allowed vs blocked entry points, and how to configure for automation. New `site/src/pages/docs/providers.astro` covers all provider auth modes with restrictions.
+
+### Changed
+
+- **Footer subscription badge** — The subscription credential label now reads "subscription · interactive only" instead of just "subscription", making the interactive-only constraint continuously visible.
+- **`/tutorial consent` acknowledgment** — Consent message now includes the automation restriction note alongside the quota usage warning.
+- **`/cleave` guard** — Changed from a flat block to a smart dispatch: routes to fallback when available, blocks only when no automation-safe provider exists.
+- **Startup gate is model-aware** — The Anthropic subscription gate now only fires when the requested `--model` is Anthropic. A child process explicitly running `--model ollama:llama3` is not blocked even when `ANTHROPIC_OAUTH_TOKEN` is set.
+
+### Fixed
+
+- **Tutorial test infinite loop** — `Tutorial::with_context()` was changed to call `tutorial_gate()`, which returned `OrientationOnly` (no API keys in test env) and caused tests looping for Command/AutoPrompt triggers to spin forever. Reverted: `with_context()` is now gate-free; `tutorial_gate()` is the TUI layer's responsibility.
+
 
 ### Added
 
