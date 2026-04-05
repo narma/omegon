@@ -1,84 +1,97 @@
 ---
 import Docs from "../../layouts/Docs.astro";
 ---
-<Docs title="Providers" description="10 inference providers with native Rust clients, automatic failover, and three-axis routing.">
+<Docs title="Providers" description="Provider authentication modes, allowed usage, and subscription restrictions.">
   <h1>Providers</h1>
   <p>
-    Omegon connects to inference providers through native Rust HTTP clients — no subprocess
-    shims, no Node.js at runtime. Each provider has a dedicated client that handles authentication,
-    streaming, tool call wire formats, and error recovery natively.
+    Omegon treats provider authentication as a usage boundary, not just a login choice. Some
+    providers are fully unrestricted, some are API-key only, and Anthropic subscription auth is
+    interactive-only.
   </p>
 
-  <img src="/diagrams/provider-routing.svg" alt="Provider routing: operator controls feed routing engine which scores and selects from 10 providers, with failover on error" class="diagram" />
-
-  <h2>Inference Providers</h2>
+  <h2>Current provider auth modes</h2>
   <table>
-    <thead><tr><th>Provider</th><th>Client</th><th>Auth</th><th>Env Var</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Provider / mode</th>
+        <th>Configure</th>
+        <th>Allowed</th>
+        <th>Restrictions</th>
+      </tr>
+    </thead>
     <tbody>
-      <tr><td><strong>Anthropic</strong></td><td>AnthropicClient (native SSE)</td><td>OAuth or API key</td><td><code>ANTHROPIC_API_KEY</code></td></tr>
-      <tr><td><strong>OpenAI</strong></td><td>OpenAIClient (native)</td><td>API key</td><td><code>OPENAI_API_KEY</code></td></tr>
-      <tr><td><strong>OpenAI Codex</strong></td><td>CodexClient (Responses API)</td><td>OAuth JWT</td><td><code>CHATGPT_OAUTH_TOKEN</code></td></tr>
-      <tr><td><strong>OpenRouter</strong></td><td>OpenRouterClient (wrapper)</td><td>API key</td><td><code>OPENROUTER_API_KEY</code></td></tr>
-      <tr><td><strong>Groq</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>GROQ_API_KEY</code></td></tr>
-      <tr><td><strong>xAI (Grok)</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>XAI_API_KEY</code></td></tr>
-      <tr><td><strong>Mistral</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>MISTRAL_API_KEY</code></td></tr>
-      <tr><td><strong>Cerebras</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>CEREBRAS_API_KEY</code></td></tr>
-      <tr><td><strong>HuggingFace</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>HF_TOKEN</code></td></tr>
-      <tr><td><strong>Ollama</strong></td><td>OpenAICompatClient</td><td>Local (no auth)</td><td><code>OLLAMA_HOST</code></td></tr>
+      <tr>
+        <td><strong>Anthropic API key</strong></td>
+        <td><code>export ANTHROPIC_API_KEY="sk-ant-..."</code></td>
+        <td>All Omegon entry points, including TUI, prompts, smoke, and cleave.</td>
+        <td>Subject to Anthropic API terms, quota, and model limits.</td>
+      </tr>
+      <tr>
+        <td><strong>Anthropic OAuth / subscription</strong></td>
+        <td><code>omegon login anthropic</code> or <code>/login anthropic</code></td>
+        <td>Interactive TUI sessions only. <code>--initial-prompt</code> is allowed because the session remains human-attended.</td>
+        <td><code>--prompt</code>, <code>--prompt-file</code>, <code>--smoke</code>, and <code>/cleave</code> are blocked.</td>
+      </tr>
+      <tr>
+        <td><strong>OpenAI API key</strong></td>
+        <td><code>export OPENAI_API_KEY="sk-..."</code></td>
+        <td>All supported Omegon entry points.</td>
+        <td>Subject to OpenAI billing, quota, and model limits.</td>
+      </tr>
+      <tr>
+        <td><strong>Codex OAuth</strong></td>
+        <td><code>omegon login openai-codex</code> or <code>/login openai-codex</code></td>
+        <td>Supported Codex flows in Omegon.</td>
+        <td>No Omegon-specific automation restriction like Anthropic subscription auth.</td>
+      </tr>
+      <tr>
+        <td><strong>Ollama</strong></td>
+        <td><code>export OLLAMA_HOST="http://127.0.0.1:11434"</code></td>
+        <td>All supported local-model workflows.</td>
+        <td>Local inference only; no external account auth.</td>
+      </tr>
+      <tr>
+        <td><strong>GitHub Models</strong> <em>(coming soon)</em></td>
+        <td>Official PAT configuration will be documented when the integration ships.</td>
+        <td>Planned support.</td>
+        <td>Not available yet.</td>
+      </tr>
+      <tr>
+        <td><strong>Copilot seat</strong> <em>(coming soon)</em></td>
+        <td>Seat-based auth will be documented when the integration ships.</td>
+        <td>Planned support.</td>
+        <td>Not available yet.</td>
+      </tr>
     </tbody>
   </table>
 
-  <h2>Search Providers</h2>
-  <table>
-    <thead><tr><th>Provider</th><th>Auth</th><th>Env Var</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Brave Search</strong></td><td>API key</td><td><code>BRAVE_API_KEY</code></td></tr>
-      <tr><td><strong>Tavily</strong></td><td>API key</td><td><code>TAVILY_API_KEY</code></td></tr>
-      <tr><td><strong>Serper</strong></td><td>API key</td><td><code>SERPER_API_KEY</code></td></tr>
-    </tbody>
-  </table>
+  <h2>Anthropic subscription boundary</h2>
+  <p>
+    Anthropic subscription auth is the only mode above with a hard interactive-only boundary.
+    Omegon blocks automated entry points there because Anthropic's Consumer Terms prohibit
+    automated or non-human access unless you are using an Anthropic API key or have explicit
+    permission.
+  </p>
+  <p>
+    The consumer terms page is here:
+    <a href="https://www.anthropic.com/legal/consumer-terms">anthropic.com/legal/consumer-terms</a>
+  </p>
 
-  <h2>Client Architecture</h2>
-  <p>There are 5 distinct Rust client implementations:</p>
+  <h2>Practical guidance</h2>
   <ul>
-    <li><strong>AnthropicClient</strong> — Native SSE streaming against the Anthropic Messages API. Handles thinking blocks, tool use, and multi-turn continuity natively.</li>
-    <li><strong>OpenAIClient</strong> — Native client for the OpenAI Chat Completions API. Handles function calling, streaming, and structured outputs.</li>
-    <li><strong>CodexClient</strong> — Implements the OpenAI Responses API (completely different wire protocol from Chat Completions). Uses JWT OAuth with account ID extraction from claims. Handles compound tool call IDs and SSE parsing.</li>
-    <li><strong>OpenRouterClient</strong> — Wraps OpenAIClient with base URL override and model prefix handling for OpenRouter's 200+ model catalog.</li>
-    <li><strong>OpenAICompatClient</strong> — Generic client for the 6 providers that implement the OpenAI-compatible API (Groq, xAI, Mistral, Cerebras, HuggingFace, Ollama). Wraps OpenAIClient with per-provider base URL and model mapping.</li>
+    <li>If you want to work in the TUI by hand, Anthropic OAuth/subscription is fine.</li>
+    <li>If you want prompts, smoke tests, cleave, or other background automation, configure <code>ANTHROPIC_API_KEY</code>.</li>
+    <li>If you want local-only inference, use Ollama.</li>
+    <li>If you want a provider with no subscription-style automation restriction, use an API-key-based mode.</li>
   </ul>
 
-  <h2>Routing &amp; Failover</h2>
+  <h2>How this fits the rest of Omegon</h2>
   <p>
-    The routing engine (<code>routing.rs</code>) scores available providers against the requested
-    capability tier and selects the best match. If the primary provider fails, it automatically
-    falls back to the next-best provider. See <a href="/docs/three-axis-model">Three-Axis Model</a>.
+    The provider layer feeds the TUI, slash commands, smoke paths, and cleave orchestration. That
+    means auth mode affects not just model access, but which entry points Omegon can safely expose.
   </p>
-  <ul>
-    <li>Providers are scored by capability match, latency history, and rate-limit state</li>
-    <li>Rate-limited providers enter cooldown and are deprioritized until recovery</li>
-    <li>Routing tracks provider usage and rate-limit headers so retries and failover can respond to real runtime signals</li>
-    <li>The agent can switch providers mid-session with <code>set_model_tier</code></li>
-    <li>Local inference (Ollama) is always available as a zero-cost fallback</li>
-  </ul>
-
-  <h2>Authentication</h2>
   <p>
-    Credentials are stored in the system keychain (macOS Keychain, Linux Secret Service)
-    or encrypted on disk. OAuth tokens are refreshed automatically.
+    The Anthropic subscription rule is enforced separately in the runtime and disclosed here so the
+    operator can choose the right credential before starting work.
   </p>
-  <pre><code># OAuth login — Anthropic (Claude Pro/Max) or OpenAI Codex (ChatGPT Plus/Pro)
-omegon login             # launches browser for Anthropic OAuth by default
-/login anthropic         # Anthropic OAuth  → ANTHROPIC_OAUTH_TOKEN
-/login openai-codex      # ChatGPT Plus/Pro → CHATGPT_OAUTH_TOKEN
-
-# API key — OpenAI standard API (requires api.openai.com billing account)
-export OPENAI_API_KEY="sk-..."
-
-# API key — other providers
-export ANTHROPIC_API_KEY="sk-ant-..."
-/secrets set groq GROQ_API_KEY
-
-# Check status
-/auth status</code></pre>
 </Docs>
