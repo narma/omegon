@@ -5,8 +5,8 @@ import Docs from "../../layouts/Docs.astro";
   <h1>Providers</h1>
   <p>
     Omegon treats provider authentication as a usage boundary, not just a login choice. Some
-    providers are fully unrestricted, some are API-key only, and Anthropic subscription auth is
-    interactive-only.
+    providers are fully unrestricted, some are API-key only, and Anthropic subscription auth carries
+    a clear automation-risk warning rather than an absolute block.
   </p>
 
   <h2>Current provider auth modes</h2>
@@ -29,8 +29,8 @@ import Docs from "../../layouts/Docs.astro";
       <tr>
         <td><strong>Anthropic OAuth / subscription</strong></td>
         <td><code>omegon login anthropic</code> or <code>/login anthropic</code></td>
-        <td>Interactive TUI sessions only. <code>--initial-prompt</code> is allowed because the session remains human-attended.</td>
-        <td><code>--prompt</code>, <code>--prompt-file</code>, <code>--smoke</code>, and <code>/cleave</code> are blocked.</td>
+        <td>Interactive TUI sessions are the intended path. Omegon also permits automated flows, but warns explicitly when you use this credential for headless/background work.</td>
+        <td>Anthropic's consumer terms may restrict automated or non-human access for this credential class; use <code>ANTHROPIC_API_KEY</code> for clean automation.</td>
       </tr>
       <tr>
         <td><strong>OpenAI API key</strong></td>
@@ -67,8 +67,8 @@ import Docs from "../../layouts/Docs.astro";
 
   <h2>Anthropic subscription boundary</h2>
   <p>
-    Anthropic subscription auth is the only mode above with a hard interactive-only boundary.
-    Omegon blocks automated entry points there because Anthropic's Consumer Terms prohibit
+    Anthropic subscription auth is the only mode above with a prominent automation-risk warning.
+    Omegon surfaces that risk clearly because Anthropic's Consumer Terms appear to prohibit
     automated or non-human access unless you are using an Anthropic API key or have explicit
     permission.
   </p>
@@ -91,7 +91,7 @@ import Docs from "../../layouts/Docs.astro";
     means auth mode affects not just model access, but which entry points Omegon can safely expose.
   </p>
   <p>
-    The Anthropic subscription rule is enforced separately in the runtime and disclosed here so the
+    The Anthropic subscription rule is disclosed separately in the runtime and here so the
     operator can choose the right credential before starting work.
   </p>
 </Docs>

@@ -517,52 +517,9 @@ async fn main() -> anyhow::Result<()> {
         }
         None => {
             // No subcommand: interactive if no --prompt, headless if --prompt given
-
-            // ── Anthropic ToS gate ──────────────────────────────────────────
-            // Anthropic's Consumer Terms prohibit automated/non-human use of
-            // subscription (OAuth) credentials. Hard-block all headless entry
-            // points when only an OAuth token is present.
-            //   https://www.anthropic.com/legal/consumer-terms
-            let is_automated = cli.smoke
-                || cli.smoke_cleave
-                || cli.prompt.is_some()
-                || cli.prompt_file.is_some();
-            if is_automated {
-                use crate::providers::AnthropicCredentialMode;
-                // Only block if the REQUESTED model is Anthropic AND the credential is
-                // subscription-only. A cleave child explicitly passed --model ollama:llama3
-                // or --model openai:gpt-4o must not be blocked — it doesn't use the
-                // Anthropic subscription at all.
-                let provider = cli.model.split(':').next().unwrap_or("anthropic");
-                let targets_anthropic = provider == "anthropic"
-                    || provider == "claude"
-                    || cli.model.contains("claude");
-                if targets_anthropic
-                    && crate::providers::anthropic_credential_mode()
-                        == AnthropicCredentialMode::OAuthOnly
-                {
-                    eprintln!(
-                        "error: Anthropic subscription credentials cannot be used in \
-                         automated or headless mode.\n\
-                         \n\
-                         Anthropic\'s Consumer Terms of Service prohibit accessing Claude \
-                         through automated or non-human means when using a subscription \
-                         (Claude.ai / Claude Pro) credential. This includes --prompt, \
-                         --smoke, and background agent processes.\n\
-                         \n\
-                         To use Omegon in headless or automated mode, set ANTHROPIC_API_KEY \
-                         instead. API keys are billed per-token and have no automation \
-                         restrictions.\n\
-                         \n\
-                         For interactive (TUI) use, your subscription credential will work \
-                         normally — just run omegon without --prompt.\n\
-                         \n\
-                         Reference: https://www.anthropic.com/legal/consumer-terms"
-                    );
-                    std::process::exit(1);
-                }
+            if let Some(warning) = anthropic_subscription_automation_warning(&cli) {
+                eprintln!("warning: {warning}");
             }
-            // ── end ToS gate ────────────────────────────────────────────────
 
             if cli.smoke {
                 run_smoke_command(&cli).await
@@ -615,6 +572,35 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
 
     tokio::signal::ctrl_c().await?;
     Ok(())
+}
+
+fn anthropic_subscription_automation_warning(cli: &Cli) -> Option<String> {
+    let is_automated = cli.smoke
+        || cli.smoke_cleave
+        || cli.prompt.is_some()
+        || cli.prompt_file.is_some();
+    if !is_automated {
+        return None;
+    }
+
+    use crate::providers::AnthropicCredentialMode;
+    let provider = cli.model.split(':').next().unwrap_or("anthropic");
+    let targets_anthropic = provider == "anthropic"
+        || provider == "claude"
+        || cli.model.contains("claude");
+    if !targets_anthropic
+        || crate::providers::anthropic_credential_mode() != AnthropicCredentialMode::OAuthOnly
+    {
+        return None;
+    }
+
+    Some(
+        "Anthropic subscription credentials are active for an automated/headless Anthropic run. \
+Anthropic's Consumer Terms may prohibit this kind of non-human access for Claude.ai / Claude Pro \
+credentials. Omegon is proceeding because operator agency wins, but the risk is yours. \
+For unrestricted automation, use ANTHROPIC_API_KEY instead. Reference: https://www.anthropic.com/legal/consumer-terms"
+            .to_string(),
+    )
 }
 
 fn ensure_clean_cleave_repo(repo_path: &Path) -> anyhow::Result<()> {
@@ -2603,6 +2589,36 @@ mod tests {
             !line.contains("completed (no changes)"),
             "line should not claim completion: {line}"
         );
+    }
+
+    #[test]
+    fn anthropic_subscription_automation_warning_only_for_headless_anthropic_oauth() {
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+            std::env::set_var("ANTHROPIC_OAUTH_TOKEN", "subscription-token");
+        }
+        let cli = Cli::try_parse_from(vec!["omegon", "--prompt", "hello"]).unwrap();
+        let warning = anthropic_subscription_automation_warning(&cli)
+            .expect("expected warning for headless anthropic oauth");
+        assert!(warning.contains("operator agency wins"), "got: {warning}");
+        assert!(warning.contains("ANTHROPIC_API_KEY"), "got: {warning}");
+
+        let openai_cli = Cli::try_parse_from(vec![
+            "omegon",
+            "--model",
+            "openai:gpt-4o",
+            "--prompt",
+            "hello",
+        ])
+        .unwrap();
+        assert!(anthropic_subscription_automation_warning(&openai_cli).is_none());
+
+        let interactive_cli = Cli::try_parse_from(vec!["omegon"]).unwrap();
+        assert!(anthropic_subscription_automation_warning(&interactive_cli).is_none());
+
+        unsafe {
+            std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+        }
     }
 
     #[test]

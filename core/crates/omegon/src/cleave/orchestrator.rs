@@ -76,39 +76,13 @@ pub enum MergeOutcome {
     Skipped(String),
 }
 
-/// If the configured model uses Anthropic subscription credentials (interactive-only
-/// per ToS), and an automation-safe fallback is available, rewrite the model string
-/// so children don't inherit a credential they can't use.
+/// Return the requested child model unchanged.
 ///
-/// Returns the model string to actually use for children — either the original (no
-/// subscription conflict) or the best available automation-safe alternative.
+/// Cleave must not silently reroute work to another provider behind the operator's
+/// back. Warnings and disclosures happen at higher layers; child routing stays
+/// honest here.
 pub fn resolve_cleave_model(requested_model: &str) -> String {
-    use crate::providers::{AnthropicCredentialMode, anthropic_credential_mode};
-    let provider = requested_model.split(':').next().unwrap_or("");
-    let is_anthropic = provider == "anthropic" || requested_model.contains("claude");
-    if !is_anthropic {
-        return requested_model.to_string();
-    }
-    if anthropic_credential_mode() != AnthropicCredentialMode::OAuthOnly {
-        return requested_model.to_string();
-    }
-    // Subscription-only + Anthropic model requested → find fallback
-    match crate::providers::automation_safe_model() {
-        Some(fallback) => {
-            tracing::warn!(
-                requested = requested_model,
-                fallback = %fallback,
-                "Anthropic subscription is interactive-only (ToS); \
-                 routing cleave children to automation-safe provider"
-            );
-            fallback
-        }
-        None => {
-            // No fallback — return requested model; the child will hit the gate
-            // and produce a clear error rather than silently misbehaving.
-            requested_model.to_string()
-        }
-    }
+    requested_model.to_string()
 }
 
 /// Run the full cleave orchestration.
@@ -122,8 +96,8 @@ pub async fn run_cleave(
 ) -> Result<CleaveResult> {
     let started = Instant::now();
 
-    // Resolve the effective model for children — substitutes an automation-safe
-    // provider when the parent model is Anthropic subscription (interactive-only).
+    // Preserve the operator-requested model for children. Compliance warnings are
+    // surfaced elsewhere, but cleave must not silently swap providers.
     let effective_model = resolve_cleave_model(&config.model);
 
     std::fs::create_dir_all(workspace_path).context("Failed to create workspace directory")?;
@@ -1233,6 +1207,23 @@ mod tests {
         };
         assert_eq!(config.idle_timeout_secs, 300);
         assert_eq!(config.timeout_secs, 900);
+    }
+
+    #[test]
+    fn cleave_requested_model_is_not_silently_rewritten_for_oauth_only_anthropic() {
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+            std::env::set_var("ANTHROPIC_OAUTH_TOKEN", "subscription-token");
+            std::env::set_var("OPENAI_API_KEY", "openai-token");
+        }
+
+        let resolved = resolve_cleave_model("anthropic:claude-sonnet-4-6");
+        assert_eq!(resolved, "anthropic:claude-sonnet-4-6");
+
+        unsafe {
+            std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+            std::env::remove_var("OPENAI_API_KEY");
+        }
     }
 
     #[test]

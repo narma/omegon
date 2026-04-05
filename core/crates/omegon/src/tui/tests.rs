@@ -1416,6 +1416,35 @@ fn hidden_model_aliases_do_not_appear_in_palette() {
 }
 
 #[test]
+fn slash_cleave_warns_on_anthropic_subscription_but_proceeds() {
+    unsafe {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        std::env::set_var("ANTHROPIC_OAUTH_TOKEN", "subscription-token");
+    }
+
+    let mut app = test_app();
+    app.footer_data.is_oauth = true;
+    app.bus_commands.push(omegon_traits::CommandDefinition {
+        name: "cleave".into(),
+        description: "parallel work".into(),
+        subcommands: vec![],
+    });
+    let tx = test_tx();
+    let result = app.handle_slash_command("/cleave demo", &tx);
+    assert!(matches!(result, SlashResult::Handled), "got: {result:?}");
+    assert!(
+        app.operator_events
+            .iter()
+            .any(|e| e.message.contains("risk is yours") || e.message.contains("may violate Anthropic")),
+        "expected warning toast in operator events"
+    );
+
+    unsafe {
+        std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+    }
+}
+
+#[test]
 fn slash_command_aliases_dispatch_correctly() {
     let mut app = test_app();
     let tx = test_tx();

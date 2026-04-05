@@ -4,9 +4,9 @@ title: "Anthropic Subscription — Interactive vs Automated Use Boundary"
 status: decided
 tags: [anthropic, tos, auth, subscription, automated-use, compliance]
 open_questions:
-  - "Where exactly is the \\\\\\\\\\\"interactive\\\\\\\\\\\" line? Human types a prompt → agent runs 100 tool calls over 10 minutes unattended → human reads the result. Is that one interaction interactive or automated? The bot/script framing suggests the trigger matters more than the autonomy of the loop."
+  - "Where exactly is the \\\\\\\\\\\\\"interactive\\\\\\\\\\\\\" line? Human types a prompt → agent runs 100 tool calls over 10 minutes unattended → human reads the result. Is that one interaction interactive or automated? The bot/script framing suggests the trigger matters more than the autonomy of the loop."
   - "What Omegon entry points fire against the Anthropic subscription token? Full inventory needed: TUI foreground, --background flag, daemon/service mode, cleave child workers, cron/scheduled invocations, CI runner invocations. Each needs a clear allow/warn/block decision."
-  - "[assumption] A human watching the TUI while a long agentic task runs (many tool calls, minutes of autonomous work) counts as \\\\\\\\"interactive/non-automated\\\\\\\\" under Anthropic's ToS because the human initiated it and is present. This assumption needs validation — it's the most common Omegon use pattern and must be defensible."
+  - "[assumption] A human watching the TUI while a long agentic task runs (many tool calls, minutes of autonomous work) counts as \\\\\\\\\\"interactive/non-automated\\\\\\\\\\" under Anthropic's ToS because the human initiated it and is present. This assumption needs validation — it's the most common Omegon use pattern and must be defensible."
   - "Should --initial-prompt (queues a prompt but TUI stays open, human is watching) be allowed with subscription credentials? The human is present but the trigger was scripted. Conservative read: allow it — TUI is open, human can intervene. Permissive read: allow it freely. No read blocks it — it's not --prompt (headless)."
 dependencies: []
 related: []
@@ -74,6 +74,12 @@ Key insight: the --prompt flag IS the automation gate. If --prompt is set, the p
 **Status:** accepted
 
 **Rationale:** Legal risk is negligible when a human is at the terminal. The test is whether a human is present and can intervene, not whether they initiated the first message by keystroke vs config.
+
+### Operator-agency warning model for subscription ToS risk
+
+**Status:** accepted
+
+**Rationale:** Omegon warns clearly about Anthropic subscription automation risk and surfaces the active credential/mode, but does not fully remove the operator's ability to proceed. The harness should avoid silent fallback and hidden policy enforcement where possible; explicit warnings preserve operator agency while still performing due diligence.
 
 ## Open Questions
 

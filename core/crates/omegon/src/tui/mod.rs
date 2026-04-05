@@ -3302,42 +3302,18 @@ impl App {
             "q" => SlashResult::Quit,
 
             "cleave" => {
-                // Anthropic subscription guard — /cleave spawns background worker processes.
-                // If only a subscription credential is available, try to route children to
-                // an automation-safe provider instead of flat-blocking.
+                // Warn, but do not block or silently reroute. Operator agency wins.
                 if self.footer_data.is_oauth
                     && crate::providers::anthropic_credential_mode()
                         == crate::providers::AnthropicCredentialMode::OAuthOnly
                 {
-                    match crate::providers::automation_safe_model() {
-                        Some(ref fallback) => {
-                            // A safe provider exists — warn and let it proceed.
-                            // The orchestrator will rewrite the child model automatically.
-                            self.show_toast(
-                                &format!(
-                                    "Anthropic subscription is interactive-only (ToS). \
-                                     Cleave workers will use {fallback} instead."
-                                ),
-                                ratatui_toaster::ToastType::Warning,
-                            );
-                            // Fall through to bus dispatch below
-                        }
-                        None => {
-                            return SlashResult::Display(
-                                "Cannot run /cleave with a Claude.ai subscription — no \
-                                 automation-safe provider found.\n\n\
-                                 Anthropic's ToS prohibits automated/background use of \
-                                 subscription credentials. /cleave needs a provider that \
-                                 supports headless use.\n\n\
-                                 Options:\n\
-                                 • Set ANTHROPIC_API_KEY (unrestricted, billed per-token)\n\
-                                 • Set OPENAI_API_KEY or run Ollama locally\n\
-                                 • /login openai-codex (ChatGPT Plus/Pro)\n\n\
-                                 Reference: https://www.anthropic.com/legal/consumer-terms"
-                                    .into(),
-                            );
-                        }
-                    }
+                    self.show_toast(
+                        "Anthropic subscription is active. /cleave may violate Anthropic's \
+                         Consumer Terms for Claude.ai / Claude Pro automation. Omegon will \
+                         proceed with your requested provider/model; the risk is yours. \
+                         Reference: https://www.anthropic.com/legal/consumer-terms",
+                        ratatui_toaster::ToastType::Warning,
+                    );
                 }
                 // Forward to bus (cleave extension handles it)
                 if self.bus_commands.iter().any(|c| c.name == "cleave") {
@@ -4744,8 +4720,7 @@ pub async fn run_tui(
 
     // ── Anthropic subscription ToS one-time startup notice ──────────────────
     // Shown once per session when only an OAuth/subscription token is present.
-    // Informs the operator of the interactive-only constraint before they try
-    // something that would be blocked (like /cleave or --prompt).
+    // Warns early, but does not remove operator agency.
     if app.footer_data.is_oauth
         && crate::providers::anthropic_credential_mode()
             == crate::providers::AnthropicCredentialMode::OAuthOnly
@@ -4753,9 +4728,9 @@ pub async fn run_tui(
     {
         app.oauth_tos_notice_shown = true;
         app.show_toast(
-            "Claude.ai subscription active — interactive use only. \
-             Background tasks, /cleave, and --prompt require ANTHROPIC_API_KEY. \
-             See: anthropic.com/legal/consumer-terms",
+            "Claude.ai subscription active. Anthropic's Consumer Terms may restrict \
+             automated/background use for this credential. Omegon will warn and disclose, \
+             but your provider choice remains yours. See: anthropic.com/legal/consumer-terms",
             ratatui_toaster::ToastType::Warning,
         );
     }
