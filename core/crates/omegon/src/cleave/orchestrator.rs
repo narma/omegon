@@ -76,6 +76,41 @@ pub enum MergeOutcome {
     Skipped(String),
 }
 
+/// If the configured model uses Anthropic subscription credentials (interactive-only
+/// per ToS), and an automation-safe fallback is available, rewrite the model string
+/// so children don't inherit a credential they can't use.
+///
+/// Returns the model string to actually use for children — either the original (no
+/// subscription conflict) or the best available automation-safe alternative.
+pub fn resolve_cleave_model(requested_model: &str) -> String {
+    use crate::providers::{AnthropicCredentialMode, anthropic_credential_mode};
+    let provider = requested_model.split(':').next().unwrap_or("");
+    let is_anthropic = provider == "anthropic" || requested_model.contains("claude");
+    if !is_anthropic {
+        return requested_model.to_string();
+    }
+    if anthropic_credential_mode() != AnthropicCredentialMode::OAuthOnly {
+        return requested_model.to_string();
+    }
+    // Subscription-only + Anthropic model requested → find fallback
+    match crate::providers::automation_safe_model() {
+        Some(fallback) => {
+            tracing::warn!(
+                requested = requested_model,
+                fallback = %fallback,
+                "Anthropic subscription is interactive-only (ToS); \
+                 routing cleave children to automation-safe provider"
+            );
+            fallback
+        }
+        None => {
+            // No fallback — return requested model; the child will hit the gate
+            // and produce a clear error rather than silently misbehaving.
+            requested_model.to_string()
+        }
+    }
+}
+
 /// Run the full cleave orchestration.
 pub async fn run_cleave(
     plan: &CleavePlan,
@@ -86,6 +121,10 @@ pub async fn run_cleave(
     cancel: CancellationToken,
 ) -> Result<CleaveResult> {
     let started = Instant::now();
+
+    // Resolve the effective model for children — substitutes an automation-safe
+    // provider when the parent model is Anthropic subscription (interactive-only).
+    let effective_model = resolve_cleave_model(&config.model);
 
     std::fs::create_dir_all(workspace_path).context("Failed to create workspace directory")?;
 
@@ -106,7 +145,7 @@ pub async fn run_cleave(
             repo_path,
             workspace_path,
             plan,
-            &config.model,
+            &effective_model,
         )
     };
     state.save(&state_path)?;
@@ -276,14 +315,14 @@ pub async fn run_cleave(
             let model = if let Some(ref inv_lock) = config.inventory {
                 let child_state = &state.children[info.child_idx];
                 if let Some(explicit) = &child_state.execute_model {
-                    if explicit != &config.model {
+                    if explicit != &effective_model {
                         // Plan provided an explicit per-child or plan-level override — use it.
                         tracing::info!(child = %info.label, model = %explicit, "using explicit plan model");
                         explicit.clone()
                     } else {
                         // Model was set to parent's model (from_plan default path) — apply routing.
                         let inv = inv_lock.read().await;
-                        let parent_tier = crate::routing::infer_model_tier(&config.model);
+                        let parent_tier = crate::routing::infer_model_tier(&effective_model);
                         let scope_tier = crate::routing::infer_capability_tier(child_state.scope.len());
                         // Cap the child at the parent's tier so delegation never upgrades cost.
                         let tier = scope_tier.min(parent_tier);
@@ -298,18 +337,18 @@ pub async fn run_cleave(
                             tracing::info!(child = %info.label, scope_tier = %scope_tier, parent_tier = %parent_tier, effective_tier = %tier, routed = %routed, "per-child routing");
                             routed
                         } else {
-                            config.model.clone()
+                            effective_model.clone()
                         }
                     }
                 } else {
-                    config.model.clone()
+                    effective_model.clone()
                 }
             } else {
                 // No inventory — use plan model or parent.
                 state.children[info.child_idx]
                     .execute_model
                     .clone()
-                    .unwrap_or_else(|| config.model.clone())
+                    .unwrap_or_else(|| effective_model.clone())
             };
 
             let inherited_env = config.inherited_env.clone();

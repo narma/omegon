@@ -529,8 +529,17 @@ async fn main() -> anyhow::Result<()> {
                 || cli.prompt_file.is_some();
             if is_automated {
                 use crate::providers::AnthropicCredentialMode;
-                if crate::providers::anthropic_credential_mode()
-                    == AnthropicCredentialMode::OAuthOnly
+                // Only block if the REQUESTED model is Anthropic AND the credential is
+                // subscription-only. A cleave child explicitly passed --model ollama:llama3
+                // or --model openai:gpt-4o must not be blocked — it doesn't use the
+                // Anthropic subscription at all.
+                let provider = cli.model.split(':').next().unwrap_or("anthropic");
+                let targets_anthropic = provider == "anthropic"
+                    || provider == "claude"
+                    || cli.model.contains("claude");
+                if targets_anthropic
+                    && crate::providers::anthropic_credential_mode()
+                        == AnthropicCredentialMode::OAuthOnly
                 {
                     eprintln!(
                         "error: Anthropic subscription credentials cannot be used in \

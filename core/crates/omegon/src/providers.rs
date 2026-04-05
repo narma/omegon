@@ -49,6 +49,61 @@ pub fn anthropic_credential_mode() -> AnthropicCredentialMode {
     }
 }
 
+/// Find the best automation-safe model available — i.e. one that is not subject to
+/// Anthropic's subscription interactive-only restriction.
+///
+/// Priority (highest to lowest):
+///   1. OpenAI API key  → `openai:gpt-4o`
+///   2. Codex OAuth     → `openai-codex:gpt-4o`  (no ToS automation restriction)
+///   3. OpenRouter      → `openrouter:openai/gpt-4o`
+///   4. Ollama          → `ollama:llama3` (local, always unrestricted)
+///
+/// Returns `None` only when no provider other than Anthropic subscription is available.
+pub fn automation_safe_model() -> Option<String> {
+    // 1. OpenAI direct API key
+    if resolve_api_key_sync("openai").is_some_and(|(_, oauth)| !oauth) {
+        return Some("openai:gpt-4o".to_string());
+    }
+    // 2. Codex OAuth (programmatic use is permitted — no subscription-style restriction)
+    if resolve_api_key_sync("openai-codex").is_some() {
+        return Some("openai-codex:gpt-4o".to_string());
+    }
+    // 3. OpenRouter
+    if resolve_api_key_sync("openrouter").is_some() {
+        return Some("openrouter:openai/gpt-4o".to_string());
+    }
+    // 4. Ollama — local inference, always unrestricted
+    // Check if Ollama is reachable via a quick non-blocking stat.
+    // We use env var OLLAMA_HOST or default localhost:11434.
+    let ollama_host = std::env::var("OLLAMA_HOST")
+        .unwrap_or_else(|_| "http://localhost:11434".to_string());
+    // Attempt a TCP connect with a short timeout to confirm Ollama is up.
+    if let Ok(addr) = ollama_host
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .parse::<std::net::SocketAddr>()
+    {
+        if std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).is_ok()
+        {
+            return Some("ollama:llama3".to_string());
+        }
+    } else {
+        // Parse failed — try the default port directly
+        let default_addr = "127.0.0.1:11434"
+            .parse::<std::net::SocketAddr>()
+            .expect("hardcoded addr");
+        if std::net::TcpStream::connect_timeout(
+            &default_addr,
+            std::time::Duration::from_millis(300),
+        )
+        .is_ok()
+        {
+            return Some("ollama:llama3".to_string());
+        }
+    }
+    None
+}
+
 /// Resolve API key synchronously — env vars and unexpired auth.json tokens.
 /// Returns (key, is_oauth).
 pub fn resolve_api_key_sync(provider: &str) -> Option<(String, bool)> {

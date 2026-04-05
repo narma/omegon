@@ -3302,22 +3302,42 @@ impl App {
             "q" => SlashResult::Quit,
 
             "cleave" => {
-                // Anthropic subscription guard — /cleave spawns background worker processes
-                // which violates the Consumer ToS "non-automated use" restriction.
+                // Anthropic subscription guard — /cleave spawns background worker processes.
+                // If only a subscription credential is available, try to route children to
+                // an automation-safe provider instead of flat-blocking.
                 if self.footer_data.is_oauth
                     && crate::providers::anthropic_credential_mode()
                         == crate::providers::AnthropicCredentialMode::OAuthOnly
                 {
-                    return SlashResult::Display(
-                        "Cannot run /cleave with a Claude.ai subscription.\n\n\
-                         Anthropic's ToS prohibits automated/background use of subscription \
-                         credentials. /cleave spawns parallel agent workers, which counts as \
-                         automated use.\n\n\
-                         To enable /cleave, set ANTHROPIC_API_KEY (billed per-token, \
-                         no automation restrictions).\n\n\
-                         Reference: https://www.anthropic.com/legal/consumer-terms"
-                            .into(),
-                    );
+                    match crate::providers::automation_safe_model() {
+                        Some(ref fallback) => {
+                            // A safe provider exists — warn and let it proceed.
+                            // The orchestrator will rewrite the child model automatically.
+                            self.show_toast(
+                                &format!(
+                                    "Anthropic subscription is interactive-only (ToS). \
+                                     Cleave workers will use {fallback} instead."
+                                ),
+                                ratatui_toaster::ToastType::Warning,
+                            );
+                            // Fall through to bus dispatch below
+                        }
+                        None => {
+                            return SlashResult::Display(
+                                "Cannot run /cleave with a Claude.ai subscription — no \
+                                 automation-safe provider found.\n\n\
+                                 Anthropic's ToS prohibits automated/background use of \
+                                 subscription credentials. /cleave needs a provider that \
+                                 supports headless use.\n\n\
+                                 Options:\n\
+                                 • Set ANTHROPIC_API_KEY (unrestricted, billed per-token)\n\
+                                 • Set OPENAI_API_KEY or run Ollama locally\n\
+                                 • /login openai-codex (ChatGPT Plus/Pro)\n\n\
+                                 Reference: https://www.anthropic.com/legal/consumer-terms"
+                                    .into(),
+                            );
+                        }
+                    }
                 }
                 // Forward to bus (cleave extension handles it)
                 if self.bus_commands.iter().any(|c| c.name == "cleave") {
