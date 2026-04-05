@@ -119,14 +119,13 @@ The agent has native retrieval and audit tools for project-scale work:
 - `lifecycle_doctor` — audit suspicious design/OpenSpec lifecycle drift before release or implementation
 - `session_log` — inspect recent session narratives for continuity across runs
 
-### CIC Instrument Panel
+### Status Footer
 
-Submarine-inspired real-time system state visualization in the terminal footer:
+Real-time system state visible at all times in the terminal footer:
 
-- **Split-panel layout** — Engine/memory state (left 40%) + system telemetry (right 60%)
-- **Live context + memory telemetry** — context fill, memory state, tool activity, and active model feedback in the terminal UI
+- **Four-card layout** — Context fill gauge, active model/provider, memory count, system health
 - **Wrapped multiline editor** — visible cursor, Shift+Enter newline insertion, and proportional growth with prompt length
-- **Focus mode toggle** — hide instruments for full-height conversation when needed
+- **Unified console mode** — expanded engine/inference/tools panel for deeper telemetry when needed
 - **Ambient awareness** — the panel favors actionable runtime state over decorative effects
 
 ### Skills

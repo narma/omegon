@@ -16,7 +16,7 @@ import Docs from "../../layouts/Docs.astro";
     <thead><tr><th>Provider</th><th>Client</th><th>Auth</th><th>Env Var</th></tr></thead>
     <tbody>
       <tr><td><strong>Anthropic</strong></td><td>AnthropicClient (native SSE)</td><td>OAuth or API key</td><td><code>ANTHROPIC_API_KEY</code></td></tr>
-      <tr><td><strong>OpenAI</strong></td><td>OpenAIClient (native)</td><td>OAuth or API key</td><td><code>OPENAI_API_KEY</code></td></tr>
+      <tr><td><strong>OpenAI</strong></td><td>OpenAIClient (native)</td><td>API key</td><td><code>OPENAI_API_KEY</code></td></tr>
       <tr><td><strong>OpenAI Codex</strong></td><td>CodexClient (Responses API)</td><td>OAuth JWT</td><td><code>CHATGPT_OAUTH_TOKEN</code></td></tr>
       <tr><td><strong>OpenRouter</strong></td><td>OpenRouterClient (wrapper)</td><td>API key</td><td><code>OPENROUTER_API_KEY</code></td></tr>
       <tr><td><strong>Groq</strong></td><td>OpenAICompatClient</td><td>API key</td><td><code>GROQ_API_KEY</code></td></tr>
@@ -67,12 +67,15 @@ import Docs from "../../layouts/Docs.astro";
     Credentials are stored in the system keychain (macOS Keychain, Linux Secret Service)
     or encrypted on disk. OAuth tokens are refreshed automatically.
   </p>
-  <pre><code># OAuth login (Claude Pro/Max, ChatGPT Plus/Pro)
-omegon login
-/login anthropic
-/login openai
+  <pre><code># OAuth login — Anthropic (Claude Pro/Max) or OpenAI Codex (ChatGPT Plus/Pro)
+omegon login             # launches browser for Anthropic OAuth by default
+/login anthropic         # Anthropic OAuth  → ANTHROPIC_OAUTH_TOKEN
+/login openai-codex      # ChatGPT Plus/Pro → CHATGPT_OAUTH_TOKEN
 
-# API key (set in environment or via /secrets)
+# API key — OpenAI standard API (requires api.openai.com billing account)
+export OPENAI_API_KEY="sk-..."
+
+# API key — other providers
 export ANTHROPIC_API_KEY="sk-ant-..."
 /secrets set groq GROQ_API_KEY
 

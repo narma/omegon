@@ -17,8 +17,8 @@ import Docs from "../../layouts/Docs.astro";
 INSTALL_DIR=~/.local/bin curl -fsSL https://omegon.styrene.dev/install.sh | sh
 
 # Install a specific version
-VERSION=0.15.7 curl -fsSL https://omegon.styrene.dev/install.sh | sh
-# Replace 0.15.7 with the release you actually want
+VERSION=0.15.10 curl -fsSL https://omegon.styrene.dev/install.sh | sh
+# Replace 0.15.10 with the release you actually want
 
 # Non-interactive (CI)
 curl -fsSL https://omegon.styrene.dev/install.sh | sh -s -- --no-confirm</code></pre>
@@ -48,10 +48,10 @@ brew install omegon</code></pre>
 
   <h3>Verify a Download</h3>
   <pre><code># Verify cosign signature (keyless)
-# Replace 0.15.7 with the release you downloaded
-cosign verify-blob omegon-0.15.7-aarch64-apple-darwin.tar.gz \
-  --signature omegon-0.15.7-aarch64-apple-darwin.tar.gz.sig \
-  --certificate omegon-0.15.7-aarch64-apple-darwin.tar.gz.pem \
+# Replace 0.15.10 with the release you downloaded
+cosign verify-blob omegon-0.15.10-aarch64-apple-darwin.tar.gz \
+  --signature omegon-0.15.10-aarch64-apple-darwin.tar.gz.sig \
+  --certificate omegon-0.15.10-aarch64-apple-darwin.tar.gz.pem \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre>
 
