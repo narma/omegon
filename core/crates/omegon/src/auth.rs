@@ -74,7 +74,7 @@ pub static PROVIDERS: &[ProviderCredential] = &[
         display_name: "ChatGPT/Codex",
         env_vars: &["CHATGPT_OAUTH_TOKEN"],
         auth_method: AuthMethod::OAuth,
-        description: "OAuth — ChatGPT Plus/Pro subscription",
+        description: "OAuth — experimental consumer ChatGPT/Codex route",
     },
     // ── OpenAI-compatible inference providers ───────────────────────
     ProviderCredential {

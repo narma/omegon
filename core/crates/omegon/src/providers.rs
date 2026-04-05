@@ -50,15 +50,18 @@ pub fn anthropic_credential_mode() -> AnthropicCredentialMode {
 }
 
 /// Find the best automation-safe model available — i.e. one that is not subject to
-/// Anthropic's subscription interactive-only restriction.
+/// subscription-only interactive-use constraints or unsupported consumer-backend automation.
 ///
 /// Priority (highest to lowest):
 ///   1. OpenAI API key  → `openai:gpt-4o`
-///   2. Codex OAuth     → `openai-codex:gpt-4o`  (no ToS automation restriction)
-///   3. OpenRouter      → `openrouter:openai/gpt-4o`
-///   4. Ollama          → `ollama:llama3` (local, always unrestricted)
+///   2. OpenRouter      → `openrouter:openai/gpt-4o`
+///   3. Ollama          → `ollama:llama3` (local, always unrestricted)
 ///
-/// Returns `None` only when no provider other than Anthropic subscription is available.
+/// Intentionally excludes consumer subscription routes such as ChatGPT/Codex OAuth and
+/// Anthropic subscription OAuth. Those may be usable interactively in some cases, but they
+/// are not treated as automation-safe defaults.
+///
+/// Returns `None` only when no automation-safe provider is available.
 ///
 /// Ollama availability is probed once per process lifetime (50ms TCP connect) and
 /// cached — safe to call from the TUI event loop and async orchestrator paths.
@@ -67,15 +70,11 @@ pub fn automation_safe_model() -> Option<String> {
     if resolve_api_key_sync("openai").is_some_and(|(_, oauth)| !oauth) {
         return Some("openai:gpt-4o".to_string());
     }
-    // 2. Codex OAuth (programmatic use is permitted — no subscription-style restriction)
-    if resolve_api_key_sync("openai-codex").is_some() {
-        return Some("openai-codex:gpt-4o".to_string());
-    }
-    // 3. OpenRouter
+    // 2. OpenRouter
     if resolve_api_key_sync("openrouter").is_some() {
         return Some("openrouter:openai/gpt-4o".to_string());
     }
-    // 4. Ollama — local inference, always unrestricted.
+    // 3. Ollama — local inference, always unrestricted.
     // Probe once per process with a tight 50ms timeout (localhost should respond in <5ms).
     // Cached in a OnceLock so repeated calls (TUI event loop, orchestrator) are instant.
     static OLLAMA_AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

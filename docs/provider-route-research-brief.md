@@ -1,237 +1,197 @@
-# Research Brief — Subscription-First Provider Route Matrix
+# Research Brief — Subscription Route Verification Dossier
 
-Produce a **route matrix**, not a provider overview.
+Replace the earlier broad provider matrix with a focused verification pass on the disputed subscription-backed and hosted routes.
 
 The goal is to answer:
 
-> For a given model family, what concrete execution routes are available to an operator, through which entitlement/auth mechanism, with what capability, cost, and policy tradeoffs?
+> Which non-API-key routes are real enough, official enough, and capable enough to become first-class happy paths for operators who already pay for model access?
 
-## Core instruction
-
-Each row must represent **one concrete execution route**, not just a vendor or model brand.
-
-You must clearly separate:
-
-- **operator-facing entitlement** — what the human thinks they bought
-- **auth mechanism** — how Omegon gets credentials
-- **execution backend** — what Omegon would actually call
-- **model family** — Claude, GPT, Gemini, OSS/local, etc.
-
-Do **not** collapse these into one “provider” label.
+This is **not** a vendor overview. It is a verification dossier for the routes where entitlement, auth mechanism, and runtime backend are currently ambiguous.
 
 ---
 
-## Required output schema
+## Primary routes to investigate
 
-Return structured rows in JSON or markdown table form matching this schema as closely as possible:
+Research these exact routes first:
 
-```json
-{
-  "model_family": "Gemini",
-  "route_id": "gemini-api-key",
-  "operator_entitlement": "Gemini API billing",
-  "entitlement_type": "api_billing",
-  "auth_mechanism": "api_key",
-  "credential_artifacts": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-  "execution_backend": "Gemini Developer API",
-  "base_url": "https://...",
-  "protocol_shape": "native|openai-compatible|custom-oauth|local-daemon",
-  "official_support_level": "official|documented-compatible|community-only|unclear",
-  "models_reachable": ["gemini-2.5-pro", "gemini-2.5-flash"],
-  "tool_calling": "yes|no|unknown",
-  "streaming": "yes|no|unknown",
-  "multimodal_input": "yes|no|unknown",
-  "web_search_or_grounding": "native|external-tool-only|none|unknown",
-  "context_window_notes": "text",
-  "rate_limit_or_quota_surface": "headers|status-endpoint|none|unknown",
-  "automation_posture": "allowed|warning|blocked|unknown",
-  "terms_risk": "low|medium|high|unknown",
-  "cost_shape": "subscription|per-token|local|hybrid|unknown",
-  "operator_value_case": "why an operator would prefer this route",
-  "evidence": [
-    {
-      "type": "official_doc|official_pricing|official_terms|official_example|community_report",
-      "url": "https://...",
-      "claim": "what this source supports"
-    }
-  ],
-  "confidence": "high|medium|low",
-  "open_questions": [
-    "what remains unclear"
-  ]
-}
+1. `google-ai-pro`
+2. `ollama-cloud`
+3. `chatgpt-codex-oauth`
+4. `claude-pro-oauth`
+
+Optionally include comparison rows for the clear API-key equivalents only where needed to clarify the gap:
+
+- `gemini-api-key`
+- `openai-api-key`
+- `anthropic-api-key`
+- `ollama-local`
+
+The point is not to restate the API-key paths. The point is to determine whether the **subscription-backed / hosted alternatives** can be treated as supported operator-first happy paths.
+
+---
+
+## Required output format
+
+Produce one dossier section per route using this exact structure.
+
+```markdown
+## Route: <route_id>
+
+### Verdict
+- Happy-path candidate: yes|no|not yet
+- Confidence: high|medium|low
+- Recommended classification: happy-path | supported-with-caveats | experimental | operator-owned-risk | do-not-support
+
+### Operator-facing entitlement
+- What the human believes they bought
+
+### Concrete execution backend
+- What Omegon would actually call
+- Exact host/base URL if known
+- Whether this is distinct from the vendor's API billing route
+
+### Auth mechanism
+- Exact auth type: api_key | oauth | session token | local daemon | bearer token | unknown
+- Exact credential artifacts / env vars / CLI dependencies
+- Whether refresh is required
+
+### Official support status
+- official | documented-compatible | community-only | unclear
+- Explain why, with citations
+
+### Automation / terms posture
+- allowed | restricted | prohibited | unclear
+- Must cite exact terms/docs if possible
+- Distinguish policy from Omegon preference
+
+### Capability surface
+- tool calling: yes|no|unknown
+- streaming: yes|no|unknown
+- multimodal input: yes|no|unknown
+- search / grounding / fetch: native|external-only|none|unknown
+- telemetry / quota surface: headers | status endpoint | none | unknown
+- context window notes
+
+### Technical stability
+- high | medium | low
+- Why: protocol churn, session fragility, anti-bot measures, official SDK, etc.
+
+### Operator value case
+- Why an operator would prefer this route over API billing
+
+### Key evidence
+- List of official docs, pricing pages, terms pages, forum statements, or community evidence
+- Each item should be tagged as:
+  - official_doc
+  - official_pricing
+  - official_terms
+  - official_example
+  - community_report
+
+### Open questions
+- What remains unresolved after research
 ```
 
 ---
 
-## What to collect for each route
+## What to prove for each route
 
-### 1. Route identity
-You must provide:
+For each disputed route, answer these questions explicitly:
 
-- `model_family`
-- `route_id`
-- `execution_backend`
+1. **Is there a sanctioned programmatic path at all?**
+   - Not “can someone scrape it?”
+   - I need to know whether there is an official or at least documented-compatible way to use this route programmatically.
 
-Examples of good route ids:
+2. **What exact backend would Omegon talk to?**
+   - Consumer web backend?
+   - Dedicated coding backend?
+   - Hosted API?
+   - OpenAI-compatible surface?
+   - Unknown?
 
-- `anthropic-api-key`
-- `claude-consumer-oauth`
-- `openai-api-key`
-- `chatgpt-codex-oauth`
-- `gemini-api-key`
-- `google-ai-pro-oauth` *(only if a real programmatic route exists)*
-- `ollama-local`
-- `ollama-cloud-api`
+3. **What exact auth artifact exists?**
+   - OAuth token?
+   - session cookie?
+   - bearer token?
+   - API key?
+   - dynamic CLI session?
 
-Do **not** give only vendor names like “Google” or “Ollama”.
+4. **What is the automation posture?**
+   - Explicitly allowed?
+   - Restricted to interactive use?
+   - Prohibited?
+   - Unclear?
 
----
+5. **What capability gap exists vs API billing?**
+   - Tool calling
+   - streaming
+   - multimodal
+   - search/grounding
+   - telemetry
+   - context window
 
-### 2. Entitlement vs backend split
-For each route, distinguish:
-
-#### Operator-facing entitlement
-Examples:
-- Claude Pro/Max
-- ChatGPT Plus/Pro
-- Google AI Pro
-- Gemini API billing
-- OpenAI API billing
-- Ollama Cloud account
-- local hardware/runtime
-
-#### Concrete backend
-Examples:
-- Anthropic API
-- Claude consumer endpoint
-- Codex backend
-- Gemini API
-- Ollama local daemon
-- Ollama Cloud API
-
-This distinction is mandatory.
+6. **Is it stable enough to be a happy path?**
+   - Or is it an operator-owned risk route?
 
 ---
 
-### 3. Auth artifact specifics
-Collect exact credential artifacts where possible.
+## Route-specific guidance
 
-Examples:
-- `ANTHROPIC_API_KEY`
-- `ANTHROPIC_OAUTH_TOKEN`
-- `CHATGPT_OAUTH_TOKEN`
-- `GEMINI_API_KEY`
-- `GOOGLE_API_KEY`
-- `OLLAMA_API_KEY`
-- `OLLAMA_HOST`
+### 1. `google-ai-pro`
+This is the highest priority.
 
-Also note:
-- whether OAuth is browser/device-based
-- whether token refresh is needed
-- whether auth depends on a CLI session
-- whether auth comes from a billing project
+You must determine:
+- whether Google AI Pro / Gemini Advanced has any sanctioned programmatic route
+- whether it maps to Gemini API in any official way
+- whether Google account auth can be used for developer access
+- whether the entitlement is app-only rather than API-capable
 
----
+The key output here is a clear answer to:
 
-### 4. Capability surface per route
-Report route-level capabilities, not vague family-level claims.
+> Is Google AI Pro merely an entitlement concept, or does it map to a usable developer backend?
 
-At minimum:
-- tool calling
-- streaming
-- multimodal input
-- web search / grounding / fetch
-- context window notes
-- rate-limit / quota telemetry surface
+If the answer is “no verified programmatic path,” say that clearly.
 
-If unknown, say `unknown`.
+### 2. `ollama-cloud`
+You must determine:
+- exact host/base URL
+- exact auth artifact (`OLLAMA_API_KEY` or otherwise)
+- whether it is an official Ollama-hosted service or just third-party hosting guidance
+- whether it supports native Ollama API and/or OpenAI-compatible API
+- whether tool calling and web search/web fetch are available in cloud mode
+- whether telemetry/quota surfaces exist
 
----
+The key output here is:
 
-### 5. Automation / policy posture
-You must classify each route as one of:
+> Is Ollama Cloud a distinct hosted execution backend that should be modeled separately from `ollama-local`?
 
-- `allowed`
-- `warning`
-- `blocked`
-- `unknown`
+### 3. `chatgpt-codex-oauth`
+Do not describe this vaguely as “browser scraping” unless that is the only defensible technical description.
 
-And explain why.
+You must determine:
+- what exact backend surface is involved
+- whether there is any official or documented-compatible route
+- whether this is meaningfully distinct from GPT Actions and from OpenAI API billing
+- what evidence supports classifying it as community-only, unsupported, or tolerated
 
-This should be based on:
-- official terms
-- official docs
-- support statements
-- absence of evidence where relevant
+**Current verification outcome:** treat as operator-owned-risk / internal experimental only. Do not present it as a happy path or a sanctioned subscription bridge.
 
-Do not present speculation as fact.
+The key output here is:
 
----
+> What is the real technical and support classification of the Codex/ChatGPT OAuth route Omegon is already exposing?
 
-### 6. Evidence quality
-Every major claim should cite evidence tagged as one of:
+### 4. `claude-pro-oauth`
+You must determine:
+- whether any sanctioned developer route exists for Claude Pro / Team / Max subscriptions
+- whether consumer OAuth is app-only
+- what the exact automation terms posture is
+- whether this should be classified as do-not-support vs operator-owned-risk
 
-- `official_doc`
-- `official_pricing`
-- `official_terms`
-- `official_example`
-- `community_report`
+**Current verification outcome:** treat as supported-with-caveats via the Claude Code OAuth/CLI path, with explicit throttling/backoff and no claim of unrestricted automation capacity.
 
-Prefer official sources.
-Use community evidence only when official docs are silent, and mark confidence accordingly.
+The key output here is:
 
----
-
-### 7. Cost / operator value
-For each route, include:
-- `cost_shape`
-- `operator_value_case`
-
-Examples:
-- “Best if the operator already pays for ChatGPT Pro and wants coding access without separate API billing.”
-- “Best for sanctioned automation and clear API terms.”
-- “Best for local/private usage on owned hardware.”
-
----
-
-## Minimum routes to research first
-
-### Claude family
-- Anthropic API key
-- Claude subscription / consumer OAuth
-
-### GPT family
-- OpenAI API key
-- ChatGPT/Codex OAuth
-
-### Gemini family
-- Gemini API key
-- Google AI Pro subscription path *(only if a real programmatic route exists)*
-- Vertex/Google Cloud Gemini route if materially distinct
-
-### OSS / local family
-- Ollama local
-- Ollama Cloud
-
-### Optional second wave
-- OpenRouter
-- Groq
-- Hugging Face
-- Mistral
-- Cerebras
-
----
-
-## Questions you must answer explicitly
-
-For each route, identify unresolved questions including:
-
-1. Is this route **officially supported for programmatic use**?
-2. Is automation **explicitly allowed**, merely tolerated, or unclear?
-3. Does the route expose **telemetry/quota data**?
-4. Does the route have **tool-calling parity** with API-key paths?
-5. Is the route **stable enough to be a happy path**?
+> Is there any route here beyond consumer interactive use?
 
 ---
 
@@ -239,27 +199,29 @@ For each route, identify unresolved questions including:
 
 Do **not** send:
 
-- a vendor marketing summary
-- one prose paragraph per provider with no structure
-- model-family claims without route identity
-- “Google AI Pro is cost-effective” without proving a programmatic route
-- “Ollama Cloud exists” without auth/API details
+- a generic provider comparison
+- marketing summaries
+- vague statements like “X is cost-effective” without backend evidence
+- route descriptions without exact auth/backend details
+- conclusions without links to evidence
 
 ---
 
 ## Final instruction
 
-Produce a **route matrix**, not a provider catalog.
+Produce a **verification dossier** for the disputed subscription-backed and hosted routes.
 
-Each row must represent one concrete execution route to a model family, including:
-- operator entitlement
-- auth mechanism
-- backend identity
-- capability surface
-- automation posture
-- cost shape
-- evidence links
+The purpose is to decide whether each route should be classified as:
+- first-class happy path
+- supported with caveats
+- experimental
+- operator-owned risk
+- do not support
 
-Separate **what the operator bought** from **what Omegon would actually call**.
+Separate:
+- what the operator bought
+- how Omegon would authenticate
+- what backend Omegon would execute against
+- what the terms and capability boundaries actually are
 
-If a subscription-backed route is unclear, say so explicitly rather than smoothing it over.
+If a route is unresolved, say so explicitly. Do not smooth over ambiguity.

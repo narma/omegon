@@ -537,7 +537,7 @@ impl ModelCatalog {
                 cost_tier: CostTier::Premium,
                 pricing: Some(TokenPricing::new(2.5, 15.0)),
                 capabilities: vec![Capability::Reasoning, Capability::Vision, Capability::Coding],
-                description: "GPT-5.4 via ChatGPT/Codex OAuth — frontier, 1M context".to_string(),
+                description: "GPT-5.4 via ChatGPT/Codex OAuth — experimental consumer route, 1M context".to_string(),
                 available: true,
             },
             ModelInfo {
@@ -549,7 +549,7 @@ impl ModelCatalog {
                 cost_tier: CostTier::CheapAPI,
                 pricing: Some(TokenPricing::new(0.750, 4.500)),
                 capabilities: vec![Capability::Coding, Capability::Fast],
-                description: "GPT-5.4 mini via ChatGPT/Codex OAuth — fast, coding-optimised".to_string(),
+                description: "GPT-5.4 mini via ChatGPT/Codex OAuth — experimental consumer route".to_string(),
                 available: true,
             },
         ]); // end ChatGPT / Codex

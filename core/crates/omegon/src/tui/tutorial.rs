@@ -25,8 +25,8 @@ pub enum Anchor {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TutorialMode {
     /// AutoPrompt steps fire real agent turns.
-    /// Granted when Victory+ is routable via Codex OAuth, OpenAI API key,
-    /// or any non-subscription cloud API key.
+    /// Granted when Victory+ is routable via an automation-safe backend
+    /// such as direct API keys or other explicitly supported routes.
     Interactive,
     /// Anthropic OAuth subscription detected with no other Victory provider.
     /// User must explicitly type `/tutorial consent` to enable AutoPrompt.
@@ -48,19 +48,21 @@ pub fn tutorial_gate() -> TutorialMode {
     let has_openrouter = std::env::var("OPENROUTER_API_KEY").is_ok_and(|v| !v.is_empty());
     let has_anthropic_oauth = std::env::var("ANTHROPIC_OAUTH_TOKEN").is_ok_and(|v| !v.is_empty());
 
-    // Codex OAuth is purpose-built for programmatic/agent use — clear.
-    // Any direct API key is also clear: operator controls the account.
-    if has_codex_oauth || has_anthropic_api_key || has_openai_api_key || has_openrouter {
+    // Direct API-key-style routes are the clear happy path for AutoPrompt.
+    if has_anthropic_api_key || has_openai_api_key || has_openrouter {
         return TutorialMode::Interactive;
     }
 
-    // Anthropic subscription OAuth: ToS restricts automated/programmatic use
-    // without operator consent. Require explicit confirmation before AutoPrompt.
+    // Subscription-backed OAuth routes are not treated as automation-safe defaults.
+    // Anthropic may be usable interactively with explicit operator consent; ChatGPT/Codex
+    // consumer OAuth stays orientation-only unless and until a sanctioned route exists.
     if has_anthropic_oauth {
         return TutorialMode::ConsentRequired;
     }
 
-    // No cloud model available — show orientation tour only.
+    let _ = has_codex_oauth;
+
+    // No automation-safe cloud model available — show orientation tour only.
     TutorialMode::OrientationOnly
 }
 
@@ -254,7 +256,7 @@ pub const STEPS_ORIENTATION: &[Step] = &[
     STEP_WEB_DASHBOARD,
     Step {
         title: "Unlock Interactive Mode",
-        body: "To run the full tutorial with real agent\nwork, add a cloud model:\n\n  Any API key (fully unrestricted):\n    export ANTHROPIC_API_KEY=sk-ant-...\n    export OPENAI_API_KEY=sk-...\n\n  ChatGPT Plus/Pro (free quota):\n    /login openai-codex\n\nNote: Claude.ai subscriptions enable\ninteractive TUI use only. API keys\nare required for /cleave and --prompt.\n\nThen restart and type /tutorial.",
+        body: "To run the full tutorial with real agent\nwork, add a supported cloud model:\n\n  Any API key (fully unrestricted):\n    export ANTHROPIC_API_KEY=sk-ant-...\n    export OPENAI_API_KEY=sk-...\n    export OPENROUTER_API_KEY=sk-or-...\n\nSubscription logins are not the default\nautomation path:\n  • Claude.ai OAuth needs explicit consent\n    for interactive use only\n  • ChatGPT/Codex consumer OAuth is not\n    treated as a supported agent backend\n\nThen restart and type /tutorial.",
         anchor: Anchor::Center,
         trigger: Trigger::Tab,
         highlight: None,
@@ -1338,5 +1340,37 @@ mod tests {
         assert!(!tut.check_any_input());
         assert!(!tut.check_command("focus"));
         assert!(tut.current_highlight().is_none());
+    }
+
+    #[test]
+    fn tutorial_gate_classifies_routes_conservatively() {
+        unsafe {
+            std::env::remove_var("ANTHROPIC_API_KEY");
+            std::env::remove_var("OPENAI_API_KEY");
+            std::env::remove_var("OPENROUTER_API_KEY");
+            std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+            std::env::remove_var("CHATGPT_OAUTH_TOKEN");
+        }
+
+        unsafe {
+            std::env::set_var("CHATGPT_OAUTH_TOKEN", "test-codex");
+        }
+        assert_eq!(tutorial_gate(), TutorialMode::OrientationOnly);
+
+        unsafe {
+            std::env::remove_var("CHATGPT_OAUTH_TOKEN");
+            std::env::set_var("ANTHROPIC_OAUTH_TOKEN", "test-anthropic");
+        }
+        assert_eq!(tutorial_gate(), TutorialMode::ConsentRequired);
+
+        unsafe {
+            std::env::remove_var("ANTHROPIC_OAUTH_TOKEN");
+            std::env::set_var("OPENAI_API_KEY", "test-openai");
+        }
+        assert_eq!(tutorial_gate(), TutorialMode::Interactive);
+
+        unsafe {
+            std::env::remove_var("OPENAI_API_KEY");
+        }
     }
 }

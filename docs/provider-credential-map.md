@@ -38,6 +38,8 @@ Adding a new OpenAI-compatible provider: one struct entry in `auth::PROVIDERS` w
 | Anthropic | API Key / OAuth | `ANTHROPIC_API_KEY`, `ANTHROPIC_OAUTH_TOKEN` | `anthropic` | anthropic-messages |
 | OpenAI Codex (ChatGPT) | OAuth | `CHATGPT_OAUTH_TOKEN` | `openai-codex` | openai-codex-responses |
 
+Anthropic OAuth is the sanctioned Claude Code / subscription-adjacent route for interactive use, but not an unrestricted automation credential. OpenAI Codex / ChatGPT OAuth is currently an experimental consumer route in Omegon, not a first-class supported backend.
+
 ### LLM Providers — OpenAI-Compatible
 
 | Provider | Env Var | auth.json Key | Base URL | Notes |

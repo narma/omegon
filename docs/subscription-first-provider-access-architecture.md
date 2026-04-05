@@ -30,11 +30,13 @@ Current provider architecture is provider-centric. `core/crates/omegon/src/auth.
 
 Operator requirement articulated in-session: the happy path should be using auth mechanisms the operator already has in place, especially subscriptions that are more cost-effective than per-token billing. The important matrix is not just which provider offers which models, but how Omegon can legitimately reach those model families using existing operator entitlements. API keys are mechanically straightforward and not the interesting design dimension; the design challenge is representing and ranking subscription-backed access routes without lying about the concrete backend or policy boundary.
 
-### Initial external evidence: Ollama Cloud looks like a backend; Google AI Pro looks like an entitlement layer
+### Initial external evidence: Ollama Cloud is a backend; Google AI Pro is an entitlement layer
 
 External research so far:
-- Ollama Cloud appears to expose a real programmable cloud backend with `Authorization: Bearer $OLLAMA_API_KEY`, host `https://ollama.com`, and docs indicating cloud models work via Ollama's API and OpenAI-compatible API. This suggests a hosted route distinct from local daemon usage.
-- Gemini developer documentation points to API-key-based integration (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) with project billing and paid tiers. Google AI Pro / Google One pages emphasize app/product access, not clear general API entitlement. This suggests Gemini API is currently the clean technical integration target, while Google AI Pro is an operator-facing entitlement concept that may or may not map to a sanctioned programmatic route.
+- Ollama Cloud exposes a real programmable hosted backend with bearer-token auth, host `https://ollama.com/v1`, and OpenAI-compatible calling semantics. This should be modeled separately from `ollama-local` because the entitlement, quota surface, and execution backend are different.
+- Gemini developer documentation points to API-key-based integration (`GEMINI_API_KEY` / `GOOGLE_API_KEY`) with project billing and paid tiers. Google AI Pro / Google One pages emphasize app/product access, not a sanctioned general API entitlement. Treat `google-ai-pro` as an operator-facing entitlement concept, not a supported execution route.
+- ChatGPT/Codex consumer OAuth currently looks like an unsupported or operator-owned-risk consumer route rather than a sanctioned happy path. It should not be presented as equivalent to OpenAI API billing.
+- Claude Pro/Max OAuth is materially different: the Claude Code CLI/OAuth path is sanctioned enough to be usable, but fair-use throttling and interactive-use caveats mean it belongs in a supported-with-caveats bucket, not the default automation-safe tier.
 These findings support a design where entitlements and execution routes are represented separately and linked explicitly.
 
 ## Decisions
