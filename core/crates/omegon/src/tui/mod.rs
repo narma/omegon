@@ -3912,15 +3912,24 @@ impl App {
                     self.effects.ping_footer(self.theme.as_ref());
                 }
             }
-            AgentEvent::ContextUpdated { tokens } => {
-                // Update context usage metrics in footer
+            AgentEvent::ContextUpdated {
+                tokens,
+                context_window,
+                context_class,
+                thinking_level,
+            } => {
+                self.footer_data.estimated_tokens = tokens as usize;
+                self.footer_data.context_window = context_window as usize;
+                self.footer_data.context_class = crate::settings::ContextClass::parse(&context_class)
+                    .unwrap_or_else(|| crate::settings::ContextClass::from_tokens(context_window as usize));
+                self.footer_data.thinking_level = thinking_level;
                 let ctx_window = self.footer_data.context_window;
-                if ctx_window > 0 {
-                    self.footer_data.estimated_tokens = tokens as usize;
-                    self.footer_data.context_percent =
-                        (tokens as f32 / ctx_window as f32 * 100.0).min(100.0);
-                    self.effects.ping_footer(self.theme.as_ref());
-                }
+                self.footer_data.context_percent = if ctx_window > 0 {
+                    (tokens as f32 / ctx_window as f32 * 100.0).min(100.0)
+                } else {
+                    0.0
+                };
+                self.effects.ping_footer(self.theme.as_ref());
             }
             AgentEvent::MessageAbort => {
                 self.conversation.abort_streaming();

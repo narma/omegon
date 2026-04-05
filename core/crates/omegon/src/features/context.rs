@@ -125,6 +125,7 @@ impl Feature for ContextProvider {
     ) -> anyhow::Result<ToolResult> {
         match tool_name {
             "context_status" => {
+                let dispatched = dispatch_command(&self.command_tx, TuiCommand::ContextStatus);
                 let metrics = self.metrics.lock().unwrap();
                 let pct = metrics.usage_percent();
                 let result_text = format!(
@@ -136,8 +137,6 @@ impl Feature for ContextProvider {
                     metrics.thinking_level
                 );
 
-                let _ = dispatch_command(&self.command_tx, TuiCommand::ContextStatus);
-
                 Ok(ToolResult {
                     content: vec![ContentBlock::Text { text: result_text }],
                     details: json!({
@@ -146,6 +145,7 @@ impl Feature for ContextProvider {
                         "usage_percent": pct,
                         "class": metrics.context_class,
                         "thinking": metrics.thinking_level,
+                        "dispatched": dispatched,
                     }),
                 })
             }
@@ -185,6 +185,38 @@ impl Feature for ContextProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn context_status_reports_current_metrics_snapshot() {
+        let metrics = SharedContextMetrics::new();
+        {
+            let mut m = metrics.lock().unwrap();
+            m.update(96_433, 272_000, "Maniple (272k)", "medium");
+        }
+        let command_tx = new_shared_command_tx();
+        let provider = ContextProvider::new(metrics, command_tx);
+        let result = provider
+            .execute(
+                "context_status",
+                "call-2",
+                json!({}),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect("tool result");
+
+        match &result.content[0] {
+            ContentBlock::Text { text } => {
+                assert!(text.contains("Context: 96433/272000 tokens (35%)"), "unexpected text: {text}");
+                assert!(text.contains("Class: Maniple (272k)"), "unexpected text: {text}");
+                assert!(text.contains("Thinking: medium"), "unexpected text: {text}");
+            }
+            other => panic!("unexpected content block: {other:?}"),
+        }
+        assert_eq!(result.details["tokens_used"], 96_433);
+        assert_eq!(result.details["context_window"], 272_000);
+        assert_eq!(result.details["usage_percent"], 35);
+    }
 
     #[tokio::test]
     async fn compact_tool_reports_when_no_command_channel_is_available() {

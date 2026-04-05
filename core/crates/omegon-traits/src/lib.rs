@@ -971,10 +971,13 @@ pub enum AgentEvent {
     HarnessStatusChanged {
         status_json: Value,
     },
-    /// Context updated — tokens recalculated after compaction or clear.
-    /// TUI syncs footer_data.estimated_tokens and context_percent.
+    /// Context updated — authoritative snapshot after compaction, clear, or turn completion.
+    /// TUI + web consumers should use this as the canonical context status source.
     ContextUpdated {
         tokens: u64,
+        context_window: u64,
+        context_class: String,
+        thinking_level: String,
     },
     /// Session was reset mid-session via /new. TUI clears its display.
     SessionReset,

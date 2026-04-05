@@ -1273,9 +1273,14 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                 );
                             }
                             
-                            // Send context update event to TUI for immediate display refresh
-                            let _ = events_tx.send(AgentEvent::ContextUpdated { tokens: est as u64 });
-                            
+                            // Send authoritative context snapshot to TUI/web consumers.
+                            let _ = events_tx.send(AgentEvent::ContextUpdated {
+                                tokens: est as u64,
+                                context_window: settings.context_window as u64,
+                                context_class: settings.context_class.label().to_string(),
+                                thinking_level: settings.thinking.as_str().to_string(),
+                            });
+
                             let _ = events_tx.send(AgentEvent::SystemNotification {
                                 message: format!("Context compressed. Now using {est} tokens."),
                             });
@@ -1304,13 +1309,21 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 agent.resume_info = None;
                 
                 // Reset metrics — extract context_window in single lock scope to avoid deadlock
-                if let Ok(mut metrics) = agent.context_metrics.lock() {
+                let context_window = if let Ok(mut metrics) = agent.context_metrics.lock() {
                     let context_window = metrics.context_window;
                     metrics.update(0, context_window, "Squad", "off");
-                }
+                    context_window
+                } else {
+                    200_000
+                };
                 
-                // Send context update event to TUI for immediate display refresh
-                let _ = events_tx.send(AgentEvent::ContextUpdated { tokens: 0 });
+                // Send authoritative context snapshot to TUI/web consumers.
+                let _ = events_tx.send(AgentEvent::ContextUpdated {
+                    tokens: 0,
+                    context_window: context_window as u64,
+                    context_class: "Squad".to_string(),
+                    thinking_level: "off".to_string(),
+                });
                 
                 let _ = events_tx.send(AgentEvent::SystemNotification {
                     message: "Context cleared. Starting fresh conversation.".into(),
@@ -1765,7 +1778,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     let _ = events_tx.send(AgentEvent::AgentEnd);
                 }
 
-                // Update context metrics for status tools
+                // Update context metrics + notify TUI/web consumers after turn completion.
                 {
                     let est = agent.conversation.estimate_tokens();
                     let settings = shared_settings.lock().unwrap();
@@ -1777,6 +1790,12 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             settings.thinking.as_str(),
                         );
                     }
+                    let _ = events_tx.send(AgentEvent::ContextUpdated {
+                        tokens: est as u64,
+                        context_window: settings.context_window as u64,
+                        context_class: settings.context_class.label().to_string(),
+                        thinking_level: settings.thinking.as_str().to_string(),
+                    });
                 }
 
                 if let Ok(mut guard) = shared_cancel.lock() {

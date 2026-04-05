@@ -280,9 +280,17 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
             "type": "harness_status_changed",
             "status": status_json,
         }),
-        AgentEvent::ContextUpdated { tokens } => json!({
+        AgentEvent::ContextUpdated {
+            tokens,
+            context_window,
+            context_class,
+            thinking_level,
+        } => json!({
             "type": "context_updated",
             "tokens": tokens,
+            "context_window": context_window,
+            "context_class": context_class,
+            "thinking_level": thinking_level,
         }),
         AgentEvent::SessionReset => json!({
             "type": "session_reset",
