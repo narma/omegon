@@ -3999,14 +3999,23 @@ impl App {
                 result,
                 is_error,
             } => {
-                let summary_text = result.content.first().and_then(|c| match c {
-                    omegon_traits::ContentBlock::Text { text } => Some(text.clone()),
-                    _ => None,
-                });
+                let text_blocks: Vec<&str> = result
+                    .content
+                    .iter()
+                    .filter_map(|c| match c {
+                        omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                let full_text = if text_blocks.is_empty() {
+                    None
+                } else {
+                    Some(text_blocks.join("\n\n"))
+                };
 
                 // Append recovery hint for tool errors
                 let enriched: Option<String> = if is_error {
-                    summary_text.as_ref().and_then(|text| {
+                    full_text.as_ref().and_then(|text| {
                         let hint = Self::recovery_hint(self.last_tool_name.as_deref(), text);
                         if hint.is_empty() {
                             None
@@ -4018,8 +4027,8 @@ impl App {
                     None
                 };
 
-                // Use enriched message if available, otherwise original summary
-                let display = enriched.as_deref().or(summary_text.as_deref());
+                // Use enriched message if available, otherwise the full text payload.
+                let display = enriched.as_deref().or(full_text.as_deref());
                 self.conversation.push_tool_end(&id, is_error, display);
 
                 // Detect image results from view/render tools
@@ -4035,7 +4044,7 @@ impl App {
                             | "render_composition_still"
                             | "render_native_diagram"
                     )
-                    && let Some(ref text) = summary_text
+                    && let Some(ref text) = full_text
                 {
                     for line in text.lines() {
                         let trimmed = line.trim();

@@ -2129,3 +2129,59 @@ fn recovery_hint_no_match() {
     let hint = App::recovery_hint(None, "some random error");
     assert!(hint.is_empty(), "should return empty for unknown errors");
 }
+
+#[test]
+fn tool_end_aggregates_all_text_blocks() {
+    let mut app = test_app();
+    app.handle_agent_event(AgentEvent::ToolStart {
+        id: "tool-1".into(),
+        name: "codebase_search".into(),
+        args: serde_json::json!({"query": "foo"}),
+    });
+
+    app.handle_agent_event(AgentEvent::ToolEnd {
+        id: "tool-1".into(),
+        is_error: false,
+        result: omegon_traits::ToolResult {
+            content: vec![
+                omegon_traits::ContentBlock::Text {
+                    text: "## codebase_search: `foo`".into(),
+                },
+                omegon_traits::ContentBlock::Text {
+                    text: "**2 result(s)** (scope: `code`)".into(),
+                },
+                omegon_traits::ContentBlock::Text {
+                    text: "| File | Lines |\n|------|-------|\n| src/app.rs | 10-20 |".into(),
+                },
+            ],
+            details: serde_json::Value::Null,
+        },
+    });
+
+    let Some(seg) = app.conversation.segments().iter().find(|seg| {
+        matches!(
+            &seg.content,
+            SegmentContent::ToolCard {
+                id,
+                complete: true,
+                ..
+            } if id == "tool-1"
+        )
+    }) else {
+        panic!("expected completed tool segment");
+    };
+
+    let SegmentContent::ToolCard { detail_result, .. } = &seg.content else {
+        panic!("expected tool card");
+    };
+    let detail = detail_result.as_deref().unwrap_or("");
+    assert!(detail.contains("## codebase_search: `foo`"), "missing heading: {detail}");
+    assert!(
+        detail.contains("**2 result(s)** (scope: `code`)"),
+        "missing summary line: {detail}"
+    );
+    assert!(
+        detail.contains("| src/app.rs | 10-20 |"),
+        "missing later text block: {detail}"
+    );
+}

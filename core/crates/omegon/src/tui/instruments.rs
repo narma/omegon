@@ -375,13 +375,34 @@ impl InstrumentPanel {
         inference_height.max(tools_height).clamp(10, 16)
     }
 
-    fn context_legend_entries() -> [(&'static str, &'static str, Color); 4] {
+    fn context_legend_entries() -> [(&'static str, &'static str, Color); 7] {
         [
             ("≡", "conv", Self::band_color(ContextBand::Conversation)),
             ("⊟", "sys", Self::band_color(ContextBand::System)),
             ("◈", "mem", Self::band_color(ContextBand::Memory)),
             ("◔", "think", Self::band_color(ContextBand::Thinking)),
+            ("~", "idle", Self::activity_color(ActivityMode::Idle, 0.5)),
+            ("✦", "tools", Self::activity_color(ActivityMode::ToolChurn, 0.9)),
+            ("…", "wait", Self::activity_color(ActivityMode::Waiting, 0.9)),
         ]
+    }
+
+    fn activity_color(mode: ActivityMode, intensity: f64) -> Color {
+        let intensity = intensity.clamp(0.0, 1.0);
+        match mode {
+            ActivityMode::Idle => Color::Rgb(52, 72, 88),
+            ActivityMode::ToolChurn => Color::Rgb(
+                (214.0 + 24.0 * intensity) as u8,
+                (156.0 + 40.0 * intensity) as u8,
+                (74.0 + 22.0 * intensity) as u8,
+            ),
+            ActivityMode::Waiting => Color::Rgb(
+                (184.0 + 48.0 * intensity) as u8,
+                (140.0 + 46.0 * intensity) as u8,
+                (78.0 + 26.0 * intensity) as u8,
+            ),
+            ActivityMode::Thinking => Self::thinking_pulse_color(intensity.max(0.25)),
+        }
     }
 
     pub fn render_inference_panel(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
@@ -776,7 +797,7 @@ impl InstrumentPanel {
             .map(|(i, _)| i)
             .collect();
 
-        // Context bar: top 2 rows
+        // Context composition row + activity row
         let bar_h = 2u16.min(inner.height);
         let bar_area = Rect {
             x: inner.x,
@@ -886,13 +907,11 @@ impl InstrumentPanel {
 
     fn render_context_bar(&self, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
         let w = area.width as usize;
-        if w == 0 {
+        if w == 0 || area.height == 0 {
             return;
         }
 
         // ── Braille left-fill levels (left column top→bottom, then right column) ──
-        // Fills dots in this order: 1,2,3,7 (left col) then 4,5,6,8 (right col).
-        // Each level = one more dot lit, giving 8-step sub-cell precision.
         const FILL: [char; 9] = [
             '\u{2800}', // ⠀ 0/8 empty
             '\u{2840}', // ⡀ 1/8
@@ -909,8 +928,6 @@ impl InstrumentPanel {
         let activity = self.activity_mode();
         let time = self.time;
 
-        // Compute continuous band boundaries in column-space (0.0 .. w as f64).
-        // Each band occupies a contiguous float range; no integer rounding yet.
         let mut boundaries: Vec<(ContextBand, f64, f64)> = Vec::new();
         let mut cursor = 0.0_f64;
         for &(band, frac) in &breakdown {
@@ -919,11 +936,13 @@ impl InstrumentPanel {
             cursor = end;
         }
 
+        let composition_y = area.y;
+        let activity_y = (area.y + 1).min(area.bottom().saturating_sub(1));
+
         for x in 0..w {
             let col_start = x as f64;
             let col_end = col_start + 1.0;
 
-            // Dominant band = greatest overlap with this column.
             let mut dominant = ContextBand::Free;
             let mut best_coverage = 0.0_f64;
             let mut fill_frac = 0.0_f64;
@@ -936,68 +955,73 @@ impl InstrumentPanel {
                     if coverage > best_coverage {
                         best_coverage = coverage;
                         dominant = band;
-                        fill_frac = coverage; // fraction of this column
+                        fill_frac = coverage;
                     }
                 }
             }
 
-            // Free band: show as a uniform very-sparse texture rather than fill level.
-            let base_ch = if dominant == ContextBand::Free {
-                '\u{2802}' // ⠂ single mid-dot
+            let composition_ch = if dominant == ContextBand::Free {
+                '\u{2802}'
             } else {
                 let level = (fill_frac * 8.0).round() as usize;
                 FILL[level.min(8)]
             };
+            if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, composition_y)) {
+                cell.set_char(composition_ch);
+                cell.set_fg(Self::band_color(dominant));
+                cell.set_bg(panel_bg(t));
+            }
 
-            // Animated overrides (thinking pulse, tool churn) — all in braille vocabulary.
-            // Note: Tools are no longer a separate band, so tool animations apply to conversation.
-            let (ch, fg) = match (activity, dominant) {
-                (ActivityMode::Thinking, ContextBand::Thinking) => {
-                    let phase = (time * 3.0) + x as f64 * 0.35;
-                    let pulse = ((phase.sin() + 1.0) * 0.5 * self.thinking_intensity.max(0.15))
-                        .clamp(0.0, 1.0);
-                    let level = (pulse * 8.0).round() as usize;
-                    let c = FILL[level.min(8)];
-                    (c, Self::thinking_pulse_color(pulse))
+            if area.height < 2 {
+                continue;
+            }
+
+            let activity_phase = match activity {
+                ActivityMode::Idle => (((time * 1.4) + x as f64 * 0.11).sin() + 1.0) * 0.5,
+                ActivityMode::ToolChurn => (((time * 9.0) + x as f64 * 0.7).sin() + 1.0) * 0.5,
+                ActivityMode::Waiting => (((time * 2.2) + x as f64 * 0.18).sin() + 1.0) * 0.5,
+                ActivityMode::Thinking => {
+                    (((time * 3.0) + x as f64 * 0.35).sin() + 1.0) * 0.5
+                        * self.thinking_intensity.max(0.15)
                 }
-                // Tool churn animates on conversation band (tools are now part of conversation)
-                (ActivityMode::ToolChurn, ContextBand::Conversation) => {
-                    let pulse = (((time * 10.0) + x as f64 * 0.9).sin() + 1.0) * 0.5;
-                    let c = if pulse > 0.75 {
-                        '\u{28FF}' // ⣿ full
-                    } else if pulse > 0.4 {
-                        '\u{28F7}' // ⣟ 7/8
-                    } else {
-                        '\u{28E7}' // ⣏ 6/8
-                    };
-                    let color = if pulse > 0.75 {
-                        Color::Rgb(255, 196, 96) // Bright orange on peak
-                    } else {
-                        Self::band_color(ContextBand::Conversation)
-                    };
-                    (c, color)
+            }
+            .clamp(0.0, 1.0);
+
+            let (activity_ch, activity_fg) = match activity {
+                ActivityMode::Idle => {
+                    let c = if activity_phase > 0.55 { '·' } else { ' ' };
+                    (c, Self::activity_color(ActivityMode::Idle, activity_phase))
                 }
-                // Waiting for tool results (also animates on conversation)
-                (ActivityMode::Waiting, ContextBand::Conversation) => {
-                    let pulse = (((time * 2.2) + x as f64 * 0.1).sin() + 1.0) * 0.5;
-                    let c = if pulse > 0.6 { '\u{28C7}' } else { '\u{2847}' }; // ⣇ / ⡇
-                    let color = if pulse > 0.6 {
-                        Color::Rgb(232, 186, 104) // Lighter orange while waiting
+                ActivityMode::ToolChurn => {
+                    let c = if activity_phase > 0.82 {
+                        '✦'
+                    } else if activity_phase > 0.58 {
+                        '∿'
                     } else {
-                        Self::band_color(ContextBand::Conversation)
+                        '·'
                     };
-                    (c, color)
+                    (c, Self::activity_color(ActivityMode::ToolChurn, activity_phase))
                 }
-                _ => (base_ch, Self::band_color(dominant)),
+                ActivityMode::Waiting => {
+                    let c = if activity_phase > 0.66 { '…' } else { '·' };
+                    (c, Self::activity_color(ActivityMode::Waiting, activity_phase))
+                }
+                ActivityMode::Thinking => {
+                    let c = if activity_phase > 0.72 {
+                        '◉'
+                    } else if activity_phase > 0.42 {
+                        '◌'
+                    } else {
+                        '·'
+                    };
+                    (c, Self::activity_color(ActivityMode::Thinking, activity_phase))
+                }
             };
 
-            // Both rows identical — the 2-row height reinforces density visually.
-            for row in 0..area.height.min(2) {
-                if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, area.y + row)) {
-                    cell.set_char(ch);
-                    cell.set_fg(fg);
-                    cell.set_bg(panel_bg(t));
-                }
+            if let Some(cell) = buf.cell_mut(Position::new(area.x + x as u16, activity_y)) {
+                cell.set_char(activity_ch);
+                cell.set_fg(activity_fg);
+                cell.set_bg(panel_bg(t));
             }
         }
     }
@@ -2103,12 +2127,52 @@ mod tests {
             "memory bucket legend should be visible: {legend_row}"
         );
         assert!(
-            !legend_row.contains('⚒') && !legend_row.contains("tools"),
-            "tools should not appear as a context bucket legend because tool activity is an overlay, not a token class: {legend_row}"
-        );
-        assert!(
             legend_row.contains('◔') && legend_row.contains("think"),
             "thinking bucket legend should be visible: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('✦') && legend_row.contains("tools"),
+            "tool activity legend should be visible separately from context buckets: {legend_row}"
+        );
+        assert!(
+            legend_row.contains('…') && legend_row.contains("wait"),
+            "waiting activity legend should be visible separately from context buckets: {legend_row}"
+        );
+    }
+
+    #[test]
+    fn inference_context_bar_separates_composition_from_activity_rows() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(180, 12, 6, 0.08);
+        panel.update_telemetry(68.0, 200_000, Some("read"), false, "high", None, true, 0.016);
+
+        let area = Rect::new(0, 0, 64, 10);
+        let backend = ratatui::backend::TestBackend::new(64, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+        terminal
+            .draw(|f| panel.render_inference_panel(area, f, &t))
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let composition_row: String = (1..area.width - 1)
+            .map(|x| buf[(x, 1)].symbol().to_string())
+            .collect();
+        let activity_row: String = (1..area.width - 1)
+            .map(|x| buf[(x, 2)].symbol().to_string())
+            .collect();
+
+        assert!(
+            composition_row.chars().any(|ch| matches!(ch, '⡀' | '⡄' | '⡆' | '⡇' | '⣇' | '⣏' | '⣟' | '⣿' | '⠂')),
+            "composition row should use density/band glyphs: {composition_row}"
+        );
+        assert!(
+            activity_row.chars().any(|ch| matches!(ch, '·' | '…' | '✦' | '∿' | '◌' | '◉')),
+            "activity row should use runtime-state glyphs: {activity_row}"
+        );
+        assert_ne!(
+            composition_row, activity_row,
+            "composition and activity rows should not be duplicated overlays"
         );
     }
 }

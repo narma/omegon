@@ -615,23 +615,26 @@ pub fn boxed_region<'a>(
 pub fn highlight_line<'a>(line: &str, t: &dyn Theme) -> Line<'a> {
     // Headers: # through ####
     if let Some(rest) = line.strip_prefix("# ") {
-        return Line::from(Span::styled(rest.to_string(), t.style_heading()));
+        return Line::from(highlight_inline_with_base(rest, t, t.style_heading()));
     }
     if let Some(rest) = line.strip_prefix("## ") {
-        return Line::from(Span::styled(
-            rest.to_string(),
+        return Line::from(highlight_inline_with_base(
+            rest,
+            t,
             Style::default().fg(t.accent_bright()),
         ));
     }
     if let Some(rest) = line.strip_prefix("### ") {
-        return Line::from(Span::styled(
-            rest.to_string(),
+        return Line::from(highlight_inline_with_base(
+            rest,
+            t,
             Style::default().fg(t.accent()).add_modifier(Modifier::BOLD),
         ));
     }
     if let Some(rest) = line.strip_prefix("#### ") {
-        return Line::from(Span::styled(
-            rest.to_string(),
+        return Line::from(highlight_inline_with_base(
+            rest,
+            t,
             Style::default().fg(t.accent()),
         ));
     }
@@ -663,8 +666,8 @@ pub fn highlight_line<'a>(line: &str, t: &dyn Theme) -> Line<'a> {
     Line::from(highlight_inline(line, t))
 }
 
-/// Apply inline highlighting: **bold**, `code`, *italic*.
-pub fn highlight_inline<'a>(text: &str, t: &dyn Theme) -> Vec<Span<'a>> {
+/// Apply inline highlighting with a caller-provided base style.
+pub fn highlight_inline_with_base<'a>(text: &str, t: &dyn Theme, base_style: Style) -> Vec<Span<'a>> {
     let mut spans: Vec<Span<'a>> = Vec::new();
     let mut chars = text.char_indices().peekable();
     let mut buf = String::new();
@@ -675,10 +678,19 @@ pub fn highlight_inline<'a>(text: &str, t: &dyn Theme) -> Vec<Span<'a>> {
         }
     };
 
-    let default_style = Style::default().fg(t.fg());
-    let bold_style = Style::default().fg(t.fg()).add_modifier(Modifier::BOLD);
-    let code_style = Style::default().fg(t.accent_muted()).bg(t.surface_bg());
-    let italic_style = Style::default().fg(t.fg()).add_modifier(Modifier::ITALIC);
+    let default_style = base_style;
+    let mut bold_style = base_style.add_modifier(Modifier::BOLD);
+    if bold_style.fg.is_none() {
+        bold_style = bold_style.fg(t.fg());
+    }
+    let mut code_style = base_style.bg(t.surface_bg()).fg(t.accent_muted());
+    if code_style.fg.is_none() {
+        code_style = code_style.fg(t.accent_muted());
+    }
+    let mut italic_style = base_style.add_modifier(Modifier::ITALIC);
+    if italic_style.fg.is_none() {
+        italic_style = italic_style.fg(t.fg());
+    }
 
     while let Some((i, ch)) = chars.next() {
         match ch {
@@ -757,6 +769,11 @@ pub fn highlight_inline<'a>(text: &str, t: &dyn Theme) -> Vec<Span<'a>> {
         spans.push(Span::styled(String::new(), default_style));
     }
     spans
+}
+
+/// Apply inline highlighting: **bold**, `code`, *italic*.
+pub fn highlight_inline<'a>(text: &str, t: &dyn Theme) -> Vec<Span<'a>> {
+    highlight_inline_with_base(text, t, Style::default().fg(t.fg()))
 }
 
 // ─── Formatting helpers ─────────────────────────────────────────────

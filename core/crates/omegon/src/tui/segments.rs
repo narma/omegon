@@ -1187,7 +1187,19 @@ fn render_tool_card(
                         result_row_fills.push((lines.len().saturating_sub(1) as u16, row_bg));
                     } else {
                         table_state = TableState::None;
-                        lines.push(Line::from(Span::styled(line.to_string(), result_style)));
+                        let rendered = if trimmed.is_empty() {
+                            Line::from(Span::styled(String::new(), Style::default().bg(bg)))
+                        } else {
+                            let mut line = super::widgets::highlight_line(line, t);
+                            for span in &mut line.spans {
+                                span.style = span.style.bg(bg);
+                                if span.style.fg.is_none() {
+                                    span.style = span.style.fg(t.muted());
+                                }
+                            }
+                            line
+                        };
+                        lines.push(rendered);
                         result_row_fills.push((lines.len().saturating_sub(1) as u16, bg));
                     }
                 }
@@ -1225,7 +1237,22 @@ fn render_tool_card(
                     }
                 } else {
                     for line in &result_lines[..show] {
-                        lines.push(Line::from(Span::styled(line.to_string(), result_style)));
+                        let trimmed = line.trim();
+                        let rendered = if is_error {
+                            Line::from(Span::styled(line.to_string(), result_style))
+                        } else if trimmed.is_empty() {
+                            Line::from(Span::styled(String::new(), Style::default().bg(bg)))
+                        } else {
+                            let mut line = super::widgets::highlight_line(line, t);
+                            for span in &mut line.spans {
+                                span.style = span.style.bg(bg);
+                                if span.style.fg.is_none() {
+                                    span.style = span.style.fg(t.muted());
+                                }
+                            }
+                            line
+                        };
+                        lines.push(rendered);
                         result_row_fills.push((lines.len().saturating_sub(1) as u16, bg));
                     }
                 }
@@ -1865,6 +1892,22 @@ mod tests {
         let (area, mut buf) = make_buf(100, 16);
         seg.render(area, &mut buf, &Alpharius);
         let text = buf_text(&buf, area);
+        assert!(
+            text.contains("codebase_search: foo"),
+            "heading prose should render human-readably, not as raw markdown: {text}"
+        );
+        assert!(
+            !text.contains("## codebase_search"),
+            "heading marker should not leak literally into the rendered card: {text}"
+        );
+        assert!(
+            text.contains("2 result(s) (scope: code)"),
+            "summary prose should render without literal markdown markers: {text}"
+        );
+        assert!(
+            !text.contains("**2 result(s)**"),
+            "bold markers should not leak literally into the rendered card: {text}"
+        );
         assert!(
             text.contains("│ File │ Lines │ Type │ Score │ Preview │"),
             "header row should render as a structured table: {text}"
