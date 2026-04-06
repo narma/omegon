@@ -1590,12 +1590,14 @@ fn slash_command_aliases_dispatch_correctly() {
     let mut app = test_app();
     let tx = test_tx();
 
-    // /dashboard should resolve as the compatibility alias for /dash open
+    // /dashboard is removed — use /auspex open or /dash explicitly
     let result = app.handle_slash_command("/dashboard", &tx);
-    assert!(
-        !matches!(result, SlashResult::NotACommand),
-        "/dashboard should be handled, not fall through"
-    );
+    match result {
+        SlashResult::Display(text) => {
+            assert!(text.contains("Unknown command: /dashboard"), "got: {text}");
+        }
+        other => panic!("/dashboard should be unknown, got: {other:?}"),
+    }
 
     // /auspex should resolve to the status surface, not fall through
     let result = app.handle_slash_command("/auspex", &tx);
@@ -1657,7 +1659,11 @@ fn slash_auspex_status_reports_attach_metadata() {
     assert!(text.contains("ipc.sock"), "got: {text}");
     assert!(text.contains("session id: not yet exposed"), "got: {text}");
     assert!(
-        text.contains("`/dash` remains the local compatibility path"),
+        text.contains("Use `/auspex open` to launch the browser surface"),
+        "got: {text}"
+    );
+    assert!(
+        text.contains("`/dash` remains the local compatibility/debug path"),
         "got: {text}"
     );
 }

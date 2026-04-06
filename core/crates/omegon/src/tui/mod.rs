@@ -364,7 +364,7 @@ impl App {
             .unwrap_or_else(|| "not detected".into());
 
         format!(
-            "Auspex attach status\n\nIPC\n  protocol: v{}\n  socket: {}\n  socket exists: {}\n  server instance: {}\n  cwd: {}\n\nSession\n  binding: current interactive session\n  session id: not yet exposed in TUI handoff metadata\n\nRuntime\n  omegon version: {}\n  /dash compatibility view: {}\n\nAuspex\n  app: {}\n\nNext step\n  `/auspex` launch/focus is not implemented yet.\n  `/dash` remains the local compatibility path.",
+            "Auspex attach status\n\nIPC\n  protocol: v{}\n  socket: {}\n  socket exists: {}\n  server instance: {}\n  cwd: {}\n\nSession\n  binding: current interactive session\n  session id: not yet exposed in TUI handoff metadata\n\nRuntime\n  omegon version: {}\n  /dash compatibility view: {}\n\nAuspex\n  app: {}\n\nNext step\n  Use `/auspex open` to launch the browser surface.\n  `/dash` remains the local compatibility/debug path.",
             omegon_traits::IPC_PROTOCOL_VERSION,
             ipc_cfg.socket_path.display(),
             if socket_exists { "yes" } else { "no" },
@@ -2471,13 +2471,13 @@ impl App {
         ),
         (
             "dash",
-            "open Auspex in browser (/dash compatibility path)",
+            "open the compatibility browser surface (legacy/debug path)",
             &["status"],
         ),
         (
             "auspex",
-            "show Auspex attachability and handoff status",
-            &["status"],
+            "show Auspex status or launch the browser surface",
+            &["status", "open"],
         ),
         (
             "secrets",
@@ -2520,11 +2520,6 @@ impl App {
             &["freeze", "status"],
         ),
         ("splash", "replay splash animation", &[]),
-        (
-            "dashboard",
-            "open Auspex browser surface (alias for /dash)",
-            &[],
-        ),
         (
             "note",
             "capture a note for later (persists across sessions)",
@@ -3472,7 +3467,6 @@ impl App {
             "exit" | "quit" => SlashResult::Quit,
 
             // ── Aliases ─────────────────────────────────────────────
-            "dashboard" => self.handle_slash_command("/dash", tx),
             "thinking" => self.handle_slash_command(&format!("/think {args}"), tx),
             "models" => self.handle_slash_command("/model", tx),
             "version" => SlashResult::Display(format!(
@@ -5779,14 +5773,14 @@ mod auspex_copy_tests {
             .iter()
             .find(|(name, _, _)| *name == "dash")
             .expect("/dash command must exist");
-        assert!(dash.1.contains("Auspex"));
         assert!(dash.1.contains("compatibility"));
+        assert!(dash.1.contains("legacy/debug"));
 
-        let dashboard = App::COMMANDS
+        let auspex = App::COMMANDS
             .iter()
-            .find(|(name, _, _)| *name == "dashboard")
-            .expect("/dashboard command must exist");
-        assert!(dashboard.1.contains("Auspex"));
-        assert!(dashboard.1.contains("alias for /dash"));
+            .find(|(name, _, _)| *name == "auspex")
+            .expect("/auspex command must exist");
+        assert!(auspex.1.contains("Auspex"));
+        assert!(auspex.1.contains("launch"));
     }
 }
