@@ -1380,6 +1380,8 @@ impl InstrumentPanel {
                 break;
             } // leave room for footer
 
+            clear_row(y, inner.x, inner.right(), buf, panel_bg(t));
+
             let age = (self.time - tool.last_called).max(0.0);
             let recency = if age > 120.0 {
                 0.0
@@ -1445,36 +1447,23 @@ impl InstrumentPanel {
                 tool.last_duration_ms.unwrap_or(0)
             };
             let time_str = Self::format_duration_ms(duration_ms);
+            let time_color = if tool.is_error {
+                Color::Rgb(224, 72, 72)
+            } else if tool.running {
+                Color::Rgb(232, 186, 104)
+            } else {
+                Color::Rgb(48, 64, 80)
+            };
 
             let mut x = inner.x;
-            for ch in indicator.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(ind_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(indicator, x, y, inner.right(), panel_bg(t), buf, |_| ind_color);
             let short = tool_short_name(&tool.name);
-            let display_name = if short.len() > name_w {
-                &short[..name_w]
+            let display_name = if short.chars().count() > name_w {
+                short.chars().take(name_w).collect::<String>()
             } else {
-                short.as_str()
+                short
             };
-            for ch in display_name.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(name_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(&display_name, x, y, inner.right(), panel_bg(t), buf, |_| name_color);
             while x < inner.x + 2 + name_w as u16 {
                 if x >= inner.right() {
                     break;
@@ -1485,23 +1474,7 @@ impl InstrumentPanel {
                 }
                 x += 1;
             }
-            for ch in time_str.chars().take(duration_w) {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(if tool.is_error {
-                        Color::Rgb(224, 72, 72)
-                    } else if tool.running {
-                        Color::Rgb(232, 186, 104)
-                    } else {
-                        Color::Rgb(48, 64, 80)
-                    });
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(&time_str, x, y, inner.right(), panel_bg(t), buf, |_| time_color);
             while x < inner.x + 2 + name_w as u16 + duration_w as u16 {
                 if x >= inner.right() {
                     break;
@@ -1542,17 +1515,6 @@ impl InstrumentPanel {
                 if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
                     cell.set_char(ch);
                     cell.set_fg(c);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
-            for ch in time_str.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(Color::Rgb(48, 64, 80));
                     cell.set_bg(panel_bg(t));
                 }
                 x += 1;
@@ -1818,6 +1780,46 @@ mod tests {
     fn tool_short_name_compacts_codebase_search() {
         assert_eq!(tool_short_name("codebase_search"), "⌕ cbase");
         assert_eq!(tool_short_name("codebase_index"), "⌕ cidx");
+    }
+
+    #[test]
+    fn render_tools_clears_dirty_border_adjacent_cells() {
+        let mut panel = InstrumentPanel::default();
+        panel.tool_started("memory_recall");
+        panel.tool_finished("memory_recall", false);
+        panel.tool_started("commit");
+        panel.tool_finished("commit", false);
+        panel.tool_started("cleave_assess");
+        panel.tool_finished("cleave_assess", false);
+
+        let area = Rect::new(0, 0, 48, 8);
+        let backend = ratatui::backend::TestBackend::new(48, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+
+        terminal
+            .draw(|f| {
+                let buf = f.buffer_mut();
+                for y in area.top()..area.bottom() {
+                    for x in area.left()..area.right() {
+                        if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                            cell.set_char('Ω');
+                            cell.set_fg(Color::White);
+                            cell.set_bg(Color::Black);
+                        }
+                    }
+                }
+                panel.render_tools_panel(area, f, &t);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        for y in area.top()..area.bottom() {
+            let left_border = &buf[(area.x, y)];
+            let right_border = &buf[(area.right() - 1, y)];
+            assert_ne!(left_border.symbol(), "Ω", "left border leaked at row {y}");
+            assert_ne!(right_border.symbol(), "Ω", "right border leaked at row {y}");
+        }
     }
 
     #[test]
