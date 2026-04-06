@@ -375,23 +375,12 @@ impl InstrumentPanel {
         inference_height.max(tools_height).clamp(10, 16)
     }
 
-    fn context_legend_entries() -> [(&'static str, &'static str, Color); 7] {
+    fn context_legend_entries() -> [(&'static str, &'static str, Color); 4] {
         [
             ("≡", "conv", Self::band_color(ContextBand::Conversation)),
             ("⊟", "sys", Self::band_color(ContextBand::System)),
             ("◈", "mem", Self::band_color(ContextBand::Memory)),
             ("◔", "think", Self::band_color(ContextBand::Thinking)),
-            ("~", "idle", Self::activity_color(ActivityMode::Idle, 0.5)),
-            (
-                "✦",
-                "tools",
-                Self::activity_color(ActivityMode::ToolChurn, 0.9),
-            ),
-            (
-                "…",
-                "wait",
-                Self::activity_color(ActivityMode::Waiting, 0.9),
-            ),
         ]
     }
 
@@ -2186,12 +2175,10 @@ mod tests {
             "thinking bucket legend should be visible: {legend_row}"
         );
         assert!(
-            legend_row.contains('✦') && legend_row.contains("tools"),
-            "tool activity legend should be visible separately from context buckets: {legend_row}"
-        );
-        assert!(
-            legend_row.contains('…') && legend_row.contains("wait"),
-            "waiting activity legend should be visible separately from context buckets: {legend_row}"
+            !legend_row.contains("tools")
+                && !legend_row.contains("wait")
+                && !legend_row.contains("idle"),
+            "composition legend should not include activity-state labels: {legend_row}"
         );
     }
 
@@ -2278,7 +2265,11 @@ mod tests {
             "narrow legend should still show complete leading entries: {trimmed:?}"
         );
         assert!(
-            !trimmed.contains("thi") && !trimmed.contains("tool") && !trimmed.ends_with('…'),
+            !trimmed.contains("thi")
+                && !trimmed.contains("tool")
+                && !trimmed.contains("wait")
+                && !trimmed.contains("idle")
+                && !trimmed.ends_with('…'),
             "narrow legend should omit entries it cannot fit instead of clipping them: {trimmed:?}"
         );
         assert!(
@@ -2287,6 +2278,31 @@ mod tests {
                 && !trimmed.contains("mem  ")
                 && !trimmed.contains("think  "),
             "narrow legend should not insert multi-space gaps between entries: {trimmed:?}"
+        );
+    }
+
+    #[test]
+    fn composition_legend_keeps_free_space_implicit() {
+        let mut panel = InstrumentPanel::default();
+        panel.update_mind_facts(180, 12, 6, 0.08);
+        panel.update_telemetry(68.0, 200_000, None, false, "high", None, true, 0.016);
+
+        let area = Rect::new(0, 0, 64, 10);
+        let backend = ratatui::backend::TestBackend::new(64, 10);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+        terminal
+            .draw(|f| panel.render_inference_panel(area, f, &t))
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let legend_row: String = (1..area.width - 1)
+            .map(|x| buf[(x, 3)].symbol().to_string())
+            .collect();
+
+        assert!(
+            !legend_row.contains("free") && !legend_row.contains('~'),
+            "free capacity should remain implicit in the grey braille tail, not the legend: {legend_row}"
         );
     }
 }
