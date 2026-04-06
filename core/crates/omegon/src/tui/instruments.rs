@@ -1188,6 +1188,7 @@ impl InstrumentPanel {
                 break;
             }
             let y = inner.y + row as u16;
+            clear_row(y, inner.x, inner.right(), buf, panel_bg(t));
 
             // ── Status indicator ──
             let (ind_ch, ind_color) = match child.status.as_str() {
@@ -1198,17 +1199,7 @@ impl InstrumentPanel {
                 _ => ("○ ", Color::Rgb(40, 56, 72)), // pending / unknown
             };
             let mut x = inner.x;
-            for ch in ind_ch.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(ind_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(ind_ch, x, y, inner.right(), panel_bg(t), buf, |_| ind_color);
 
             // ── Label (padded to label_w) ──
             let label_color = match child.status.as_str() {
@@ -1218,17 +1209,7 @@ impl InstrumentPanel {
                 _ => Color::Rgb(48, 68, 84),
             };
             let display_label: String = child.label.chars().take(label_w).collect();
-            for ch in display_label.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(label_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(&display_label, x, y, inner.right(), panel_bg(t), buf, |_| label_color);
             // Pad to label_w
             while x < inner.x + 2 + label_w as u16 {
                 if x >= inner.right() {
@@ -1253,17 +1234,7 @@ impl InstrumentPanel {
             };
             let act_color = Color::Rgb(36, 80, 96);
             let act_display: String = activity.chars().take(activity_w).collect();
-            for ch in act_display.chars() {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(act_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            x = render_str_colored(&act_display, x, y, inner.right(), panel_bg(t), buf, |_| act_color);
             // Pad to activity_w
             let act_end_x = inner.x + 2 + label_w as u16 + activity_w as u16;
             while x < act_end_x {
@@ -1285,22 +1256,13 @@ impl InstrumentPanel {
             };
             let elapsed_str = Self::format_elapsed(elapsed_secs);
             let elapsed_color = Color::Rgb(36, 60, 76);
-            for ch in elapsed_str.chars().take(elapsed_w) {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(elapsed_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            let _ = render_str_colored(&elapsed_str, x, y, inner.right(), panel_bg(t), buf, |_| elapsed_color);
         }
 
         // ── Summary row ──────────────────────────────────────────────────
         let summary_y = inner.y + child_rows as u16;
         if summary_y < inner.bottom() {
+            clear_row(summary_y, inner.x, inner.right(), buf, panel_bg(t));
             let summary = if cp.total_tokens_in > 0 || cp.total_tokens_out > 0 {
                 format!(
                     "{}↓ {}↑",
@@ -1311,18 +1273,7 @@ impl InstrumentPanel {
                 format!("{}/{} done", done, cp.total_children)
             };
             let summary_color = Color::Rgb(36, 60, 76);
-            let mut x = inner.x;
-            for ch in summary.chars().take(w) {
-                if x >= inner.right() {
-                    break;
-                }
-                if let Some(cell) = buf.cell_mut(Position::new(x, summary_y)) {
-                    cell.set_char(ch);
-                    cell.set_fg(summary_color);
-                    cell.set_bg(panel_bg(t));
-                }
-                x += 1;
-            }
+            let _ = render_str_colored(&summary, inner.x, summary_y, inner.right(), panel_bg(t), buf, |_| summary_color);
         }
     }
 
@@ -1640,6 +1591,71 @@ mod tests {
             !text.contains("⟁ cleave"),
             "cleave panel should not render when active=false: {text}"
         );
+    }
+
+    #[test]
+    fn render_cleave_panel_clears_dirty_border_adjacent_cells() {
+        let mut panel = InstrumentPanel::default();
+        panel.set_cleave_progress(Some(CleaveProgress {
+            active: true,
+            run_id: "run-1".into(),
+            total_children: 3,
+            completed: 1,
+            failed: 0,
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+            children: vec![
+                crate::features::cleave::ChildProgress {
+                    label: "alpha".into(),
+                    status: "running".into(),
+                    duration_secs: Some(3.2),
+                    last_tool: Some("memory_recall".into()),
+                    last_turn: Some(4),
+                    started_at: None,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                },
+                crate::features::cleave::ChildProgress {
+                    label: "beta".into(),
+                    status: "completed".into(),
+                    duration_secs: Some(12.4),
+                    last_tool: Some("commit".into()),
+                    last_turn: Some(8),
+                    started_at: None,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                },
+            ],
+        }));
+
+        let area = Rect::new(0, 0, 48, 8);
+        let backend = ratatui::backend::TestBackend::new(48, 8);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+
+        terminal
+            .draw(|f| {
+                let buf = f.buffer_mut();
+                for y in area.top()..area.bottom() {
+                    for x in area.left()..area.right() {
+                        if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                            cell.set_char('Ω');
+                            cell.set_fg(Color::White);
+                            cell.set_bg(Color::Black);
+                        }
+                    }
+                }
+                panel.render_tools_panel(area, f, &t);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        for y in area.top()..area.bottom() {
+            let left_border = &buf[(area.x, y)];
+            let right_border = &buf[(area.right() - 1, y)];
+            assert_ne!(left_border.symbol(), "Ω", "left border leaked at row {y}");
+            assert_ne!(right_border.symbol(), "Ω", "right border leaked at row {y}");
+        }
     }
 
     #[test]
