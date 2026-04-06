@@ -313,6 +313,7 @@ impl Settings {
             "cerebras" => "cerebras",
             "huggingface" => "huggingface",
             "ollama" => "ollama",
+            "ollama-cloud" => "ollama-cloud",
             _ => "anthropic",
         }
     }

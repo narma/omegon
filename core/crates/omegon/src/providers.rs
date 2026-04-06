@@ -210,6 +210,7 @@ fn is_known_provider_id(provider_id: &str) -> bool {
             | "cerebras"
             | "huggingface"
             | "ollama"
+            | "ollama-cloud"
             | "local"
     )
 }
@@ -312,6 +313,7 @@ fn fallback_order_for_model(model_spec: &str) -> Vec<&'static str> {
         "cerebras" => vec!["cerebras"],
         "huggingface" => vec!["huggingface"],
         "ollama" => vec!["ollama"],
+        "ollama-cloud" => vec!["ollama-cloud"],
         _ => vec!["anthropic"],
     }
 }
@@ -354,7 +356,7 @@ pub async fn resolve_provider(provider_id: &str) -> Option<Box<dyn LlmBridge>> {
         "openai" => OpenAIClient::from_env().map(|c| Box::new(c) as Box<dyn LlmBridge>),
         "openrouter" => OpenRouterClient::from_env().map(|c| Box::new(c) as Box<dyn LlmBridge>),
         // OpenAI-compatible providers — all use the Chat Completions protocol
-        "groq" | "xai" | "mistral" | "cerebras" | "huggingface" | "ollama" => {
+        "groq" | "xai" | "mistral" | "cerebras" | "huggingface" | "ollama" | "ollama-cloud" => {
             OpenAICompatClient::from_env(provider_id).map(|c| Box::new(c) as Box<dyn LlmBridge>)
         }
         // Codex uses the Responses API (not Chat Completions) with OAuth JWT tokens
@@ -2084,6 +2086,7 @@ fn compat_base_url(provider_id: &str) -> Option<&'static str> {
         "cerebras" => Some("https://api.cerebras.ai"),
         "huggingface" => Some("https://router.huggingface.co"),
         "ollama" => Some("http://localhost:11434"),
+        "ollama-cloud" => Some("https://ollama.com/api"),
         _ => None,
     }
 }
@@ -2097,6 +2100,7 @@ fn compat_default_model(provider_id: &str) -> Option<&'static str> {
         "cerebras" => Some("llama-3.3-70b"),
         "huggingface" => Some("Qwen/Qwen3-32B"),
         "ollama" => Some("qwen3:32b"),
+        "ollama-cloud" => Some("gpt-oss:120b-cloud"),
         _ => None,
     }
 }
@@ -2119,7 +2123,8 @@ impl OpenAICompatClient {
     pub fn from_env(provider_id: &str) -> Option<Self> {
         let base_url = compat_base_url(provider_id)?;
 
-        // Ollama doesn't need an API key — just check reachability
+        // Local Ollama doesn't need an API key — just check reachability.
+        // Hosted Ollama is a distinct provider and requires OLLAMA_API_KEY.
         if provider_id == "ollama" {
             return Self::from_env_ollama(base_url);
         }
@@ -2366,6 +2371,7 @@ mod tests {
         assert_eq!(infer_provider_id("qwen3:30b"), "ollama");
         assert_eq!(infer_provider_id("local:qwen3:30b"), "ollama");
         assert_eq!(infer_provider_id("local"), "ollama");
+        assert_eq!(infer_provider_id("ollama-cloud:gpt-oss:120b-cloud"), "ollama-cloud");
         assert_eq!(infer_provider_id("claude-opus-4-6"), "anthropic");
         assert_eq!(infer_provider_id("gpt-5.4"), "openai");
         assert_eq!(infer_provider_id("gpt-5.4-mini"), "openai");
@@ -2781,6 +2787,7 @@ mod tests {
             "cerebras",
             "huggingface",
             "ollama",
+            "ollama-cloud",
         ] {
             assert!(
                 super::compat_base_url(id).is_some(),
@@ -2799,6 +2806,7 @@ mod tests {
             "cerebras",
             "huggingface",
             "ollama",
+            "ollama-cloud",
         ] {
             assert!(
                 super::compat_default_model(id).is_some(),
@@ -2836,6 +2844,7 @@ mod tests {
             "cerebras",
             "huggingface",
             "ollama",
+            "ollama-cloud",
             "openai-codex",
         ] {
             let rt = tokio::runtime::Builder::new_current_thread()

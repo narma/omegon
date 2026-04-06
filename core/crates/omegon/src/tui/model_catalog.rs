@@ -141,6 +141,9 @@ impl ModelCatalog {
         match model_id {
             // Ollama / local
             id if id.starts_with("ollama:") => Some(TokenPricing::new(0.0, 0.0)),
+            // Ollama Cloud
+            "ollama-cloud:gpt-oss:120b-cloud" => Some(TokenPricing::new(0.0, 0.0)),
+            "ollama-cloud:qwen3-coder:480b-cloud" => Some(TokenPricing::new(0.0, 0.0)),
 
             // OpenRouter
             "openrouter:qwen/qwen-qwq-32b" => Some(TokenPricing::new(0.20, 0.20)),
@@ -493,6 +496,39 @@ impl ModelCatalog {
             ); // end OpenAI
         } // end if has_key("openai")
 
+        // Ollama Cloud
+        if has_key("ollama-cloud") {
+            providers.insert(
+                "Ollama Cloud".to_string(),
+                vec![
+                    ModelInfo {
+                        id: "ollama-cloud:gpt-oss:120b-cloud".to_string(),
+                        name: "GPT OSS 120B Cloud".to_string(),
+                        provider: "Ollama Cloud".to_string(),
+                        context_input: 256000,
+                        context_output: 32768,
+                        cost_tier: CostTier::Free,
+                        pricing: Some(TokenPricing::new(0.0, 0.0)),
+                        capabilities: vec![Capability::Reasoning, Capability::Coding],
+                        description: "Hosted Ollama model via ollama.com/api".to_string(),
+                        available: true,
+                    },
+                    ModelInfo {
+                        id: "ollama-cloud:qwen3-coder:480b-cloud".to_string(),
+                        name: "Qwen3 Coder 480B Cloud".to_string(),
+                        provider: "Ollama Cloud".to_string(),
+                        context_input: 256000,
+                        context_output: 32768,
+                        cost_tier: CostTier::Free,
+                        pricing: Some(TokenPricing::new(0.0, 0.0)),
+                        capabilities: vec![Capability::Reasoning, Capability::Coding],
+                        description: "Hosted Qwen coder model via Ollama Cloud".to_string(),
+                        available: true,
+                    },
+                ],
+            );
+        } // end if has_key("ollama-cloud")
+
         // Groq
         if has_key("groq") {
             providers.insert(
@@ -781,5 +817,11 @@ mod tests {
     fn pricing_for_model_is_not_auth_gated() {
         let pricing = ModelCatalog::pricing_for_model("openai:gpt-5.4");
         assert_eq!(pricing, Some(TokenPricing::new(2.5, 15.0)));
+    }
+
+    #[test]
+    fn pricing_for_ollama_cloud_is_defined() {
+        let pricing = ModelCatalog::pricing_for_model("ollama-cloud:gpt-oss:120b-cloud");
+        assert_eq!(pricing, Some(TokenPricing::new(0.0, 0.0)));
     }
 }
