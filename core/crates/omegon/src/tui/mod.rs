@@ -658,7 +658,7 @@ impl App {
             || lower.contains("too many tokens")
             || lower.contains("context_length")
         {
-            return "Context window exceeded. Use /compact to free space, or /context to select a larger class.";
+            return "Context window exceeded. Use /context compact to free space, or /context to select a larger class.";
         }
         // Git errors
         if tool_name == Some("bash")
@@ -2406,7 +2406,6 @@ impl App {
             &["off", "low", "medium", "high"],
         ),
         ("stats", "session telemetry", &[]),
-        ("compact", "trigger context compaction", &[]),
         ("new", "save current session and start fresh", &[]),
         (
             "detail",
@@ -2446,7 +2445,7 @@ impl App {
         (
             "auth",
             "authentication management",
-            &["status", "login", "logout", "unlock"],
+            &["status", "unlock"],
         ),
         (
             "chronos",
@@ -2947,11 +2946,6 @@ impl App {
                 }
             }
 
-            "compact" => {
-                let _ = tx.try_send(TuiCommand::ContextCompact);
-                SlashResult::Display("Requesting context compaction…".into())
-            }
-
             "new" => {
                 let _ = tx.try_send(TuiCommand::NewSession);
                 SlashResult::Handled
@@ -2980,38 +2974,6 @@ impl App {
                         });
                         SlashResult::Handled
                     }
-                    "login" | "login anthropic" | "login claude" => {
-                        // Login to Anthropic
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "auth_login".to_string(),
-                            args: "anthropic".to_string(),
-                        });
-                        SlashResult::Handled
-                    }
-                    "login openai" | "login chatgpt" => {
-                        // Login to OpenAI
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "auth_login".to_string(),
-                            args: "openai".to_string(),
-                        });
-                        SlashResult::Handled
-                    }
-                    "logout anthropic" | "logout claude" => {
-                        // Logout from Anthropic
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "auth_logout".to_string(),
-                            args: "anthropic".to_string(),
-                        });
-                        SlashResult::Handled
-                    }
-                    "logout openai" | "logout chatgpt" => {
-                        // Logout from OpenAI
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "auth_logout".to_string(),
-                            args: "openai".to_string(),
-                        });
-                        SlashResult::Handled
-                    }
                     "unlock" => {
                         // Unlock secrets store
                         let _ = tx.try_send(TuiCommand::BusCommand {
@@ -3020,52 +2982,9 @@ impl App {
                         });
                         SlashResult::Handled
                     }
-                    _ => {
-                        if args.starts_with("login ") {
-                            let provider = &args[6..];
-                            if provider.is_empty() {
-                                SlashResult::Display(
-                                    "Usage: /auth login <provider>\nSupported: anthropic, openai, openai-codex"
-                                        .into(),
-                                )
-                            } else if crate::auth::provider_by_id(provider).is_some_and(|p| {
-                                matches!(p.auth_method, crate::auth::AuthMethod::ApiKey)
-                                    && !p.env_vars.is_empty()
-                            }) {
-                                let key_name = crate::auth::provider_by_id(provider)
-                                    .and_then(|p| p.env_vars.first().copied())
-                                    .unwrap_or("OPENAI_API_KEY");
-                                self.editor.start_secret_input(key_name);
-                                SlashResult::Display(format!(
-                                    "🔒 Paste your {provider} API key into {key_name} (input is hidden):"
-                                ))
-                            } else {
-                                let _ = tx.try_send(TuiCommand::BusCommand {
-                                    name: "auth_login".to_string(),
-                                    args: provider.to_string(),
-                                });
-                                SlashResult::Handled
-                            }
-                        } else if args.starts_with("logout ") {
-                            let provider = &args[7..];
-                            if provider.is_empty() {
-                                SlashResult::Display(
-                                    "Usage: /auth logout <provider>\nSupported: anthropic, openai, openai-codex"
-                                        .into(),
-                                )
-                            } else {
-                                let _ = tx.try_send(TuiCommand::BusCommand {
-                                    name: "auth_logout".to_string(),
-                                    args: provider.to_string(),
-                                });
-                                SlashResult::Handled
-                            }
-                        } else {
-                            SlashResult::Display(format!(
-                                "Unknown auth command: {args}\n\nUsage:\n  /auth status\n  /auth login <provider>\n  /auth logout <provider>\n  /auth unlock\n\nSupported providers: anthropic, openai, openai-codex"
-                            ))
-                        }
-                    }
+                    _ => SlashResult::Display(format!(
+                        "Unknown auth command: {args}\n\nUsage:\n  /auth status\n  /auth unlock\n\nUse /login <provider> or /logout <provider> for provider authentication."
+                    )),
                 }
             }
 

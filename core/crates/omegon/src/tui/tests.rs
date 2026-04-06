@@ -982,12 +982,16 @@ fn slash_context_compress_alias_requests_compaction() {
 }
 
 #[test]
-fn slash_compact_returns_handled() {
+fn slash_compact_is_unknown() {
     let mut app = test_app();
     let tx = test_tx();
     let result = app.handle_slash_command("/compact", &tx);
-    // Compact either returns Handled or Display with confirmation
-    assert!(!matches!(result, SlashResult::NotACommand));
+    match result {
+        SlashResult::Display(text) => {
+            assert!(text.contains("Unknown command: /compact"), "got: {text}");
+        }
+        other => panic!("/compact should be unknown, got: {other:?}"),
+    }
 }
 
 #[test]
@@ -1070,6 +1074,17 @@ fn slash_auth_no_args_shows_status() {
             SlashResult::Handled | SlashResult::Display(_)
         ));
     }
+}
+
+#[test]
+fn slash_auth_login_redirects_to_top_level_login() {
+    let mut app = test_app();
+    let tx = test_tx();
+    let result = app.handle_slash_command("/auth login anthropic", &tx);
+    let SlashResult::Display(text) = result else {
+        panic!("expected Display result");
+    };
+    assert!(text.contains("Use /login <provider> or /logout <provider>"), "got: {text}");
 }
 
 #[test]
@@ -2097,7 +2112,7 @@ fn recovery_hint_ollama_connection() {
 #[test]
 fn recovery_hint_context_window() {
     let hint = App::recovery_hint(None, "context_length_exceeded: too many tokens");
-    assert!(hint.contains("/compact"), "should suggest compact: {hint}");
+    assert!(hint.contains("/context compact"), "should suggest context compact: {hint}");
 }
 
 #[test]
