@@ -12,8 +12,8 @@ import Docs from "../../layouts/Docs.astro";
 
   <h2>1. Install &amp; authenticate</h2>
   <pre><code>curl -fsSL https://omegon.styrene.dev/install.sh | sh
-omegon login openai-codex   # or: export ANTHROPIC_API_KEY="sk-ant-..."
-omegon</code></pre>
+omegon login openai-codex   # or: omegon login ollama-cloud
+omegon                      # or: export ANTHROPIC_API_KEY="sk-ant-..." && omegon</code></pre>
   <p>
     You will see the splash screen, then the TUI opens with the conversation view in the center,
     the editor at the bottom, and the status footer below it.

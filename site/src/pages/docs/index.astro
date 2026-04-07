@@ -2,17 +2,17 @@
 import Docs from "../../layouts/Docs.astro";
 ---
 
-<Docs title="Introduction" description="Omegon — terminal-native AI agent harness. Single binary, ten providers, zero dependencies.">
+<Docs title="Introduction" description="Omegon — terminal-native AI agent harness. Single binary, eleven providers, zero dependencies.">
   <h1>Omegon</h1>
   <p>
     Terminal-native AI agent harness — for operators who build.
-    Single binary. Ten providers. Zero runtime dependencies.
+    Single binary. Eleven providers. Zero runtime dependencies.
   </p>
 
   <h2>What is Omegon?</h2>
   <p>
     Omegon is a ~19MB Rust binary that provides a complete AI-assisted development
-    environment. It connects to 10 inference providers through native Rust clients
+    environment. It connects to 11 inference providers through native Rust clients
     (no subprocess shims, no Node.js at runtime), manages persistent project memory
     across sessions, decomposes work into parallel git worktree children, and tracks
     design decisions in a knowledge graph — all from your terminal.
@@ -58,7 +58,7 @@ import Docs from "../../layouts/Docs.astro";
 
   <h2>Key Features</h2>
   <ul>
-    <li><strong>10 Inference Providers</strong> — Anthropic, OpenAI, Codex, OpenRouter, Groq, xAI, Mistral, Cerebras, HuggingFace, Ollama. Native Rust clients with automatic failover.</li>
+    <li><strong>11 Inference Providers</strong> — Anthropic, OpenAI API, OpenAI/Codex, OpenRouter, Groq, xAI, Mistral, Cerebras, Hugging Face, Ollama (Local), and Ollama Cloud. Native Rust clients with automatic failover.</li>
     <li><strong>Parallel Execution</strong> — Cleave tasks into parallel worktree children with automatic merge, conflict detection, and adversarial review.</li>
     <li><strong>Project Memory</strong> — Persistent facts, episodes, semantic recall, and knowledge graphs across sessions. Not a markdown file — a real memory system.</li>
     <li><strong>Design Tree</strong> — knowledge graph tracking architecture decisions, dependencies, and implementation status.</li>
@@ -90,7 +90,7 @@ import Docs from "../../layouts/Docs.astro";
   <table>
     <tbody>
       <tr><td>Runtime</td><td>Single ~19 MB Rust binary, 6 crates</td></tr>
-      <tr><td>Providers</td><td>10 inference + 3 search, native Rust clients</td></tr>
+      <tr><td>Providers</td><td>11 inference + 3 search, native Rust clients</td></tr>
       <tr><td>Agent tools</td><td>53 structured tools (file ops, memory, design, search, codebase retrieval, and inference control)</td></tr>
       <tr><td>License</td><td>BSL 1.1 (converts to MIT on 2031-03-19)</td></tr>
     </tbody>

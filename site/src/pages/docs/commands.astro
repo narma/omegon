@@ -38,10 +38,10 @@ import Docs from "../../layouts/Docs.astro";
   <table>
     <thead><tr><th>Command</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>/login [provider]</code></td><td>Log in to a provider such as <code>anthropic</code>, <code>openai-codex</code>, <code>openai</code>, <code>openrouter</code>, or <code>github</code>.</td></tr>
+      <tr><td><code>/login [provider]</code></td><td>Log in to a provider such as <code>anthropic</code>, <code>openai-codex</code>, <code>openai</code>, <code>openrouter</code>, or <code>ollama-cloud</code>.</td></tr>
       <tr><td><code>/logout [provider]</code></td><td>Log out of a provider.</td></tr>
       <tr><td><code>/auth [action]</code></td><td>Authentication management: <code>status</code>, <code>unlock</code>.</td></tr>
-      <tr><td><code>/secrets [action]</code></td><td>Manage stored secrets: <code>list</code>, <code>set</code>, <code>get</code>, <code>delete</code>.</td></tr>
+      <tr><td><code>/secrets [action]</code></td><td>Manage stored secrets: <code>list</code>, <code>set</code>, <code>get</code>, <code>delete</code>. Use this for API-key-backed providers such as OpenAI API, OpenRouter, and Ollama Cloud.</td></tr>
       <tr><td><code>/vault [action]</code></td><td>HashiCorp Vault integration: <code>status</code>, <code>unseal</code>, <code>login</code>, <code>configure</code>, <code>init-policy</code>.</td></tr>
     </tbody>
   </table>

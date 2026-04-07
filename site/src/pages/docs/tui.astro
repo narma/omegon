@@ -65,7 +65,7 @@ import Docs from "../../layouts/Docs.astro";
   </p>
   <ul>
     <li><strong>Context</strong> — context class, fill percentage, and token-aware usage display</li>
-    <li><strong>Engine</strong> — provider identity, selected model, tier, thinking level, and optional limit telemetry</li>
+    <li><strong>Engine</strong> — provider identity, selected model, tier, state, session totals, and optional limit telemetry</li>
     <li><strong>Memory</strong> — durable fact counts and working-memory activity</li>
     <li><strong>System</strong> — runtime health, versions, and related state</li>
   </ul>
@@ -73,12 +73,13 @@ import Docs from "../../layouts/Docs.astro";
     In the engine panel specifically:
   </p>
   <ul>
-    <li><strong>provider</strong> = concrete runtime backend identity, such as <code>OpenAI/Codex</code> or <code>Anthropic/Claude</code></li>
+    <li><strong>provider</strong> = concrete runtime backend identity, such as <code>OpenAI/Codex</code>, <code>Anthropic/Claude</code>, or <code>Ollama Cloud</code></li>
     <li><strong>model</strong> = selected runtime model</li>
+    <li><strong>tier / state / session</strong> = runtime posture and current session runway</li>
     <li><strong>limit</strong> = upstream quota or bucket telemetry, when the provider exposes it</li>
   </ul>
   <p>
-    That separation is intentional. A Codex bucket name in the limit row is not a second model selector.
+    That separation is intentional. The default split-footer engine panel is operator-first: provider, model, runtime posture, and session stay visible, while bucket/version/path noise is demoted. A Codex bucket name in the limit row is provider telemetry, not a second model selector.
   </p>
 
   <h2>Sidebar navigation</h2>

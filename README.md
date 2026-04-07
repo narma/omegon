@@ -104,7 +104,8 @@ Examples:
 - **Anthropic/Claude**
 - **OpenAI API**
 - **OpenAI/Codex**
-- **Ollama**
+- **Ollama (Local)**
+- **Ollama Cloud**
 
 The footer separates:
 - **provider** → concrete backend identity
@@ -203,10 +204,10 @@ Omegon exposes structured tools for:
 - model control
 - background services
 
-### 10 inference providers
+### 11 inference providers
 
 Current surfaces include:
-- Anthropic
+- Anthropic/Claude
 - OpenAI API
 - OpenAI/Codex
 - OpenRouter
@@ -215,7 +216,8 @@ Current surfaces include:
 - Mistral
 - Cerebras
 - Hugging Face
-- Ollama
+- Ollama (Local)
+- Ollama Cloud
 
 ### Tutorial that actually does work
 

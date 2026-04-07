@@ -1,32 +1,47 @@
 # Anthropic subscription ToS compliance
 
-Anthropic's consumer subscription appears to be intended for interactive use, not unattended automation. Omegon warns when you use Claude.ai / Anthropic subscription credentials in headless or background flows, but the harness does not fully remove the operator's ability to proceed.
+Anthropic's consumer subscription is treated by Omegon as an **interactive-only** credential class. Claude.ai / Anthropic subscription credentials are permitted for human-operated TUI sessions, but Omegon now **hard-blocks** headless and unattended automation paths when that is the only Anthropic credential available.
 
-## What Omegon warns about
+If you need scripted, headless, or background use, configure an Anthropic API key with `ANTHROPIC_API_KEY`.
 
-When Anthropic subscription auth is the only Anthropic credential available, Omegon treats these entry points as follows:
+## What Omegon allows and blocks
+
+When Anthropic subscription auth is the only Anthropic credential available, Omegon treats entry points as follows:
 
 | Entry point | Omegon behavior | Notes |
 | --- | --- | --- |
-| TUI mode | Allowed | Human-operated interactive sessions are the least ambiguous case. |
-| `--initial-prompt` | Allowed | Seeding an interactive TUI session with an initial prompt still leaves a human in the loop. |
-| `--prompt` / `--prompt-file` | Warns, then proceeds | These are headless entry points and may fall on the wrong side of Anthropic's consumer terms. |
-| `--smoke` | Warns, then proceeds | Smoke runs are automated checks. |
-| `/cleave` | Warns, then proceeds | Parallel/background agent work is the clearest foot-gun. |
+| TUI mode | Allowed | Human-operated interactive sessions are the supported case. |
+| `--initial-prompt` | Allowed | Seeds an interactive TUI session while keeping a human in the loop. |
+| `--prompt` / `--prompt-file` | Hard-blocked | Headless prompt execution is treated as automation. |
+| `--smoke` | Hard-blocked | Smoke runs are unattended checks. |
+| `/cleave` | Routed to automation-safe fallback when possible; otherwise blocked | Omegon prefers OpenAI API → OpenAI/Codex OAuth → OpenRouter → Ollama before failing. |
 
-If you need scripted, headless, or background use, get an Anthropic API key and set `ANTHROPIC_API_KEY`.
+That is the clean automation boundary:
 
-That is the clean path for automation. Keep the subscription login for interactive sessions, and use the API key for programmatic workflows. Omegon will still let you proceed with the subscription path after warning, but it will not pretend that path is risk-free.
+- keep Anthropic subscription login for interactive sessions
+- use `ANTHROPIC_API_KEY` for automation
+- use another automation-safe provider when Anthropic subscription is the only interactive credential on the machine
 
 ## Summary matrix
 
 | Credential mode | Automation posture | Notes |
 | --- | --- | --- |
-| Anthropic API key | Unrestricted | Headless and automated use are allowed, subject to Anthropic's API terms and limits. |
-| Anthropic subscription / OAuth | Warning-only for automation | Fine for interactive TUI use; Omegon warns rather than hard-blocking automated/headless use. |
+| Anthropic API key | Unrestricted | Headless and automated use are allowed, subject to Anthropic API terms and limits. |
+| Anthropic subscription / OAuth | Interactive only | Fine for interactive TUI use; Omegon blocks automated/headless Anthropic execution. |
 | OpenAI API key | Unrestricted | Standard API-key flow. |
-| Codex OAuth | Unrestricted | No Anthropic-style subscription restriction in Omegon. |
-| Ollama | Unrestricted | Local inference, no external auth. |
-| GitHub Copilot | Unrestricted | GitHub Copilot has no analogous interactive-only restriction here. |
+| OpenAI/Codex OAuth | Unrestricted in Omegon | Separate provider path from OpenAI API; used for GPT-family/Codex-backed routing. |
+| Ollama (Local) | Unrestricted | Local inference, no external account auth. |
+| Ollama Cloud | Unrestricted | Hosted Ollama via `OLLAMA_API_KEY`. |
 
-The warnings exist to keep Omegon aligned with provider terms and to protect the operator from accidental policy violations, while preserving operator agency.
+## Why Omegon is strict here
+
+This is not a cosmetic warning. Provider terms are a runtime boundary.
+
+Omegon's job is to keep the operator honest about which credential class is actually executing the work. For Anthropic subscription credentials, that means:
+
+- no pretending a consumer subscription is equivalent to an API key
+- no silent automation through a credential class Omegon has already classified as interactive-only
+- explicit fallback to automation-safe providers when a workflow such as `/cleave` needs unattended execution
+
+If you want the shortest interactive path, use the Anthropic subscription login.
+If you want automation, use an API-key-backed provider.

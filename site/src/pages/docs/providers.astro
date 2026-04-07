@@ -53,10 +53,16 @@ import Docs from "../../layouts/Docs.astro";
         </td>
       </tr>
       <tr>
-        <td><strong>Ollama</strong></td>
+        <td><strong>Ollama (Local)</strong></td>
         <td><code>export OLLAMA_HOST="http://127.0.0.1:11434"</code></td>
         <td>All supported local-model workflows.</td>
         <td>Local inference only; no external account auth.</td>
+      </tr>
+      <tr>
+        <td><strong>Ollama Cloud</strong></td>
+        <td><code>omegon login ollama-cloud</code>, <code>/login ollama-cloud</code>, or <code>/secrets set OLLAMA_API_KEY ...</code></td>
+        <td>All supported hosted-Ollama workflows.</td>
+        <td>Separate hosted provider from local Ollama. Uses <code>OLLAMA_API_KEY</code> against Ollama's cloud API.</td>
       </tr>
       <tr>
         <td><strong>GitHub Models</strong> <em>(coming soon)</em></td>
@@ -81,6 +87,8 @@ import Docs from "../../layouts/Docs.astro";
     <li><strong>Anthropic/Claude</strong> means Anthropic-backed execution</li>
     <li><strong>OpenAI API</strong> means API-key execution against OpenAI's API surfaces</li>
     <li><strong>OpenAI/Codex</strong> means the ChatGPT/Codex OAuth-backed route</li>
+    <li><strong>Ollama (Local)</strong> means on-device inference against your local daemon</li>
+    <li><strong>Ollama Cloud</strong> means the hosted Ollama API route, authenticated separately from local Ollama</li>
   </ul>
   <p>
     The footer's <strong>model</strong> row shows the selected runtime model. The <strong>limit</strong> row,
@@ -102,7 +110,8 @@ import Docs from "../../layouts/Docs.astro";
     <li>If you want to work in the TUI by hand, Anthropic/Claude OAuth is a valid path.</li>
     <li>If you want unattended or scripted automation, configure <code>ANTHROPIC_API_KEY</code>.</li>
     <li>If you want GPT-family routing without API-key setup, try <code>omegon login openai-codex</code>.</li>
-    <li>If you want local-only inference, use Ollama.</li>
+    <li>If you want local-only inference, use <code>Ollama (Local)</code>.</li>
+    <li>If you want hosted Ollama without running a local daemon, use <code>Ollama Cloud</code> via <code>/login</code> or <code>/secrets</code>.</li>
     <li>If you want predictable automation with commercial API terms, prefer API-key-backed providers.</li>
   </ul>
 

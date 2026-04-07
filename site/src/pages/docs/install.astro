@@ -78,9 +78,13 @@ omegon</code></pre>
     Use this when you want clean automation semantics for prompts, smoke runs, or cleave workers.
   </p>
 
-  <h3>Option C: OpenAI/Codex OAuth or local Ollama</h3>
+  <h3>Option C: OpenAI/Codex OAuth, Ollama Cloud, or local Ollama</h3>
   <pre><code># OpenAI/Codex OAuth
 omegon login openai-codex
+omegon
+
+# Hosted Ollama
+omegon login ollama-cloud
 omegon
 
 # Or local inference
@@ -88,7 +92,8 @@ ollama pull qwen3:32b
 omegon</code></pre>
   <p>
     Omegon auto-detects Ollama for local-tier work. OpenAI/Codex gives you the ChatGPT/Codex-backed route
-    without requiring an OpenAI API key.
+    without requiring an OpenAI API key. Ollama Cloud is a separate hosted provider from local Ollama,
+    authenticated via <code>OLLAMA_API_KEY</code> and configurable through <code>/login</code> or <code>/secrets</code>.
   </p>
 
   <p>See <a href="/docs/providers">Providers</a> for all supported auth modes and boundaries.</p>
