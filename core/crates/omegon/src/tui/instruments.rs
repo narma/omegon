@@ -48,13 +48,16 @@ where
             break;
         }
         let w = UnicodeWidthChar::width_cjk(ch).unwrap_or(1) as u16;
+        if cur_x.saturating_add(w) > max_x {
+            break;
+        }
         if let Some(cell) = buf.cell_mut(Position::new(cur_x, y)) {
             cell.set_char(ch);
             cell.set_fg(color_for(ch));
             cell.set_bg(bg);
         }
         // Blank the overflow cell for wide characters so we don't draw into it.
-        if w == 2 {
+        if w == 2 && cur_x + 1 < max_x {
             if let Some(cell) = buf.cell_mut(Position::new(cur_x + 1, y)) {
                 cell.set_char(' ');
                 cell.set_fg(bg);
@@ -1896,49 +1899,105 @@ mod tests {
     }
 
     #[test]
-    fn render_tools_does_not_paint_past_panel_boundary() {
+    fn split_inference_and_tools_do_not_bleed_across_shared_boundary() {
         let mut panel = InstrumentPanel::default();
-        panel.tool_started("Read");
-        panel.update_telemetry(0.0, 200_000, None, false, "off", None, false, 0.0);
-        panel.tool_finished("Read", false);
+        panel.tool_started("bash");
+        panel.update_telemetry(100.0, 200_000, Some("bash"), false, "off", None, false, 0.0);
+        panel.tool_finished("bash", false);
+        panel.tool_started("read");
+        panel.tool_finished("read", false);
+        panel.update_turn_tokens(
+            92_100,
+            59,
+            0,
+            ContextComposition {
+                conversation_tokens: 24_000,
+                system_tokens: 8_000,
+                memory_tokens: 0,
+                tool_tokens: 18_000,
+                thinking_tokens: 0,
+                free_tokens: 150_000,
+            },
+            200_000,
+        );
 
-        let tools_area = Rect::new(20, 0, 28, 8);
-        let backend = ratatui::backend::TestBackend::new(60, 8);
+        let area = Rect::new(0, 0, 96, 10);
+        let backend = ratatui::backend::TestBackend::new(96, 10);
         let mut terminal = ratatui::Terminal::new(backend).unwrap();
         let t = crate::tui::theme::Alpharius;
 
         terminal
             .draw(|f| {
-                let buf = f.buffer_mut();
-                for y in 0..8 {
-                    for x in 0..60 {
-                        if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
-                            cell.set_char(if x < tools_area.x { 'L' } else { 'R' });
-                            cell.set_fg(Color::White);
-                            cell.set_bg(Color::Black);
+                let panels = Layout::horizontal([
+                    Constraint::Percentage(55),
+                    Constraint::Percentage(45),
+                ])
+                .split(area);
+                let inference_inner = Block::default().borders(Borders::ALL).inner(panels[0]);
+                let tools_inner = Block::default().borders(Borders::ALL).inner(panels[1]);
+                {
+                    let buf = f.buffer_mut();
+                    for y in area.top()..area.bottom() {
+                        for x in area.left()..area.right() {
+                            if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                                let ch = if x < tools_inner.x { 'L' } else { 'R' };
+                                cell.set_char(ch);
+                                cell.set_fg(Color::White);
+                                cell.set_bg(Color::Black);
+                            }
                         }
                     }
                 }
-                panel.render_tools_panel(tools_area, f, &t);
+                panel.render(area, f, &t);
+                {
+                    let buf = f.buffer_mut();
+                    // Re-mark the interior zones so any subsequent bleed is easy to spot.
+                    for y in inference_inner.y..inference_inner.bottom() {
+                        for x in inference_inner.x..inference_inner.right() {
+                            if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                                if cell.symbol() == "L" {
+                                    cell.set_char('I');
+                                }
+                            }
+                        }
+                    }
+                    for y in tools_inner.y..tools_inner.bottom() {
+                        for x in tools_inner.x..tools_inner.right() {
+                            if let Some(cell) = buf.cell_mut(Position::new(x, y)) {
+                                if cell.symbol() == "R" {
+                                    cell.set_char('T');
+                                }
+                            }
+                        }
+                    }
+                }
+                panel.render(area, f, &t);
             })
             .unwrap();
 
+        let panels = Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+        let inference_inner = Block::default().borders(Borders::ALL).inner(panels[0]);
+        let tools_inner = Block::default().borders(Borders::ALL).inner(panels[1]);
         let buf = terminal.backend().buffer();
-        for y in 0..8 {
-            for x in 0..tools_area.x {
+
+        for y in tools_inner.y..tools_inner.bottom() {
+            for x in tools_inner.x..tools_inner.right() {
                 let cell = &buf[(x, y)];
-                assert_eq!(
+                assert_ne!(
                     cell.symbol(),
-                    "L",
-                    "tools panel painted left of its boundary at ({x},{y})"
+                    "I",
+                    "inference panel leaked into tools interior at ({x},{y})"
                 );
             }
-            for x in tools_area.right()..60 {
+        }
+        for y in inference_inner.y..inference_inner.bottom() {
+            for x in inference_inner.x..inference_inner.right() {
                 let cell = &buf[(x, y)];
-                assert_eq!(
+                assert_ne!(
                     cell.symbol(),
-                    "R",
-                    "tools panel painted right of its boundary at ({x},{y})"
+                    "T",
+                    "tools panel leaked into inference interior at ({x},{y})"
                 );
             }
         }
