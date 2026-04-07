@@ -15,6 +15,26 @@ pub struct CleavePlan {
     pub default_model: Option<String>,
 }
 
+/// A fully-specified child runtime profile controlled by the launching parent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CleaveChildRuntimeProfile {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enabled_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preloaded_files: Vec<String>,
+}
+
 /// A single child in the plan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChildPlan {
@@ -28,6 +48,8 @@ pub struct ChildPlan {
     /// (e.g. a research child that needs a higher-tier model).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<CleaveChildRuntimeProfile>,
 }
 
 impl CleavePlan {
@@ -105,5 +127,34 @@ mod tests {
             "rationale": "test"
         }"#;
         assert!(CleavePlan::from_json(json).is_err());
+    }
+
+    #[test]
+    fn parse_runtime_profile_fields() {
+        let json = r#"{
+            "children": [
+                {
+                    "label": "a",
+                    "description": "do A",
+                    "scope": ["a.rs"],
+                    "runtime": {
+                        "thinkingLevel": "high",
+                        "contextClass": "legion",
+                        "enabledTools": ["read", "bash"],
+                        "disabledTools": ["web_search"],
+                        "skills": ["rust", "security"],
+                        "preloadedFiles": ["docs/spec.md"]
+                    }
+                }
+            ]
+        }"#;
+        let plan = CleavePlan::from_json(json).unwrap();
+        let runtime = plan.children[0].runtime.as_ref().unwrap();
+        assert_eq!(runtime.thinking_level.as_deref(), Some("high"));
+        assert_eq!(runtime.context_class.as_deref(), Some("legion"));
+        assert_eq!(runtime.enabled_tools, vec!["read", "bash"]);
+        assert_eq!(runtime.disabled_tools, vec!["web_search"]);
+        assert_eq!(runtime.skills, vec!["rust", "security"]);
+        assert_eq!(runtime.preloaded_files, vec!["docs/spec.md"]);
     }
 }

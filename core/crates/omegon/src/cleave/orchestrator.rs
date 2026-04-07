@@ -4,7 +4,7 @@
 //! tracks state, and merges results.
 
 use super::guardrails;
-use super::plan::CleavePlan;
+use super::plan::{CleaveChildRuntimeProfile, CleavePlan};
 use super::progress::{self, ChildProgressStatus, ProgressEvent, SharedProgressSink};
 use super::state::{self, ChildStatus, CleaveState};
 use super::waves::compute_waves;
@@ -57,6 +57,8 @@ pub struct CleaveConfig {
     pub inherited_env: Vec<(String, String)>,
     /// Extra env vars injected into child agents for deterministic smoke scenarios.
     pub injected_env: Vec<(String, String)>,
+    /// Full parent-controlled runtime profile for cleave children.
+    pub child_runtime: CleaveChildRuntimeProfile,
     /// Embedding-aware sink for live progress events.
     pub progress_sink: SharedProgressSink,
 }
@@ -328,6 +330,7 @@ pub async fn run_cleave(
 
             let inherited_env = config.inherited_env.clone();
             let injected_env = config.injected_env.clone();
+            let child_runtime = config.child_runtime.clone();
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
                 let dispatch_config = ChildDispatchConfig {
@@ -340,6 +343,7 @@ pub async fn run_cleave(
                     idle_timeout_secs,
                     inherited_env: &inherited_env,
                     injected_env: &injected_env,
+                    runtime: &child_runtime,
                     progress_sink,
                 };
                 let result = dispatch_child(
@@ -447,6 +451,10 @@ pub async fn run_cleave(
                                     idle_timeout_secs: config.idle_timeout_secs,
                                     inherited_env: &config.inherited_env,
                                     injected_env: &config.injected_env,
+                                    runtime: state.children[child_idx]
+                                        .runtime
+                                        .as_ref()
+                                        .unwrap_or(&config.child_runtime),
                                     progress_sink: config.progress_sink.clone(),
                                 };
 
@@ -691,6 +699,7 @@ struct ChildDispatchConfig<'a> {
     idle_timeout_secs: u64,
     inherited_env: &'a [(String, String)],
     injected_env: &'a [(String, String)],
+    runtime: &'a CleaveChildRuntimeProfile,
     progress_sink: SharedProgressSink,
 }
 
@@ -769,6 +778,9 @@ async fn dispatch_child_inner(
         "--max-turns",
         &max_turns_str,
     ];
+    if let Some(ref context_class) = config.runtime.context_class {
+        args.extend(["--context-class", context_class.as_str()]);
+    }
     if std::env::var("OMEGON_FORCE_BRIDGE").is_ok() {
         args.extend(["--bridge", config.bridge_path.to_str().unwrap()]);
         args.extend(["--node", config.node]);
@@ -796,6 +808,33 @@ async fn dispatch_child_inner(
     }
     for (key, value) in config.injected_env {
         child.env(key, value);
+    }
+    if let Some(ref thinking) = config.runtime.thinking_level {
+        child.env("OMEGON_CHILD_THINKING_LEVEL", thinking);
+    }
+    if let Some(ref context_class) = config.runtime.context_class {
+        child.env("OMEGON_CHILD_CONTEXT_CLASS", context_class);
+    }
+    if !config.runtime.enabled_tools.is_empty() {
+        child.env(
+            "OMEGON_CHILD_ENABLED_TOOLS",
+            config.runtime.enabled_tools.join(","),
+        );
+    }
+    if !config.runtime.disabled_tools.is_empty() {
+        child.env(
+            "OMEGON_CHILD_DISABLED_TOOLS",
+            config.runtime.disabled_tools.join(","),
+        );
+    }
+    if !config.runtime.skills.is_empty() {
+        child.env("OMEGON_CHILD_SKILLS", config.runtime.skills.join(","));
+    }
+    if !config.runtime.preloaded_files.is_empty() {
+        child.env(
+            "OMEGON_CHILD_PRELOADED_FILES",
+            config.runtime.preloaded_files.join(":"),
+        );
     }
     let mut child = child
         .spawn()
@@ -1232,6 +1271,7 @@ mod tests {
             inventory: None,
             inherited_env: vec![],
             injected_env: vec![],
+            child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
             progress_sink: crate::cleave::progress::stdout_progress_sink(),
         };
         assert_eq!(config.idle_timeout_secs, 300);
@@ -1272,6 +1312,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
             crate::cleave::state::ChildState {
                 child_id: 2,
@@ -1287,6 +1328,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
         ];
 
@@ -1322,6 +1364,7 @@ mod tests {
             execute_model: None,
             provider_id: None,
             duration_secs: None,
+            runtime: None,
         };
 
         let taken = child.worktree_path.take();
@@ -1365,6 +1408,7 @@ fn build_task_file_includes_all_sections() {
             execute_model: None,
             provider_id: None,
             duration_secs: None,
+            runtime: None,
         },
         crate::cleave::state::ChildState {
             child_id: 1,
@@ -1380,6 +1424,7 @@ fn build_task_file_includes_all_sections() {
             execute_model: None,
             provider_id: None,
             duration_secs: None,
+            runtime: None,
         },
     ];
     let guardrails = "## Project Guardrails\n\n1. **typecheck**: `tsc`\n";
@@ -1442,6 +1487,7 @@ fn build_task_file_rust_scope_gets_rust_test_convention() {
         execute_model: None,
         provider_id: None,
         duration_secs: None,
+        runtime: None,
     }];
     let task = build_task_file(
         0,

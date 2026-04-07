@@ -1,5 +1,6 @@
 //! Cleave run state — persisted to state.json during execution.
 
+use super::plan::CleaveChildRuntimeProfile;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::time::Instant;
@@ -41,6 +42,8 @@ pub struct ChildState {
     pub provider_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_secs: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<CleaveChildRuntimeProfile>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -106,6 +109,7 @@ impl CleaveState {
                     execute_model,
                     provider_id: None,
                     duration_secs: None,
+                    runtime: c.runtime.clone(),
                 }
             })
             .collect();
@@ -180,6 +184,7 @@ mod tests {
         assert_eq!(loaded.children[0].status, ChildStatus::Completed);
         assert_eq!(loaded.children[0].duration_secs, Some(42.5));
         assert_eq!(loaded.children[1].status, ChildStatus::Pending);
+        assert!(loaded.children[0].runtime.is_none());
 
         let _ = std::fs::remove_file(&tmp);
     }

@@ -141,6 +141,7 @@ async fn run_scenario(cli: &Cli, scenario: &SmokeScenario) -> anyhow::Result<()>
         inventory: None,
         inherited_env: vec![],
         injected_env,
+        child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
         progress_sink: cleave::progress::stdout_progress_sink(),
     };
 

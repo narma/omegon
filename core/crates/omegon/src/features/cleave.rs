@@ -513,6 +513,7 @@ impl CleaveFeature {
             }),
             inherited_env: self.session_secret_env.clone(),
             injected_env: Vec::new(),
+            child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
             progress_sink,
         };
 
@@ -1061,6 +1062,7 @@ mod tests {
             execute_model: None,
             provider_id: None,
             duration_secs: None,
+            runtime: None,
         };
 
         let completed = cleave::orchestrator::CleaveResult {

@@ -16,4 +16,4 @@ mod waves;
 mod worktree;
 
 pub use orchestrator::run_cleave;
-pub use plan::CleavePlan;
+pub use plan::{CleaveChildRuntimeProfile, CleavePlan};

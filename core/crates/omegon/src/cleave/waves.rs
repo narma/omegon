@@ -59,6 +59,7 @@ mod tests {
             scope: vec![],
             depends_on: deps.iter().map(|s| s.to_string()).collect(),
             model: None,
+            runtime: None,
         }
     }
 

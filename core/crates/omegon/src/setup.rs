@@ -495,6 +495,14 @@ impl AgentSetup {
                 disabled = disabled.len(),
                 "default tool profile applied — use manage_tools to re-enable"
             );
+            let child_enabled_tools = crate::parse_csv_env("OMEGON_CHILD_ENABLED_TOOLS");
+            let child_disabled_tools = crate::parse_csv_env("OMEGON_CHILD_DISABLED_TOOLS");
+            if !child_enabled_tools.is_empty() {
+                disabled.retain(|tool| !child_enabled_tools.iter().any(|enabled| enabled == tool));
+            }
+            for tool in child_disabled_tools {
+                disabled.insert(tool);
+            }
         }
 
         // ─── Assemble harness status (bootstrap probe) ──────────────────

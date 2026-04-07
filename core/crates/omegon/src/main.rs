@@ -362,6 +362,32 @@ enum PluginAction {
     },
 }
 
+fn parse_csv_env(name: &str) -> Vec<String> {
+    std::env::var(name)
+        .ok()
+        .map(|raw| {
+            raw.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn child_preloaded_files() -> Vec<PathBuf> {
+    std::env::var("OMEGON_CHILD_PRELOADED_FILES")
+        .ok()
+        .map(|raw| {
+            raw.split(':')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let mut cli = Cli::parse();
@@ -730,6 +756,7 @@ async fn run_cleave_command(
         inventory: None,
         inherited_env: agent_setup.session_secret_env.clone(),
         injected_env: Vec::new(),
+        child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
         progress_sink: cleave::progress::stdout_progress_sink(),
     };
 
@@ -842,6 +869,11 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     let profile = settings::Profile::load(&cli.cwd);
     if let Ok(mut s) = shared_settings.lock() {
         profile.apply_to(&mut s);
+        if let Ok(child_thinking) = std::env::var("OMEGON_CHILD_THINKING_LEVEL") {
+            if let Some(level) = crate::settings::ThinkingLevel::parse(&child_thinking) {
+                s.thinking = level;
+            }
+        }
         // CLI flags override profile
         if cli.max_turns != 50 {
             // 50 is the default — only override if explicitly set
@@ -945,7 +977,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 if let Ok(mut s) = shared_settings.lock() {
                     let old = s.context_window;
                     s.context_window = limits.max_input_tokens;
-                    s.context_class = settings::ContextClass::from_tokens(limits.max_input_tokens);
+                    if cli.context_class.is_none() {
+                        s.context_class = settings::ContextClass::from_tokens(limits.max_input_tokens);
+                    }
                     if old != limits.max_input_tokens {
                         tracing::info!(
                             old,
@@ -3053,6 +3087,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
             cleave::state::ChildState {
                 child_id: 1,
@@ -3068,6 +3103,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
             cleave::state::ChildState {
                 child_id: 2,
@@ -3083,6 +3119,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
             cleave::state::ChildState {
                 child_id: 3,
@@ -3098,6 +3135,7 @@ mod tests {
                 execute_model: None,
                 provider_id: None,
                 duration_secs: None,
+                runtime: None,
             },
         ];
 
@@ -3125,6 +3163,7 @@ mod tests {
             execute_model: None,
             provider_id: None,
             duration_secs: None,
+            runtime: None,
         };
 
         let line = format_cleave_merge_result(
