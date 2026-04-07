@@ -2612,6 +2612,45 @@ async fn execute_remote_slash_command(
                 output: Some("Context cleared. Starting fresh conversation.".to_string()),
             }
         }
+        CanonicalSlashCommand::ContextRequest { kind, query } => {
+            let args = serde_json::json!({
+                "requests": [{
+                    "kind": kind,
+                    "query": query,
+                    "reason": "Operator-requested direct context inspection from slash command"
+                }]
+            });
+            match agent
+                .bus
+                .execute_tool(
+                    crate::tool_registry::context::REQUEST_CONTEXT,
+                    "slash-context-request",
+                    args,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+            {
+                Ok(result) => {
+                    let text = result
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    SlashCommandResponse {
+                        accepted: true,
+                        output: Some(text),
+                    }
+                }
+                Err(e) => SlashCommandResponse {
+                    accepted: false,
+                    output: Some(format!("Context request failed: {e}")),
+                },
+            }
+        }
         CanonicalSlashCommand::SetContextClass(class) => {
             if let Ok(mut s) = shared_settings.lock() {
                 s.set_requested_context_class(class);

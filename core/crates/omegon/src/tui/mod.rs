@@ -255,6 +255,7 @@ pub(crate) enum CanonicalSlashCommand {
     ContextStatus,
     ContextCompact,
     ContextClear,
+    ContextRequest { kind: String, query: String },
     SetContextClass(crate::settings::ContextClass),
     NewSession,
     ListSessions,
@@ -272,11 +273,22 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "think" => crate::settings::ThinkingLevel::parse(args)
             .map(CanonicalSlashCommand::SetThinking),
         "context" if !args.is_empty() => {
-            let (sub, _) = args.split_once(' ').unwrap_or((args, ""));
+            let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
             match sub {
                 "status" => Some(CanonicalSlashCommand::ContextStatus),
                 "compact" | "compress" => Some(CanonicalSlashCommand::ContextCompact),
                 "clear" => Some(CanonicalSlashCommand::ContextClear),
+                "request" => {
+                    let (kind, query) = rest.split_once(' ').unwrap_or((rest, ""));
+                    if !kind.is_empty() && !query.trim().is_empty() {
+                        Some(CanonicalSlashCommand::ContextRequest {
+                            kind: kind.to_string(),
+                            query: query.trim().to_string(),
+                        })
+                    } else {
+                        None
+                    }
+                }
                 _ => crate::settings::ContextClass::parse(sub)
                     .map(CanonicalSlashCommand::SetContextClass),
             }
@@ -3186,6 +3198,15 @@ impl App {
                         Some(CanonicalSlashCommand::ContextClear) => {
                             let _ = tx.try_send(TuiCommand::ContextClear);
                             SlashResult::Display("Clearing context…".into())
+                        }
+                        Some(CanonicalSlashCommand::ContextRequest { kind, query }) => {
+                            let _ = tx.try_send(TuiCommand::BusCommand {
+                                name: "context_request".to_string(),
+                                args: format!("{kind} {query}"),
+                            });
+                            SlashResult::Display(format!(
+                                "Requesting mediated context pack for {kind}: {query}"
+                            ))
                         }
                         Some(CanonicalSlashCommand::SetContextClass(class)) => {
                             self.update_settings(|s| {

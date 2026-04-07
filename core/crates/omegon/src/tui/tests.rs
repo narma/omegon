@@ -1092,6 +1092,21 @@ fn slash_exit_returns_quit() {
 }
 
 #[test]
+fn slash_context_request_dispatches_direct_context_pack() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/context request code selector policy", &tx);
+
+    match result {
+        super::SlashResult::Display(text) => {
+            assert!(text.contains("Requesting mediated context pack for code"), "got {text}");
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}
+
+#[test]
 fn slash_context_compress_alias_requests_compaction() {
     let mut app = test_app();
     let tx = test_tx();
