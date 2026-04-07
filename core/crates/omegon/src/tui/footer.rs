@@ -1470,7 +1470,7 @@ mod tests {
             text.contains("Victory · High") || text.contains("victory · high"),
             "got {text}"
         );
-        assert!(text.contains("Maniple 68% / ¤272k"), "got {text}");
+        assert!(text.contains("Maniple→Squad 68% / ¤272k"), "got {text}");
     }
 
     #[test]

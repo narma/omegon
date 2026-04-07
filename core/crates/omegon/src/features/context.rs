@@ -7,9 +7,11 @@
 //! - context_clear: clear history, start fresh
 
 use async_trait::async_trait;
+use omegon_codescan::{BM25Index, Indexer, ScanCache, SearchScope};
 use omegon_memory::{MemoryBackend, Section};
 use omegon_traits::{ContentBlock, Feature, ToolDefinition, ToolResult};
 use serde_json::{Value, json};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 
@@ -104,6 +106,7 @@ pub struct ContextProvider {
     lifecycle: Option<Arc<Mutex<LifecycleContextProvider>>>,
     memory_backend: Option<Arc<dyn MemoryBackend>>,
     memory_mind: Option<String>,
+    repo_path: Option<PathBuf>,
 }
 
 impl ContextProvider {
@@ -114,6 +117,7 @@ impl ContextProvider {
             lifecycle: None,
             memory_backend: None,
             memory_mind: None,
+            repo_path: None,
         }
     }
 
@@ -123,6 +127,7 @@ impl ContextProvider {
         lifecycle: Option<Arc<Mutex<LifecycleContextProvider>>>,
         memory_backend: Option<Arc<dyn MemoryBackend>>,
         memory_mind: Option<String>,
+        repo_path: Option<PathBuf>,
     ) -> Self {
         Self {
             command_tx,
@@ -130,6 +135,7 @@ impl ContextProvider {
             lifecycle,
             memory_backend,
             memory_mind,
+            repo_path,
         }
     }
 
@@ -282,6 +288,39 @@ impl ContextProvider {
             .collect::<Vec<_>>();
         Some(format!(
             "### Memory\n- Reason: {reason}\n- Query: {query}\n{}",
+            items.join("\n")
+        ))
+    }
+
+    fn summarize_code(&self, query: &str, reason: &str, max_items: usize) -> Option<String> {
+        let repo_path = self.repo_path.as_ref()?;
+        let db_path = repo_path.join(".omegon").join("codescan.db");
+        let mut cache = ScanCache::open(&db_path).ok()?;
+        Indexer::run(repo_path, &mut cache).ok()?;
+        let code_chunks = cache.all_code_chunks().ok()?;
+        let knowledge_chunks = cache.all_knowledge_chunks().ok()?;
+        let idx = BM25Index::build(&code_chunks, &knowledge_chunks);
+        let results = idx.search(query, SearchScope::Code, max_items);
+        if results.is_empty() {
+            return None;
+        }
+        let items = results
+            .into_iter()
+            .take(max_items)
+            .map(|r| {
+                format!(
+                    "- {}:{}-{} [{}]\n  score: {:.2}\n  {}",
+                    r.file,
+                    r.start_line,
+                    r.end_line,
+                    r.label,
+                    r.score,
+                    r.preview.chars().take(240).collect::<String>().replace('\n', " · ")
+                )
+            })
+            .collect::<Vec<_>>();
+        Some(format!(
+            "### Code\n- Reason: {reason}\n- Query: {query}\n{}",
             items.join("\n")
         ))
     }
@@ -467,10 +506,15 @@ impl Feature for ContextProvider {
                             }
                         }
                         "code" => {
-                            unsupported += 1;
-                            sections.push(format!(
-                                "### code\n- Reason: {reason}\n- Query: {query}\n- Status: request_context v2 does not yet mediate code packs. Use codebase_search/read for this category right now."
-                            ));
+                            if let Some(pack) = self.summarize_code(query, reason, Self::request_max_items(req)) {
+                                supported += 1;
+                                sections.push(pack);
+                            } else {
+                                unsupported += 1;
+                                sections.push(format!(
+                                    "### code\n- Reason: {reason}\n- Query: {query}\n- Status: no code chunks matched this request."
+                                ));
+                            }
                         }
                         other => {
                             anyhow::bail!("unknown request_context kind: {other}");
@@ -788,6 +832,7 @@ mod tests {
             Some(Arc::new(Mutex::new(lifecycle))),
             None,
             None,
+            None,
         );
         let result = provider
             .execute(
@@ -831,6 +876,7 @@ mod tests {
             None,
             Some(backend),
             Some("test".into()),
+            None,
         );
         let result = provider
             .execute(
@@ -892,6 +938,7 @@ mod tests {
             Some(Arc::new(Mutex::new(lifecycle))),
             None,
             None,
+            None,
         );
         let result = provider
             .execute(
@@ -913,6 +960,47 @@ mod tests {
         let text = result.content.iter().filter_map(|c| match c { ContentBlock::Text { text } => Some(text.as_str()), _ => None }).collect::<Vec<_>>().join("\n");
         assert!(text.contains("### Specs"), "unexpected text: {text}");
         assert!(text.contains("Context requests are mediated") || text.contains("Session orientation request"), "unexpected text: {text}");
+    }
+
+    #[tokio::test]
+    async fn request_context_returns_code_pack() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+        std::fs::write(
+            tmp.path().join("src").join("main.rs"),
+            "fn selector_policy() { println!(\"selector policy\"); }\nfn other() {}\n",
+        )
+        .unwrap();
+
+        let provider = ContextProvider::new_with_sources(
+            SharedContextMetrics::new(),
+            new_shared_command_tx(),
+            None,
+            None,
+            None,
+            Some(tmp.path().to_path_buf()),
+        );
+        let result = provider
+            .execute(
+                crate::tool_registry::context::REQUEST_CONTEXT,
+                "call-ctx-code",
+                json!({
+                    "requests": [
+                        {
+                            "kind": "code",
+                            "query": "selector policy",
+                            "reason": "Need exact implementation orientation"
+                        }
+                    ]
+                }),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .await
+            .expect("tool result");
+        let text = result.content.iter().filter_map(|c| match c { ContentBlock::Text { text } => Some(text.as_str()), _ => None }).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("### Code"), "unexpected text: {text}");
+        assert!(text.contains("src/main.rs"), "unexpected text: {text}");
+        assert!(text.contains("selector_policy") || text.contains("selector policy"), "unexpected text: {text}");
     }
 
     #[tokio::test]

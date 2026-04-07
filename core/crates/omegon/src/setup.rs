@@ -448,6 +448,7 @@ impl AgentSetup {
             Some(lifecycle_handle.clone()),
             context_memory_backend.clone(),
             context_memory_mind.clone(),
+            Some(project_root.clone()),
         )));
 
         // ─── Operator-installed extensions (RPC + OCI) ────────────────
