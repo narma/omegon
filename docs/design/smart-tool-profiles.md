@@ -92,10 +92,10 @@ The practical lever is **tool activation** — disable tools for extensions that
 **Status:** decided
 **Rationale:** Skills auto-match via globs (self-selecting). Extensions always load (no runtime toggle). Tool activation via pi.setActiveTools() is the only meaningful runtime control. Additionally, the agent can enable tools on demand when asked — user says "I need the view tool" and agent calls setActiveTools to add it, or worst case user does /reload.
 
-### Decision: Auto-detect at session_start with .pi/profile.json override and /profile command
+### Decision: Auto-detect at session_start with `.omegon/profile.json` override and /profile command
 
 **Status:** decided
-**Rationale:** Auto-detection covers 90% of cases by scanning cwd for project markers. .pi/profile.json provides declarative override for projects that need custom config. /profile command allows mid-session inspection and switching. Agent can also toggle individual tools on demand when the user asks.
+**Rationale:** Auto-detection covers 90% of cases by scanning cwd for project markers. `.omegon/profile.json` provides declarative override for projects that need custom config. /profile command allows mid-session inspection and switching. Agent can also toggle individual tools on demand when the user asks.
 
 ### Decision: Dedicated manage_tools tool for agent self-serve
 
