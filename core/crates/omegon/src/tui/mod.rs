@@ -395,7 +395,7 @@ fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::R
     }
 
     command.spawn()?;
-    Ok(target)
+    Ok(format!("{target} via env"))
 }
 
 fn build_auspex_attach_payload(
