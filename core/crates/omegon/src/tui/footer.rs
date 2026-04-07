@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Padding, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Padding, Paragraph};
 
 use super::model_catalog::ModelCatalog;
 use super::theme::Theme;
@@ -88,6 +88,9 @@ impl FooterData {
     pub fn render(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let width = area.width as usize;
 
+        // Clear first so stale terminal cells never survive behind footer chrome.
+        frame.render_widget(Clear, area);
+
         // Fill the entire footer zone with footer-specific background
         // Footer is permanent chrome — darker than conversation card_bg
         let bg_block = Block::default().style(t.style_footer_bg());
@@ -119,6 +122,7 @@ impl FooterData {
     /// This replaces the 4-card layout when instruments are visible on the right.
     pub fn render_left_panel(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let bg = t.footer_bg();
+        frame.render_widget(Clear, area);
         let bg_block = Block::default().style(Style::default().bg(bg));
         frame.render_widget(bg_block, area);
 
@@ -355,6 +359,7 @@ impl FooterData {
             }
         }
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(bg));
         frame.render_widget(widget, inner);
     }
@@ -446,6 +451,7 @@ impl FooterData {
             )]));
         }
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(bg));
         frame.render_widget(widget, inner);
     }
@@ -478,6 +484,7 @@ impl FooterData {
             Span::styled("│ ", Style::default().fg(t.dim())),
             Span::styled(format!("T·{} ", self.turn), Style::default().fg(t.muted())),
         ]);
+        frame.render_widget(Clear, area);
         let widget = Paragraph::new(line).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, area);
     }
@@ -485,6 +492,7 @@ impl FooterData {
     fn render_context_card(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let block = Self::card_block("context", t);
         let inner = block.inner(area);
+        frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -529,6 +537,7 @@ impl FooterData {
         }
         lines.push(Line::from(bar_spans));
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, inner);
     }
@@ -536,6 +545,7 @@ impl FooterData {
     fn render_model_card(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let block = Self::card_block("model", t);
         let inner = block.inner(area);
+        frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -636,6 +646,7 @@ impl FooterData {
             ]));
         }
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, inner);
     }
@@ -643,6 +654,7 @@ impl FooterData {
     fn render_memory_card(&self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
         let block = Self::card_block("memory", t);
         let inner = block.inner(area);
+        frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -684,6 +696,7 @@ impl FooterData {
 
         lines.push(Line::from(parts));
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, inner);
     }
@@ -707,6 +720,7 @@ impl FooterData {
             .style(Style::default().bg(t.footer_bg()));
 
         let inner = block.inner(area);
+        frame.render_widget(Clear, area);
         frame.render_widget(block, area);
 
         let mut lines: Vec<Line<'static>> = Vec::new();
@@ -796,6 +810,7 @@ impl FooterData {
             }
         }
 
+        frame.render_widget(Clear, inner);
         let widget = Paragraph::new(lines).style(Style::default().bg(t.footer_bg()));
         frame.render_widget(widget, inner);
     }
@@ -1250,6 +1265,10 @@ mod tests {
             })
             .unwrap();
 
+        render_to_string(&terminal)
+    }
+
+    fn render_to_string(terminal: &Terminal<TestBackend>) -> String {
         let buf = terminal.backend().buffer();
         let a = buf.area;
         (0..a.height)
@@ -1405,6 +1424,132 @@ mod tests {
         assert!(text.contains("session"), "got {text}");
         assert!(text.contains("T9"), "got {text}");
         assert!(text.contains("¤12k/¤3k"), "got {text}");
+    }
+
+    #[test]
+    fn left_panel_clears_stale_rows_when_content_shrinks() {
+        let backend = TestBackend::new(72, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let verbose = FooterData {
+            model_id: "openai:gpt-5.4".into(),
+            model_provider: "openai".into(),
+            provider_connected: true,
+            thinking_level: "high".into(),
+            model_tier: "victory".into(),
+            turn: 9,
+            session_input_tokens: 12_000,
+            session_output_tokens: 3_000,
+            provider_telemetry: Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "openai".into(),
+                source: "response_headers".into(),
+                codex_active_limit: Some("codex".into()),
+                codex_primary_pct: Some(0),
+                codex_primary_reset_secs: Some(13_648),
+                ..Default::default()
+            }),
+            operator_events: vec![OperatorEventLine {
+                icon: "!",
+                message: "stale row sentinel".into(),
+                color: Color::Yellow,
+            }],
+            ..Default::default()
+        };
+
+        let compact = FooterData {
+            model_id: "openai:gpt-5.4".into(),
+            model_provider: "openai".into(),
+            provider_connected: false,
+            ..Default::default()
+        };
+
+        terminal
+            .draw(|frame| {
+                verbose.render_left_panel(frame.area(), frame, &super::super::theme::Alpharius)
+            })
+            .unwrap();
+        terminal
+            .draw(|frame| {
+                compact.render_left_panel(frame.area(), frame, &super::super::theme::Alpharius)
+            })
+            .unwrap();
+
+        let text = render_to_string(&terminal);
+        assert!(text.contains("no provider"), "got {text}");
+        assert!(!text.contains("stale row sentinel"), "got {text}");
+        assert!(!text.contains("codex 0%"), "got {text}");
+        assert!(!text.contains("T9"), "got {text}");
+    }
+
+    #[test]
+    fn footer_cards_clear_stale_body_rows_when_reused() {
+        let backend = TestBackend::new(120, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let verbose = FooterData {
+            model_id: "claude-sonnet-4-6".into(),
+            model_provider: "Anthropic".into(),
+            context_percent: 72.0,
+            context_window: 272_000,
+            context_class: ContextClass::Maniple,
+            total_facts: 1800,
+            injected_facts: 95,
+            working_memory: 5,
+            tool_calls: 23,
+            turn: 8,
+            estimated_tokens: 195_000,
+            provider_telemetry: Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "anthropic".into(),
+                source: "headers".into(),
+                codex_active_limit: Some("burst".into()),
+                codex_primary_pct: Some(12),
+                codex_primary_reset_secs: Some(60),
+                ..Default::default()
+            }),
+            harness: HarnessStatus {
+                active_persona: Some(crate::status::PersonaSummary {
+                    id: "eng".into(),
+                    name: "Systems Engineer".into(),
+                    badge: "⚙".into(),
+                    mind_facts_count: 42,
+                    activated_skills: vec!["rust".into()],
+                    disabled_tools: vec![],
+                }),
+                active_tone: Some(crate::status::ToneSummary {
+                    id: "concise".into(),
+                    name: "Concise".into(),
+                    intensity_mode: "full".into(),
+                }),
+                mcp_servers: vec![crate::status::McpServerStatus {
+                    name: "filesystem".into(),
+                    transport_mode: crate::status::McpTransportMode::LocalProcess,
+                    tool_count: 5,
+                    connected: true,
+                    error: None,
+                }],
+                secret_backend: Some(crate::status::SecretBackendStatus {
+                    backend: "keyring".into(),
+                    stored_count: 3,
+                    locked: false,
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let compact = FooterData::default();
+
+        terminal
+            .draw(|frame| verbose.render(frame.area(), frame, &super::super::theme::Alpharius))
+            .unwrap();
+        terminal
+            .draw(|frame| compact.render(frame.area(), frame, &super::super::theme::Alpharius))
+            .unwrap();
+
+        let text = render_to_string(&terminal);
+        assert!(!text.contains("Concise"), "got {text}");
+        assert!(!text.contains("Systems Engineer"), "got {text}");
+        assert!(!text.contains("burst 12%"), "got {text}");
     }
 
     #[test]
