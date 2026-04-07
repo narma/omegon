@@ -2197,8 +2197,17 @@ impl OllamaCloudClient {
         }
         for m in messages {
             match m {
-                LlmMessage::User { content, .. } => {
-                    wire_msgs.push(json!({"role": "user", "content": content}));
+                LlmMessage::User { content, images } => {
+                    let mut msg = json!({"role": "user", "content": content});
+                    if !images.is_empty() {
+                        msg["images"] = Value::Array(
+                            images
+                                .iter()
+                                .map(|img| Value::String(img.data.clone()))
+                                .collect(),
+                        );
+                    }
+                    wire_msgs.push(msg);
                 }
                 LlmMessage::Assistant {
                     text,
@@ -3060,6 +3069,26 @@ mod tests {
         assert_eq!(wire[0]["content"], "system");
         assert_eq!(wire[1]["role"], "user");
         assert_eq!(wire[1]["content"], "hello");
+        assert!(wire[1].get("images").is_none());
+    }
+
+    #[test]
+    fn ollama_cloud_wire_messages_include_native_images_field() {
+        let wire = OllamaCloudClient::build_wire_messages(
+            "system",
+            &[LlmMessage::User {
+                content: "describe this".into(),
+                images: vec![crate::bridge::ImageAttachment {
+                    data: "abc123".into(),
+                    media_type: "image/png".into(),
+                    source_path: Some("/tmp/ollama-cloud.png".into()),
+                }],
+            }],
+        );
+
+        assert_eq!(wire[1]["role"], "user");
+        assert_eq!(wire[1]["content"], "describe this");
+        assert_eq!(wire[1]["images"][0], "abc123");
     }
 
     #[test]
