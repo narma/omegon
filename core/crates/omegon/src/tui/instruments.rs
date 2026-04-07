@@ -690,7 +690,7 @@ impl InstrumentPanel {
             ContextBand::System => Color::Rgb(88, 182, 116),
             ContextBand::Memory => Color::Rgb(148, 108, 212),
             ContextBand::ToolSchema => Color::Rgb(214, 156, 74),
-            ContextBand::ToolHistory => Color::Rgb(196, 124, 56),
+            ContextBand::ToolHistory => Color::Rgb(214, 96, 132),
             ContextBand::Thinking => Color::Rgb(70, 126, 214),
             ContextBand::Free => Color::Rgb(16, 24, 34),
         }

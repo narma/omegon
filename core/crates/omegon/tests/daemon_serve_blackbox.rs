@@ -7,6 +7,7 @@ use anyhow::{Context, Result};
 use omegon_traits::DaemonEventEnvelope;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::Deserialize;
+use serde_json::Value;
 use tempfile::TempDir;
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +38,12 @@ struct StartupPayload {
     token: String,
     auth_mode: String,
     auth_source: String,
+    instance_descriptor: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProbePayload {
+    ok: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -126,6 +133,33 @@ async fn wait_for_startup_payload(startup_url: &str, deadline: Duration) -> Resu
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("startup payload unavailable before deadline")))
 }
 
+async fn wait_for_ready(ready_url: &str, deadline: Duration) -> Result<()> {
+    let client = reqwest::Client::new();
+    let end = Instant::now() + deadline;
+    let mut last_err = None;
+
+    while Instant::now() < end {
+        match client.get(ready_url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let probe = resp.json::<ProbePayload>().await.context("decode ready payload")?;
+                if probe.ok {
+                    return Ok(());
+                }
+                last_err = Some(anyhow::anyhow!("ready probe returned ok=false"));
+            }
+            Ok(resp) => {
+                last_err = Some(anyhow::anyhow!("ready status {}", resp.status()));
+            }
+            Err(err) => {
+                last_err = Some(anyhow::anyhow!(err));
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow::anyhow!("ready probe unavailable before deadline")))
+}
+
 #[tokio::test]
 async fn serve_exposes_startup_and_accepts_event_over_http() -> Result<()> {
     let (mut daemon, startup_event) = spawn_daemon()?;
@@ -141,6 +175,7 @@ async fn serve_exposes_startup_and_accepts_event_over_http() -> Result<()> {
     assert!(startup_event.ws_url.contains("/ws?token="));
 
     let payload = wait_for_startup_payload(&startup_event.startup_url, Duration::from_secs(5)).await?;
+    wait_for_ready(&startup_event.ready_url, Duration::from_secs(5)).await?;
     assert_eq!(payload.schema_version, 2);
     assert_eq!(payload.startup_url, startup_event.startup_url);
     assert_eq!(payload.health_url, startup_event.health_url);
@@ -151,6 +186,18 @@ async fn serve_exposes_startup_and_accepts_event_over_http() -> Result<()> {
     assert!(payload.state_url.ends_with("/api/state"));
     assert!(payload.ws_url.contains("/ws?token="));
     assert!(payload.token.len() >= 4);
+    let instance = payload
+        .instance_descriptor
+        .as_ref()
+        .expect("startup payload should carry canonical instance descriptor");
+    assert_eq!(
+        instance["control_plane"]["schema_version"].as_u64(),
+        Some(omegon_traits::IPC_PROTOCOL_VERSION as u64)
+    );
+    assert_eq!(
+        instance["control_plane"]["omegon_version"].as_str(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
 
     let event = DaemonEventEnvelope {
         event_id: "evt-blackbox-1".into(),
