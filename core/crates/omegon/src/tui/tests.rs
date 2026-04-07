@@ -1641,11 +1641,15 @@ fn slash_command_aliases_dispatch_correctly() {
         other => panic!("/dashboard should be unknown, got: {other:?}"),
     }
 
-    // /auspex should resolve to the status surface, not fall through
+    // /auspex should resolve to the primary status surface, not fall through
     let result = app.handle_slash_command("/auspex", &tx);
+    let SlashResult::Display(text) = result else {
+        panic!("/auspex should display status information");
+    };
+    assert!(text.contains("Auspex attach status"), "got: {text}");
     assert!(
-        matches!(result, SlashResult::Display(_)),
-        "/auspex should display status information"
+        text.contains("primary local desktop handoff"),
+        "got: {text}"
     );
 
     // /auspex open should also be routed, even before launch is fully configured
@@ -1679,7 +1683,15 @@ fn slash_auspex_open_requests_bridge_start_when_dashboard_not_running() {
         panic!("expected Display result");
     };
     assert!(
-        text.contains("Starting the local compatibility surface first"),
+        text.contains("/auspex open"),
+        "expected the primary command to be named in guidance: {text}"
+    );
+    assert!(
+        text.contains("desktop handoff"),
+        "expected primary handoff wording: {text}"
+    );
+    assert!(
+        text.contains("compatibility surface"),
         "got: {text}"
     );
 }
@@ -1701,13 +1713,28 @@ fn slash_auspex_status_reports_attach_metadata() {
     assert!(text.contains("ipc.sock"), "got: {text}");
     assert!(text.contains("session id: not yet exposed"), "got: {text}");
     assert!(
-        text.contains("Use `/auspex open` to launch the browser surface"),
+        text.contains("Use `/auspex open` as the primary local desktop handoff"),
         "got: {text}"
     );
     assert!(
-        text.contains("`/dash` remains the local compatibility/debug path"),
+        text.contains("`/dash` remains the compatibility/debug browser path"),
         "got: {text}"
     );
+}
+
+#[test]
+fn slash_dash_status_uses_compatibility_wording() {
+    let mut app = test_app();
+    app.web_server_addr = Some("127.0.0.1:7842".parse().unwrap());
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/dash status", &tx);
+    let SlashResult::Display(text) = result else {
+        panic!("expected Display result");
+    };
+
+    assert!(text.contains("compatibility/debug browser path"), "got: {text}");
+    assert!(text.contains("http://127.0.0.1:7842"), "got: {text}");
 }
 
 #[test]

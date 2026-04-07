@@ -6,7 +6,6 @@ parent: auspex-ipc-contract
 tags: []
 open_questions:
   - "Should the initial attach-to-running-instance path use a custom URL scheme, an Auspex single-instance control socket, or both?"
-  - "Should `/auspex` be introduced immediately as the primary launch command, or should the first implementation ship behind `/dash` compatibility wording until attach behavior is proven?"
   - "How should Windows be handled before native IPC parity exists there?"
 dependencies: []
 related: []
@@ -44,8 +43,13 @@ The handoff must preserve that exact session identity, must not destabilize the 
 
 **Rationale:** Omegon should be able to request an attached Auspex UI without taking ownership of Auspex window/app lifecycle, persistence, update, or restart behavior. A failed Auspex launch must not destabilize the running TUI session.
 
+### `/auspex` is the primary local desktop command; `/dash` remains compatibility/debug wording
+
+**Status:** decided
+
+**Rationale:** Operator-facing copy should present Auspex as the first-class desktop handoff path now. Keeping `/dash` as the compatibility/debug browser path preserves the embedded surface for diagnostics and transition work without presenting it as the product-default local UI.
+
 ## Open Questions
 
 - Should the initial attach-to-running-instance path use a custom URL scheme, an Auspex single-instance control socket, or both?
-- Should `/auspex` be introduced immediately as the primary launch command, or should the first implementation ship behind `/dash` compatibility wording until attach behavior is proven?
 - How should Windows be handled before native IPC parity exists there?

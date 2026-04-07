@@ -419,7 +419,7 @@ impl App {
             .unwrap_or_else(|| "not detected".into());
 
         format!(
-            "Auspex attach status\n\nIPC\n  protocol: v{}\n  socket: {}\n  socket exists: {}\n  server instance: {}\n  cwd: {}\n\nSession\n  binding: current interactive session\n  session id: not yet exposed in TUI handoff metadata\n\nRuntime\n  omegon version: {}\n  /dash compatibility view: {}\n\nAuspex\n  app: {}\n\nNext step\n  Use `/auspex open` to launch the browser surface.\n  `/dash` remains the local compatibility/debug path.",
+            "Auspex attach status\n\nIPC\n  protocol: v{}\n  socket: {}\n  socket exists: {}\n  server instance: {}\n  cwd: {}\n\nSession\n  binding: current interactive session\n  session id: not yet exposed in TUI handoff metadata\n\nRuntime\n  omegon version: {}\n  /dash compatibility view: {}\n\nAuspex\n  app: {}\n\nNext step\n  Use `/auspex open` as the primary local desktop handoff.\n  `/dash` remains the compatibility/debug browser path.",
             omegon_traits::IPC_PROTOCOL_VERSION,
             ipc_cfg.socket_path.display(),
             if socket_exists { "yes" } else { "no" },
@@ -2528,12 +2528,12 @@ impl App {
         ),
         (
             "dash",
-            "open the compatibility browser surface (legacy/debug path)",
+            "open the Auspex compatibility browser surface (legacy/debug path)",
             &["status"],
         ),
         (
             "auspex",
-            "show Auspex status or launch the browser surface",
+            "primary local desktop handoff — show status or open Auspex",
             &["status", "open"],
         ),
         (
@@ -3170,14 +3170,14 @@ impl App {
                             };
                             match launch_auspex_with_startup(&startup) {
                                 Ok(target) => SlashResult::Display(format!(
-                                    "Launching Auspex via compatibility bridge ({target}).\n\nThis path currently bootstraps Auspex from Omegon's embedded startup URL. Native IPC attach remains the target design."
+                                    "Launching Auspex via the primary local desktop handoff ({target}).\n\nThis path currently bootstraps Auspex from Omegon's embedded startup URL. `/dash` remains the compatibility/debug browser path while native IPC attach is completed."
                                 )),
                                 Err(e) => SlashResult::Display(format!("Failed to launch Auspex: {e}")),
                             }
                         } else {
                             let _ = tx.try_send(TuiCommand::StartWebDashboard);
                             SlashResult::Display(
-                                "Starting the local compatibility surface first. Re-run `/auspex open` once the embedded browser bridge is ready.".into()
+                                "Starting the local compatibility surface first so `/auspex open` can complete the desktop handoff once the embedded browser bridge is ready.".into()
                             )
                         }
                     }
@@ -3188,20 +3188,26 @@ impl App {
             }
 
             "dash" => {
-                // /dash remains the compatibility command for opening the browser UI.
+                // /dash remains the compatibility/debug command for opening the browser UI.
                 // If the server is already running, open the browser.
                 // If not, start it (which auto-opens on ready).
                 if let Some(addr) = self.web_server_addr {
                     let url = format!("http://{addr}");
                     if args == "status" {
-                        SlashResult::Display(format!("Auspex compatibility view running at {url}"))
+                        SlashResult::Display(format!(
+                            "Auspex compatibility/debug browser path running at {url}"
+                        ))
                     } else {
                         open_browser(&url);
-                        SlashResult::Display(format!("Auspex compatibility view at {url}"))
+                        SlashResult::Display(format!(
+                            "Opened Auspex compatibility/debug browser path at {url}"
+                        ))
                     }
                 } else {
                     let _ = tx.try_send(TuiCommand::StartWebDashboard);
-                    SlashResult::Display("Starting Auspex browser surface…".into())
+                    SlashResult::Display(
+                        "Starting Auspex compatibility/debug browser path…".into()
+                    )
                 }
             }
 
@@ -5873,19 +5879,21 @@ mod auspex_copy_tests {
     use super::*;
 
     #[test]
-    fn dash_command_copy_mentions_auspex_compatibility() {
+    fn command_copy_marks_auspex_primary_and_dash_compatibility() {
         let dash = App::COMMANDS
             .iter()
             .find(|(name, _, _)| *name == "dash")
             .expect("/dash command must exist");
         assert!(dash.1.contains("compatibility"));
         assert!(dash.1.contains("legacy/debug"));
+        assert!(dash.1.contains("Auspex"));
 
         let auspex = App::COMMANDS
             .iter()
             .find(|(name, _, _)| *name == "auspex")
             .expect("/auspex command must exist");
+        assert!(auspex.1.contains("primary"));
         assert!(auspex.1.contains("Auspex"));
-        assert!(auspex.1.contains("launch"));
+        assert!(auspex.1.contains("open"));
     }
 }
