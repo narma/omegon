@@ -292,10 +292,14 @@ impl IpcConnection {
                 }
 
                 "get_graph" => {
-                    // Delegate to the same logic web/api.rs uses, but return JSON here.
-                    // For now return a minimal shape; full graph implemented in follow-on.
-                    send_response(&out_tx, req_id, "get_graph", json!({"nodes":[],"links":[]}))
-                        .await;
+                    let graph = crate::web::api::build_graph_data(&cfg.handles);
+                    send_response(
+                        &out_tx,
+                        req_id,
+                        "get_graph",
+                        serde_json::to_value(graph)?,
+                    )
+                    .await;
                 }
 
                 "run_slash_command" => {
@@ -463,20 +467,24 @@ fn project_event(ev: &AgentEvent) -> Option<IpcEventPayload> {
         AgentEvent::ToolUpdate { id, .. } => Some(IpcEventPayload::ToolUpdated { id: id.clone() }),
         AgentEvent::ToolEnd {
             id,
+            name,
             result,
             is_error,
-            ..
         } => {
             let summary = result
                 .content
-                .first()
-                .and_then(|b| b.as_text())
-                .map(|t| t.chars().take(200).collect());
+                .iter()
+                .filter_map(|b| b.as_text())
+                .collect::<Vec<_>>()
+                .join("\n")
+                .chars()
+                .take(200)
+                .collect::<String>();
             Some(IpcEventPayload::ToolEnded {
                 id: id.clone(),
-                name: String::new(), // not on ToolEnd variant
+                name: name.clone(),
                 is_error: *is_error,
-                summary,
+                summary: if summary.is_empty() { None } else { Some(summary) },
             })
         }
         AgentEvent::AgentEnd => Some(IpcEventPayload::AgentCompleted),

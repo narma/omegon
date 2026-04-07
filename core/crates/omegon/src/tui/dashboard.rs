@@ -35,6 +35,7 @@ pub struct SharedSessionStats {
     pub turns: u32,
     pub tool_calls: u32,
     pub compactions: u32,
+    pub busy: bool,
 }
 
 /// Shared handles to feature state, for live dashboard updates.

@@ -2213,6 +2213,7 @@ fn tool_end_aggregates_all_text_blocks() {
 
     app.handle_agent_event(AgentEvent::ToolEnd {
         id: "tool-1".into(),
+        name: "codebase_search".into(),
         is_error: false,
         result: omegon_traits::ToolResult {
             content: vec![

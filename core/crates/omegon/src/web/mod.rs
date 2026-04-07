@@ -136,7 +136,11 @@ fn project_web_instance(
         turns: 0,
         tool_calls: 0,
         compactions: 0,
-        busy: false,
+        busy: handles
+            .session
+            .lock()
+            .map(|s| s.busy)
+            .unwrap_or(false),
         git_branch,
         git_detached,
         session_id: None,

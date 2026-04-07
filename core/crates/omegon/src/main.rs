@@ -2070,6 +2070,7 @@ async fn run_agent_command(cli: &Cli) -> anyhow::Result<()> {
                 }
                 AgentEvent::ToolEnd {
                     id: _,
+                    name: _,
                     result,
                     is_error,
                 } => {

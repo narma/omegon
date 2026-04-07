@@ -9,7 +9,7 @@ use omegon_traits::{
     OmegonRuntime, OmegonRuntimeHealth,
 };
 
-use crate::tui::dashboard::DashboardHandles;
+use crate::tui::dashboard::{DashboardHandles, SharedSessionStats};
 
 /// Build a full state snapshot from the shared dashboard handles.
 /// Always returns a valid snapshot even if some handles are unavailable.
@@ -56,11 +56,16 @@ fn project_session(
     started_at: &str,
     session_id: &str,
 ) -> IpcSessionSnapshot {
-    let (turns, tool_calls, compactions) = if let Ok(s) = handles.session.lock() {
-        (s.turns, s.tool_calls, s.compactions)
-    } else {
-        (0, 0, 0)
-    };
+    let stats = handles
+        .session
+        .lock()
+        .map(|s| SharedSessionStats {
+            turns: s.turns,
+            tool_calls: s.tool_calls,
+            compactions: s.compactions,
+            busy: s.busy,
+        })
+        .unwrap_or_default();
 
     let (git_branch, git_detached) = if let Some(ref h) = handles.harness
         && let Ok(s) = h.lock()
@@ -74,10 +79,10 @@ fn project_session(
         cwd: cwd.to_string(),
         pid: std::process::id(),
         started_at: started_at.to_string(),
-        turns,
-        tool_calls,
-        compactions,
-        busy: false, // populated by IpcConnection per-request
+        turns: stats.turns,
+        tool_calls: stats.tool_calls,
+        compactions: stats.compactions,
+        busy: stats.busy,
         git_branch,
         git_detached,
         session_id: Some(session_id.to_string()),

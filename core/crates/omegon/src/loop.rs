@@ -1276,6 +1276,7 @@ async fn dispatch_tools(
             tracing::warn!(tool = call.name, %msg, "tool guard blocked");
             let _ = events.send(AgentEvent::ToolEnd {
                 id: call.id.clone(),
+                name: call.name.clone(),
                 result: omegon_traits::ToolResult {
                     content: vec![ContentBlock::Text { text: msg.clone() }],
                     details: Value::Null,
@@ -1362,6 +1363,7 @@ async fn dispatch_tools(
 
             let _ = events.send(AgentEvent::ToolEnd {
                 id: call.id.clone(),
+                name: call.name.clone(),
                 result: omegon_traits::ToolResult {
                     content: vec![ContentBlock::Text {
                         text: error_text.clone(),
@@ -1392,6 +1394,7 @@ async fn dispatch_tools(
             );
             let _ = events.send(AgentEvent::ToolEnd {
                 id: call.id.clone(),
+                name: call.name.clone(),
                 result: omegon_traits::ToolResult {
                     content: vec![ContentBlock::Text {
                         text: skip_text.clone(),
@@ -1426,6 +1429,7 @@ async fn dispatch_tools(
 
         let _ = events.send(AgentEvent::ToolEnd {
             id: call.id.clone(),
+            name: call.name.clone(),
             result: omegon_traits::ToolResult {
                 content: final_content.clone(),
                 details: result.details,

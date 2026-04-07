@@ -203,10 +203,14 @@ pub async fn get_ready(State(state): State<WebState>) -> (StatusCode, Json<Probe
 
 /// GET /api/graph — graph data for force-directed layout.
 pub async fn get_graph(State(state): State<WebState>) -> Json<GraphData> {
+    Json(build_graph_data(&state.handles))
+}
+
+pub fn build_graph_data(handles: &crate::tui::dashboard::DashboardHandles) -> GraphData {
     let mut nodes = Vec::new();
     let mut links = Vec::new();
 
-    if let Some(ref lp_lock) = state.handles.lifecycle
+    if let Some(ref lp_lock) = handles.lifecycle
         && let Ok(lp) = lp_lock.lock()
     {
         let all = lp.all_nodes();
@@ -229,7 +233,6 @@ pub async fn get_graph(State(state): State<WebState>) -> Json<GraphData> {
                 has_openspec: node.openspec_change.is_some(),
             });
 
-            // Parent → child edges
             if let Some(ref parent) = node.parent {
                 links.push(GraphLink {
                     source: parent.clone(),
@@ -237,7 +240,6 @@ pub async fn get_graph(State(state): State<WebState>) -> Json<GraphData> {
                     link_type: "parent".into(),
                 });
             }
-            // Dependencies
             for dep in &node.dependencies {
                 links.push(GraphLink {
                     source: dep.clone(),
@@ -248,7 +250,7 @@ pub async fn get_graph(State(state): State<WebState>) -> Json<GraphData> {
         }
     }
 
-    Json(GraphData { nodes, links })
+    GraphData { nodes, links }
 }
 
 /// GET /api/state — build a full snapshot from the shared handles.
@@ -441,7 +443,12 @@ pub fn build_snapshot(state: &WebState) -> StateSnapshot {
                 turns: session.turns,
                 tool_calls: session.tool_calls,
                 compactions: session.compactions,
-                busy: false,
+                busy: state
+                    .handles
+                    .session
+                    .lock()
+                    .map(|s| s.busy)
+                    .unwrap_or(false),
                 git_branch: harness.as_ref().and_then(|h| h.git_branch.clone()),
                 git_detached: harness.as_ref().is_some_and(|h| h.git_detached),
                 session_id: None,

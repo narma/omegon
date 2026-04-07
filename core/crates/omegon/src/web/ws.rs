@@ -352,6 +352,7 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
         }
         AgentEvent::ToolEnd {
             id,
+            name,
             result,
             is_error,
         } => {
@@ -362,6 +363,8 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
                 "type": "tool_end",
                 "event_name": "tool.ended",
                 "id": id,
+                "name": name,
+                "tool_name": name,
                 "result": escape_html(&result_text),
                 "is_error": is_error,
                 "block_count": result.content.len(),
@@ -468,6 +471,7 @@ mod tests {
     fn serialize_tool_end_all_blocks() {
         let event = AgentEvent::ToolEnd {
             id: "tc1".into(),
+            name: "bash".into(),
             result: omegon_traits::ToolResult {
                 content: vec![
                     omegon_traits::ContentBlock::Text {
@@ -592,6 +596,7 @@ mod tests {
             },
             AgentEvent::ToolEnd {
                 id: "1".into(),
+                name: "read".into(),
                 result: omegon_traits::ToolResult {
                     content: vec![omegon_traits::ContentBlock::Text { text: "ok".into() }],
                     details: serde_json::json!(null),

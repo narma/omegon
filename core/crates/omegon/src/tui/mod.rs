@@ -3867,6 +3867,9 @@ impl App {
         match event {
             AgentEvent::TurnStart { turn } => {
                 self.agent_active = true;
+                if let Ok(mut ss) = self.dashboard_handles.session.lock() {
+                    ss.busy = true;
+                }
                 self.turn = turn;
                 self.working_verb = spinner::next_verb();
                 self.effects.start_spinner_glow();
@@ -4002,6 +4005,7 @@ impl App {
             }
             AgentEvent::ToolEnd {
                 id,
+                name,
                 result,
                 is_error,
             } => {
@@ -4022,7 +4026,7 @@ impl App {
                 // Append recovery hint for tool errors
                 let enriched: Option<String> = if is_error {
                     full_text.as_ref().and_then(|text| {
-                        let hint = Self::recovery_hint(self.last_tool_name.as_deref(), text);
+                        let hint = Self::recovery_hint(Some(name.as_str()), text);
                         if hint.is_empty() {
                             None
                         } else {
@@ -4063,44 +4067,43 @@ impl App {
                 }
 
                 // Dynamic footer: memory tools update fact count
-                if let Some(ref name) = self.last_tool_name {
-                    let is_memory_mutation = matches!(
-                        name.as_str(),
-                        "memory_store" | "memory_supersede" | "memory_archive"
-                    );
-                    if name == "memory_store" || name == "memory_supersede" {
-                        self.footer_data.total_facts += 1;
-                        self.instrument_panel.bump_memory_store();
-                    } else if name == "memory_archive" {
-                        self.footer_data.total_facts =
-                            self.footer_data.total_facts.saturating_sub(1);
-                    }
-                    if is_memory_mutation {
-                        self.memory_ops_this_frame += 1;
-                        self.effects.ping_footer(self.theme.as_ref());
-                    }
-                    // Also count recall/query operations
-                    if matches!(
-                        name.as_str(),
-                        "memory_recall"
-                            | "memory_query"
-                            | "memory_episodes"
-                            | "memory_search_archive"
-                            | "memory_focus"
-                            | "memory_release"
-                    ) {
-                        self.memory_ops_this_frame += 1;
-                        self.instrument_panel.bump_memory_recall();
-                    }
+                let completed_name = name.as_str();
+                let is_memory_mutation = matches!(
+                    completed_name,
+                    "memory_store" | "memory_supersede" | "memory_archive"
+                );
+                if completed_name == "memory_store" || completed_name == "memory_supersede" {
+                    self.footer_data.total_facts += 1;
+                    self.instrument_panel.bump_memory_store();
+                } else if completed_name == "memory_archive" {
+                    self.footer_data.total_facts =
+                        self.footer_data.total_facts.saturating_sub(1);
                 }
-                // Save for instrument telemetry before clearing
-                if let Some(ref name) = self.last_tool_name {
-                    self.instrument_panel.tool_finished(name, is_error);
+                if is_memory_mutation {
+                    self.memory_ops_this_frame += 1;
+                    self.effects.ping_footer(self.theme.as_ref());
                 }
-                self.completed_tool_name = self.last_tool_name.take();
+                // Also count recall/query operations
+                if matches!(
+                    completed_name,
+                    "memory_recall"
+                        | "memory_query"
+                        | "memory_episodes"
+                        | "memory_search_archive"
+                        | "memory_focus"
+                        | "memory_release"
+                ) {
+                    self.memory_ops_this_frame += 1;
+                    self.instrument_panel.bump_memory_recall();
+                }
+                self.instrument_panel.tool_finished(completed_name, is_error);
+                self.completed_tool_name = self.last_tool_name.take().or(Some(name));
             }
             AgentEvent::AgentEnd => {
                 self.agent_active = false;
+                if let Ok(mut ss) = self.dashboard_handles.session.lock() {
+                    ss.busy = false;
+                }
                 self.conversation.finalize_message();
                 self.effects.stop_spinner_glow();
                 // Advance tutorial overlay if an AutoPrompt step just completed
@@ -5364,6 +5367,9 @@ pub async fn run_tui(
                                                 if !app.agent_active {
                                                     app.conversation.push_system("▸ tutorial step");
                                                     app.agent_active = true;
+                                                    if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                                        ss.busy = true;
+                                                    }
                                                     let _ = command_tx
                                                         .send(TuiCommand::UserPrompt(prompt))
                                                         .await;
@@ -5386,6 +5392,9 @@ pub async fn run_tui(
                                                 if !app.agent_active {
                                                     app.conversation.push_system("▸ tutorial step");
                                                     app.agent_active = true;
+                                                    if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                                        ss.busy = true;
+                                                    }
                                                     let _ = command_tx
                                                         .send(TuiCommand::UserPrompt(prompt))
                                                         .await;
@@ -5495,6 +5504,9 @@ pub async fn run_tui(
                             } else if app.agent_active {
                                 app.interrupt();
                                 app.agent_active = false; // Unblock editor immediately
+                                if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                    ss.busy = false;
+                                }
                                 app.conversation.finalize_message();
                                 app.conversation.push_system("⎋ Interrupted");
                             }
@@ -5503,6 +5515,9 @@ pub async fn run_tui(
                             if app.agent_active {
                                 app.interrupt();
                                 app.agent_active = false; // Unblock editor immediately
+                                if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                    ss.busy = false;
+                                }
                                 app.conversation.finalize_message();
                                 app.conversation.push_system("⎋ Interrupted (Ctrl+C)");
                             } else if !app.editor.is_empty() {
@@ -5660,6 +5675,9 @@ pub async fn run_tui(
                                                 app.history.push(text.clone());
                                                 app.history_idx = None;
                                                 app.agent_active = true;
+                                                if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                                    ss.busy = true;
+                                                }
                                                 let _ = command_tx
                                                     .send(TuiCommand::UserPrompt(text))
                                                     .await;
@@ -5686,6 +5704,9 @@ pub async fn run_tui(
                                     app.history.push(text.clone());
                                     app.history_idx = None;
                                     app.agent_active = true;
+                                    if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                                        ss.busy = true;
+                                    }
                                     if !attachments.is_empty() {
                                         let _ = command_tx
                                             .send(TuiCommand::UserPromptWithImages(
@@ -5813,6 +5834,9 @@ pub async fn run_tui(
             app.history.push(text.clone());
             app.history_idx = None;
             app.agent_active = true;
+            if let Ok(mut ss) = app.dashboard_handles.session.lock() {
+                ss.busy = true;
+            }
             if attachments.is_empty() {
                 let _ = command_tx.send(TuiCommand::UserPrompt(text)).await;
             } else {
