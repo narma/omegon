@@ -5,6 +5,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic V
 
 ## [Unreleased]
 
+- **Release-line correction** — `v0.15.11-rc.2` was published from a mistaken version-line advance after `0.15.10` had not actually closed cleanly. The active candidate line remains the `0.15.10` RC series; `v0.15.10-rc.30` is the corrective RC. See `docs/release-line-correction-0-15-10.md`.
+
 ## [0.15.10] - 2026-04-05
 
 ### Added
