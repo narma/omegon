@@ -267,6 +267,14 @@ pub struct SubscriptionResponse {
     pub events: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DaemonEventEnvelope {
+    pub event_id: String,
+    pub source: String,
+    pub trigger_kind: String,
+    pub payload: Value,
+}
+
 // ── Typed state snapshot ─────────────────────────────────────────────────────
 
 /// Top-level attach-time state snapshot. All sections are required.
@@ -327,6 +335,15 @@ pub struct OmegonPlacement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OmegonTransportSecurity {
+    LocalIpc,
+    InsecureBootstrap,
+    Secure,
+    IdentityMesh,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OmegonControlPlane {
     pub server_instance_id: String,
     pub protocol_version: u16,
@@ -347,6 +364,10 @@ pub struct OmegonControlPlane {
     pub auth_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_transport_security: Option<OmegonTransportSecurity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ws_transport_security: Option<OmegonTransportSecurity>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1244,6 +1265,8 @@ mod tests {
                     ws_url: None,
                     auth_mode: None,
                     auth_source: None,
+                    http_transport_security: None,
+                    ws_transport_security: None,
                 },
                 runtime: OmegonRuntime {
                     deployment_kind: OmegonDeploymentKind::InteractiveTui,
@@ -1489,6 +1512,25 @@ mod tests {
         // With adjacent tagging, payload lives under "data" key.
         let secs = v["data"]["sections"].as_array().unwrap();
         assert_eq!(secs.len(), 2);
+    }
+
+    #[test]
+    fn daemon_event_envelope_roundtrip() {
+        let ev = DaemonEventEnvelope {
+            event_id: "evt-1".into(),
+            source: "webhook/github".into(),
+            trigger_kind: "webhook".into(),
+            payload: serde_json::json!({"ref": "refs/heads/main"}),
+        };
+        let raw = rmp_serde::to_vec_named(&ev).unwrap();
+        let decoded: DaemonEventEnvelope = rmp_serde::from_slice(&raw).unwrap();
+        assert_eq!(decoded, ev);
+    }
+
+    #[test]
+    fn transport_security_serializes_kebab_case() {
+        let v = serde_json::to_value(OmegonTransportSecurity::InsecureBootstrap).unwrap();
+        assert_eq!(v, serde_json::Value::String("insecure-bootstrap".into()));
     }
 
     #[test]

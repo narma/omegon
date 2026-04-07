@@ -216,7 +216,19 @@ enum Commands {
     /// Run interactive TUI session — ratatui-based terminal interface.
     Interactive,
 
+    /// Run a persistent local daemon/control-plane for long-lived agents and supervisors.
+    Serve {
+        /// Preferred localhost control port.
+        #[arg(long, default_value = "7842")]
+        control_port: u16,
+
+        /// Require the exact control port instead of auto-falling back.
+        #[arg(long)]
+        strict_port: bool,
+    },
+
     /// Run an embedded localhost control-plane for external supervisors.
+    #[command(hide = true)]
     Embedded {
         /// Preferred localhost control port.
         #[arg(long, default_value = "7842")]
@@ -454,6 +466,10 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(Commands::Interactive) => run_interactive_command(&cli).await,
+        Some(Commands::Serve {
+            control_port,
+            strict_port,
+        }) => run_embedded_command(control_port, strict_port).await,
         Some(Commands::Embedded {
             control_port,
             strict_port,

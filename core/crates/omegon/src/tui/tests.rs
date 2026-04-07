@@ -1831,6 +1831,8 @@ fn auspex_attach_payload_carries_startup_and_instance_metadata() {
                 ws_url: Some("ws://127.0.0.1:7842/ws?token=test".into()),
                 auth_mode: Some("ephemeral-bearer".into()),
                 auth_source: Some("generated".into()),
+                http_transport_security: Some(omegon_traits::OmegonTransportSecurity::InsecureBootstrap),
+                ws_transport_security: Some(omegon_traits::OmegonTransportSecurity::InsecureBootstrap),
             },
             runtime: omegon_traits::OmegonRuntime {
                 deployment_kind: omegon_traits::OmegonDeploymentKind::InteractiveTui,

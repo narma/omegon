@@ -317,6 +317,8 @@ pub fn project_instance_descriptor(
             ws_url: None,
             auth_mode: auth.as_ref().and_then(|(mode, _)| mode.clone()),
             auth_source: auth.as_ref().and_then(|(_, source)| source.clone()),
+            http_transport_security: None,
+            ws_transport_security: None,
         },
         runtime: OmegonRuntime {
             deployment_kind: OmegonDeploymentKind::InteractiveTui,

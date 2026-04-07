@@ -6,8 +6,8 @@
 use crate::status::HarnessStatus;
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
-use omegon_traits::OmegonInstanceDescriptor;
+use axum::http::{HeaderMap, StatusCode};
+use omegon_traits::{DaemonEventEnvelope, OmegonInstanceDescriptor};
 use serde::Serialize;
 
 use super::{ControlPlaneState, WebState};
@@ -141,6 +141,12 @@ pub struct ProbeResponse {
     pub state: ControlPlaneState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct EventAccepted {
+    pub accepted: bool,
+    pub queued_events: usize,
+}
+
 /// GET /api/startup — machine-readable dashboard startup/discovery metadata.
 pub async fn get_startup(
     State(state): State<WebState>,
@@ -196,6 +202,48 @@ pub async fn get_ready(State(state): State<WebState>) -> (StatusCode, Json<Probe
             Json(ProbeResponse {
                 ok: false,
                 state: ControlPlaneState::Failed,
+            }),
+        ),
+    }
+}
+
+/// POST /api/events — authenticated local event ingress for daemon/runtime triggers.
+pub async fn post_event(
+    State(state): State<WebState>,
+    headers: HeaderMap,
+    Json(event): Json<DaemonEventEnvelope>,
+) -> (StatusCode, Json<EventAccepted>) {
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "));
+    if !state.web_auth.verify_query_token(bearer) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(EventAccepted {
+                accepted: false,
+                queued_events: 0,
+            }),
+        );
+    }
+
+    match state.daemon_events.lock() {
+        Ok(mut queue) => {
+            queue.push(event);
+            let queued_events = queue.len();
+            (
+                StatusCode::ACCEPTED,
+                Json(EventAccepted {
+                    accepted: true,
+                    queued_events,
+                }),
+            )
+        }
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(EventAccepted {
+                accepted: false,
+                queued_events: 0,
             }),
         ),
     }
@@ -559,6 +607,7 @@ mod tests {
             control_plane_state: std::sync::Arc::new(std::sync::Mutex::new(
                 ControlPlaneState::Ready,
             )),
+            daemon_events: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -637,6 +686,46 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(payload.ok);
         assert_eq!(payload.state, ControlPlaneState::Ready);
+    }
+
+    #[tokio::test]
+    async fn post_event_requires_bearer_token() {
+        let headers = HeaderMap::new();
+        let event = DaemonEventEnvelope {
+            event_id: "evt-1".into(),
+            source: "manual/test".into(),
+            trigger_kind: "manual".into(),
+            payload: serde_json::json!({"ok": true}),
+        };
+        let (status, Json(payload)) = post_event(
+            axum::extract::State(test_state()),
+            headers,
+            Json(event),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(!payload.accepted);
+    }
+
+    #[tokio::test]
+    async fn post_event_accepts_valid_bearer_token() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            axum::http::HeaderValue::from_static("Bearer test"),
+        );
+        let state = test_state();
+        let event = DaemonEventEnvelope {
+            event_id: "evt-1".into(),
+            source: "manual/test".into(),
+            trigger_kind: "manual".into(),
+            payload: serde_json::json!({"ok": true}),
+        };
+        let (status, Json(payload)) = post_event(axum::extract::State(state.clone()), headers, Json(event)).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+        assert!(payload.accepted);
+        assert_eq!(payload.queued_events, 1);
+        assert_eq!(state.daemon_events.lock().unwrap().len(), 1);
     }
 
     #[test]

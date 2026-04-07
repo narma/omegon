@@ -23,7 +23,10 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::tui::dashboard::DashboardHandles;
 pub use auth::{WEB_AUTH_SECRET_NAME, WebAuthSource, WebAuthState};
-use omegon_traits::{IpcHarnessSnapshot, IpcHealthSnapshot, IpcHealthState, IpcMemorySnapshot};
+use omegon_traits::{
+    DaemonEventEnvelope, IpcHarnessSnapshot, IpcHealthSnapshot, IpcHealthState,
+    IpcMemorySnapshot, OmegonTransportSecurity,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -165,6 +168,8 @@ fn project_web_instance(
     instance.control_plane.ws_url = Some(startup.ws_url.clone());
     instance.control_plane.auth_mode = Some(startup.auth_mode.clone());
     instance.control_plane.auth_source = Some(startup.auth_source.clone());
+    instance.control_plane.http_transport_security = Some(OmegonTransportSecurity::InsecureBootstrap);
+    instance.control_plane.ws_transport_security = Some(OmegonTransportSecurity::InsecureBootstrap);
     instance
 }
 
@@ -183,6 +188,8 @@ pub struct WebState {
     pub startup_info: Arc<Mutex<Option<WebStartupInfo>>>,
     /// Control-plane lifecycle state for machine health/readiness probes.
     pub control_plane_state: Arc<Mutex<ControlPlaneState>>,
+    /// Received daemon/event-ingress envelopes (v1 in-memory queue).
+    pub daemon_events: Arc<Mutex<Vec<DaemonEventEnvelope>>>,
 }
 
 impl WebState {
@@ -211,6 +218,7 @@ impl WebState {
             web_auth: Arc::new(auth_state),
             startup_info: Arc::new(Mutex::new(None)),
             control_plane_state: Arc::new(Mutex::new(ControlPlaneState::Starting)),
+            daemon_events: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -258,6 +266,7 @@ pub async fn start_server_with_options(
         .route("/api/healthz", axum::routing::get(api::get_health))
         .route("/api/readyz", axum::routing::get(api::get_ready))
         .route("/api/graph", axum::routing::get(api::get_graph))
+        .route("/api/events", axum::routing::post(api::post_event))
         .route("/ws", axum::routing::get(ws::ws_handler))
         .route("/", axum::routing::get(serve_dashboard))
         .layer(
@@ -423,6 +432,15 @@ mod tests {
         assert_eq!(startup.ready_url, "http://127.0.0.1:7842/api/readyz");
         assert_eq!(startup.ws_url, "ws://127.0.0.1:7842/ws?token=token-123");
         assert_eq!(startup.control_plane_state, ControlPlaneState::Ready);
+        let descriptor = project_web_instance(&state.handles, &startup);
+        assert_eq!(
+            descriptor.control_plane.http_transport_security,
+            Some(OmegonTransportSecurity::InsecureBootstrap)
+        );
+        assert_eq!(
+            descriptor.control_plane.ws_transport_security,
+            Some(OmegonTransportSecurity::InsecureBootstrap)
+        );
     }
 
     #[tokio::test]
