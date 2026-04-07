@@ -4137,6 +4137,7 @@ impl App {
                 }
             }
             AgentEvent::ThinkingChunk { text } => {
+                self.instrument_panel.note_thinking_activity();
                 let was_streaming = self.conversation.is_streaming();
                 self.conversation.append_thinking(&text);
                 if !was_streaming {

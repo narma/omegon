@@ -356,6 +356,9 @@ pub struct InstrumentPanel {
     thinking_level_pct: f64,
     thinking_active: bool,
     thinking_intensity: f64,
+    /// Countdown refreshed by real ThinkingChunk events so runtime phase reflects
+    /// actual provider reasoning activity, not just configured budget.
+    thinking_recent_ttl: f64,
     external_wait: f64,
     minds: Vec<MindState>,
     tools: Vec<ToolEntry>,
@@ -386,6 +389,7 @@ impl Default for InstrumentPanel {
             thinking_level_pct: 0.0,
             thinking_active: false,
             thinking_intensity: 0.0,
+            thinking_recent_ttl: 0.0,
             external_wait: 0.0,
             minds: vec![
                 MindState::new("project", true),
@@ -669,12 +673,12 @@ impl InstrumentPanel {
 
     fn activity_mode(&self) -> ActivityMode {
         let tool_load = self.active_tool_load();
-        if self.external_wait > 0.05 {
-            ActivityMode::Waiting
-        } else if self.thinking_active && self.thinking_level_pct > 0.0 {
-            ActivityMode::Thinking
-        } else if tool_load > 0.05 {
+        if tool_load > 0.05 {
             ActivityMode::ToolChurn
+        } else if self.thinking_active {
+            ActivityMode::Thinking
+        } else if self.external_wait > 0.05 {
+            ActivityMode::Waiting
         } else {
             ActivityMode::Idle
         }
@@ -785,7 +789,7 @@ impl InstrumentPanel {
         // Context: true 0–100% fill, clamped.
         self.context_fill = (context_pct as f64 / 100.0).clamp(0.0, 1.0);
 
-        // Thinking static fill — reflects the setting level, not animated intensity
+        // Thinking static fill — reflects the configured budget, not live phase.
         self.thinking_level_pct = match thinking_level {
             "high" => 1.0,
             "medium" => 0.60,
@@ -794,8 +798,8 @@ impl InstrumentPanel {
             _ => 0.0,
         };
 
-        // Thinking: active only during inference when a thinking budget is configured.
-        self.thinking_active = agent_active && self.thinking_level_pct > 0.0;
+        self.thinking_recent_ttl = (self.thinking_recent_ttl - dt).clamp(0.0, 1.0);
+        self.thinking_active = agent_active && self.thinking_recent_ttl > 0.0;
         let target = if self.thinking_active {
             match thinking_level {
                 "high" => 0.85,
@@ -809,7 +813,8 @@ impl InstrumentPanel {
         };
         self.thinking_intensity += (target - self.thinking_intensity) * dt * 3.0;
 
-        self.external_wait = if agent_active && !self.thinking_active {
+        let tool_load = self.active_tool_load();
+        self.external_wait = if agent_active && !self.thinking_active && tool_load <= 0.05 {
             (self.external_wait + dt * 1.8).clamp(0.0, 1.0)
         } else {
             (self.external_wait - dt * 1.2).clamp(0.0, 1.0)
@@ -855,6 +860,10 @@ impl InstrumentPanel {
                     Some(((self.time - started_at).max(0.0) * 1_000.0).round() as u64);
             }
         }
+    }
+
+    pub fn note_thinking_activity(&mut self) {
+        self.thinking_recent_ttl = 0.75;
     }
 
     pub fn toggle_focus(&mut self) {
@@ -2269,19 +2278,27 @@ mod tests {
     }
 
     #[test]
-    fn thinking_activity_mode_beats_tool_churn() {
+    fn configured_thinking_budget_does_not_imply_runtime_thinking_phase() {
         let mut panel = InstrumentPanel::default();
-        panel.update_telemetry(
-            40.0,
-            200_000,
-            Some("bash"),
-            false,
-            "high",
-            None,
-            true,
-            0.016,
-        );
+        panel.update_telemetry(40.0, 200_000, None, false, "high", None, true, 0.016);
+        assert_ne!(panel.activity_mode(), ActivityMode::Thinking);
+    }
+
+    #[test]
+    fn runtime_thinking_phase_requires_actual_thinking_activity() {
+        let mut panel = InstrumentPanel::default();
+        panel.note_thinking_activity();
+        panel.update_telemetry(40.0, 200_000, None, false, "high", None, true, 0.016);
         assert_eq!(panel.activity_mode(), ActivityMode::Thinking);
+    }
+
+    #[test]
+    fn tool_churn_beats_runtime_thinking_phase() {
+        let mut panel = InstrumentPanel::default();
+        panel.note_thinking_activity();
+        panel.tool_started("bash");
+        panel.update_telemetry(40.0, 200_000, Some("bash"), false, "high", None, true, 0.016);
+        assert_eq!(panel.activity_mode(), ActivityMode::ToolChurn);
     }
 
     #[test]
@@ -2408,6 +2425,7 @@ mod tests {
             },
             200_000,
         );
+        panel.note_thinking_activity();
         panel.update_telemetry(
             68.0,
             200_000,
@@ -2664,5 +2682,15 @@ impl InstrumentPanel {
     #[cfg(test)]
     pub fn debug_mind_fact_count(&self, idx: usize) -> Option<usize> {
         self.minds.get(idx).map(|mind| mind.fact_count)
+    }
+
+    #[cfg(test)]
+    pub fn debug_activity_mode(&self) -> &'static str {
+        match self.activity_mode() {
+            ActivityMode::Idle => "idle",
+            ActivityMode::Thinking => "think",
+            ActivityMode::ToolChurn => "tool",
+            ActivityMode::Waiting => "wait",
+        }
     }
 }

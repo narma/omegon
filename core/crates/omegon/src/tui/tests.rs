@@ -2478,6 +2478,53 @@ fn recovery_hint_no_match() {
 }
 
 #[test]
+fn thinking_chunk_marks_runtime_phase_as_thinking() {
+    let mut app = test_app();
+
+    app.handle_agent_event(AgentEvent::TurnStart { turn: 1 });
+    app.handle_agent_event(AgentEvent::ContextUpdated {
+        tokens: 80_000,
+        context_window: 200_000,
+        context_class: "Squad".into(),
+        thinking_level: "high".into(),
+    });
+    app.handle_agent_event(AgentEvent::ThinkingChunk {
+        text: "deliberating".into(),
+    });
+
+    app.instrument_panel
+        .update_telemetry(40.0, 200_000, None, false, "high", None, true, 0.016);
+
+    assert_eq!(app.instrument_panel.debug_activity_mode(), "think");
+}
+
+#[test]
+fn active_tool_phase_beats_runtime_thinking_in_tui() {
+    let mut app = test_app();
+
+    app.handle_agent_event(AgentEvent::TurnStart { turn: 1 });
+    app.handle_agent_event(AgentEvent::ContextUpdated {
+        tokens: 80_000,
+        context_window: 200_000,
+        context_class: "Squad".into(),
+        thinking_level: "high".into(),
+    });
+    app.handle_agent_event(AgentEvent::ThinkingChunk {
+        text: "deliberating".into(),
+    });
+    app.handle_agent_event(AgentEvent::ToolStart {
+        id: "tool-1".into(),
+        name: "bash".into(),
+        args: serde_json::json!({"command": "pwd"}),
+    });
+
+    app.instrument_panel
+        .update_telemetry(40.0, 200_000, Some("bash"), false, "high", None, true, 0.016);
+
+    assert_eq!(app.instrument_panel.debug_activity_mode(), "tool");
+}
+
+#[test]
 fn tool_end_aggregates_all_text_blocks() {
     let mut app = test_app();
     app.handle_agent_event(AgentEvent::ToolStart {
