@@ -3069,6 +3069,29 @@ mod tests {
     }
 
     #[test]
+    fn serve_command_parses_control_plane_flags() {
+        let cli = Cli::try_parse_from(vec![
+            "omegon",
+            "serve",
+            "--control-port",
+            "7842",
+            "--strict-port",
+        ])
+        .expect("should parse serve command");
+
+        match cli.command.unwrap() {
+            Commands::Serve {
+                control_port,
+                strict_port,
+            } => {
+                assert_eq!(control_port, 7842);
+                assert!(strict_port);
+            }
+            _ => panic!("Expected Serve command"),
+        }
+    }
+
+    #[test]
     fn auth_login_help_lists_all_supported_non_oauth_providers() {
         let mut cmd = Cli::command();
         let auth_cmd = cmd

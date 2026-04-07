@@ -10,6 +10,9 @@ priority: 1
 
 # Auspex native IPC contract — Omegon-side v1
 
+See also [[auspex-omegon-launch-contract]] for the process-launch and startup
+readiness contract Auspex should use before IPC attach.
+
 ## Scope
 
 This document defines the **native host IPC contract** between Omegon (server)
