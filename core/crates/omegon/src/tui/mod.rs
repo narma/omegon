@@ -177,7 +177,9 @@ pub struct App {
     cleave_tokens_accounted_out: u64,
     /// Turn counter for throttled dashboard refresh.
     dashboard_refresh_turn: u32,
-    /// Web dashboard server address (if running).
+    /// Web dashboard server startup payload (if running).
+    web_startup: Option<crate::web::WebStartupInfo>,
+    /// Parsed web dashboard socket address (legacy/debug convenience).
     web_server_addr: Option<std::net::SocketAddr>,
     /// Prompt queued while agent was busy — sent on next AgentEnd.
     queued_prompt: Option<(String, Vec<std::path::PathBuf>)>,
@@ -295,11 +297,29 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
 }
 
 /// Compute dynamic editor height from the editor's wrapped visual rows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AuspexProbe {
+    target: String,
+    source: &'static str,
+    compatibility: AuspexCompatibility,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum AuspexCompatibility {
+    Unknown,
+    Compatible,
+    Incompatible(String),
+}
+
 fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::Result<String> {
-    let target = detect_auspex_target().ok_or_else(|| {
+    let probe = detect_auspex_target().ok_or_else(|| {
         anyhow::anyhow!("Auspex not detected. Set AUSPEX_BIN or install Auspex first.")
     })?;
+    if let AuspexCompatibility::Incompatible(reason) = &probe.compatibility {
+        anyhow::bail!("Auspex detected at {} but is not compatible: {reason}", probe.target);
+    }
 
+    let target = probe.target;
     let mut command = if let Some(explicit) = target.strip_prefix("AUSPEX_BIN=") {
         std::process::Command::new(explicit)
     } else if target.ends_with(".app") {
@@ -317,10 +337,12 @@ fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::R
         std::process::Command::new(target.clone())
     };
 
+    let attach_payload = build_auspex_attach_payload(startup)?;
     command
         .env("AUSPEX_OMEGON_STARTUP_URL", startup.startup_url.clone())
         .env("AUSPEX_OMEGON_WS_URL", startup.ws_url.clone())
         .env("AUSPEX_OMEGON_WS_TOKEN", startup.token.clone())
+        .env("AUSPEX_OMEGON_ATTACH_JSON", attach_payload.clone())
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
@@ -336,23 +358,78 @@ fn launch_auspex_with_startup(startup: &crate::web::WebStartupInfo) -> anyhow::R
         command
             .arg("--env")
             .arg(format!("AUSPEX_OMEGON_WS_TOKEN={}", startup.token));
+        command
+            .arg("--env")
+            .arg(format!("AUSPEX_OMEGON_ATTACH_JSON={attach_payload}"));
     }
 
     command.spawn()?;
     Ok(target)
 }
 
+fn build_auspex_attach_payload(startup: &crate::web::WebStartupInfo) -> anyhow::Result<String> {
+    let payload = serde_json::json!({
+        "version": 1,
+        "transport": "omegon-ipc",
+        "startup_url": startup.startup_url,
+        "http_base": startup.http_base,
+        "ws_url": startup.ws_url,
+        "ws_token": startup.token,
+        "instance": startup.instance_descriptor,
+    });
+    serde_json::to_string(&payload).map_err(Into::into)
+}
+
+fn probe_auspex_compatibility(target: &str) -> AuspexCompatibility {
+    if target.ends_with(".app") {
+        return AuspexCompatibility::Unknown;
+    }
+    let bin = target.strip_prefix("AUSPEX_BIN=").unwrap_or(target);
+    let output = std::process::Command::new(bin)
+        .arg("--omegon-compat")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return AuspexCompatibility::Unknown;
+    };
+    if !output.status.success() {
+        return AuspexCompatibility::Unknown;
+    }
+    let body = String::from_utf8_lossy(&output.stdout);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) else {
+        return AuspexCompatibility::Unknown;
+    };
+    let Some(protocol) = value.get("omegon_ipc_protocol").and_then(|v| v.as_u64()) else {
+        return AuspexCompatibility::Unknown;
+    };
+    if protocol == omegon_traits::IPC_PROTOCOL_VERSION as u64 {
+        AuspexCompatibility::Compatible
+    } else {
+        AuspexCompatibility::Incompatible(format!(
+            "reported omegon_ipc_protocol={protocol}, expected {}",
+            omegon_traits::IPC_PROTOCOL_VERSION
+        ))
+    }
+}
+
 fn path_contains_executable(candidate: &std::path::Path) -> bool {
     candidate.is_file()
 }
 
-fn detect_auspex_target() -> Option<String> {
+fn detect_auspex_target() -> Option<AuspexProbe> {
     if let Ok(explicit) = std::env::var("AUSPEX_BIN") {
         let trimmed = explicit.trim();
         if !trimmed.is_empty() {
             let path = std::path::Path::new(trimmed);
             if path_contains_executable(path) {
-                return Some(format!("AUSPEX_BIN={trimmed}"));
+                let target = format!("AUSPEX_BIN={trimmed}");
+                return Some(AuspexProbe {
+                    compatibility: probe_auspex_compatibility(&target),
+                    target,
+                    source: "env",
+                });
             }
         }
     }
@@ -361,7 +438,12 @@ fn detect_auspex_target() -> Option<String> {
         for entry in std::env::split_paths(&path_env) {
             let candidate = entry.join("auspex");
             if path_contains_executable(&candidate) {
-                return Some(candidate.display().to_string());
+                let target = candidate.display().to_string();
+                return Some(AuspexProbe {
+                    compatibility: probe_auspex_compatibility(&target),
+                    target,
+                    source: "path",
+                });
             }
         }
     }
@@ -370,7 +452,11 @@ fn detect_auspex_target() -> Option<String> {
     {
         let app_bundle = std::path::Path::new("/Applications/Auspex.app");
         if app_bundle.exists() {
-            return Some(app_bundle.display().to_string());
+            return Some(AuspexProbe {
+                compatibility: AuspexCompatibility::Unknown,
+                target: app_bundle.display().to_string(),
+                source: "app-bundle",
+            });
         }
     }
 
@@ -411,11 +497,24 @@ impl App {
             crate::ipc::IpcServerConfig::from_cwd(&cwd, env!("CARGO_PKG_VERSION"), "status-probe");
         let socket_exists = ipc_cfg.socket_path.exists();
         let dash_status = self
-            .web_server_addr
-            .map(|addr| format!("running at http://{addr}"))
+            .web_startup
+            .as_ref()
+            .map(|startup| format!("running at {}", startup.http_base))
             .unwrap_or_else(|| "not running".into());
         let auspex_status = detect_auspex_target()
-            .map(|target| format!("detected ({target})"))
+            .map(|probe| {
+                let compatibility = match probe.compatibility {
+                    AuspexCompatibility::Compatible => "compatible".to_string(),
+                    AuspexCompatibility::Unknown => "unverified".to_string(),
+                    AuspexCompatibility::Incompatible(reason) => {
+                        format!("incompatible ({reason})")
+                    }
+                };
+                format!(
+                    "{} (source: {}, {})",
+                    probe.target, probe.source, compatibility
+                )
+            })
             .unwrap_or_else(|| "not detected".into());
 
         format!(
@@ -480,6 +579,7 @@ impl App {
             cleave_tokens_accounted_in: 0,
             cleave_tokens_accounted_out: 0,
             dashboard_refresh_turn: u32::MAX, // force refresh on first frame
+            web_startup: None,
             web_server_addr: None,
             queued_prompt: None,
             operator_events: std::collections::VecDeque::new(),
@@ -3152,25 +3252,10 @@ impl App {
                 match args {
                     "" | "status" => SlashResult::Display(self.auspex_status_text()),
                     "open" => {
-                        if let Some(addr) = self.web_server_addr {
-                            let startup = crate::web::WebStartupInfo {
-                                schema_version: 2,
-                                addr: addr.to_string(),
-                                http_base: format!("http://{addr}"),
-                                state_url: format!("http://{addr}/api/state"),
-                                startup_url: format!("http://{addr}/api/startup"),
-                                health_url: format!("http://{addr}/api/healthz"),
-                                ready_url: format!("http://{addr}/api/readyz"),
-                                ws_url: format!("ws://{addr}/ws"),
-                                token: String::new(),
-                                auth_mode: "unknown".into(),
-                                auth_source: "tui-cached".into(),
-                                control_plane_state: crate::web::ControlPlaneState::Ready,
-                                instance_descriptor: None,
-                            };
-                            match launch_auspex_with_startup(&startup) {
+                        if let Some(ref startup) = self.web_startup {
+                            match launch_auspex_with_startup(startup) {
                                 Ok(target) => SlashResult::Display(format!(
-                                    "Launching Auspex via the primary local desktop handoff ({target}).\n\nThis path currently bootstraps Auspex from Omegon's embedded startup URL. `/dash` remains the compatibility/debug browser path while native IPC attach is completed."
+                                    "Launching Auspex via the primary local desktop handoff ({target}).\n\nThis path currently bootstraps Auspex from Omegon's embedded startup payload. `/dash` remains the compatibility/debug browser path while native IPC attach is completed."
                                 )),
                                 Err(e) => SlashResult::Display(format!("Failed to launch Auspex: {e}")),
                             }
@@ -4147,6 +4232,7 @@ impl App {
                     && let Ok(addr) = startup.addr.parse()
                 {
                     self.web_server_addr = Some(addr);
+                    self.web_startup = Some(startup);
                 }
             }
             AgentEvent::SystemNotification { message } => {

@@ -1712,6 +1712,7 @@ fn slash_auspex_status_reports_attach_metadata() {
     assert!(text.contains("protocol: v1"), "got: {text}");
     assert!(text.contains("ipc.sock"), "got: {text}");
     assert!(text.contains("session id: not yet exposed"), "got: {text}");
+    assert!(text.contains("Auspex\n  app:"), "got: {text}");
     assert!(
         text.contains("Use `/auspex open` as the primary local desktop handoff"),
         "got: {text}"
@@ -1764,6 +1765,89 @@ fn web_dashboard_started_event_updates_cached_addr() {
         app.web_server_addr.map(|addr| addr.to_string()),
         Some("127.0.0.1:7842".into())
     );
+    assert_eq!(
+        app.web_startup.as_ref().map(|startup| startup.token.as_str()),
+        Some("test")
+    );
+    assert_eq!(
+        app.web_startup
+            .as_ref()
+            .map(|startup| startup.ws_url.as_str()),
+        Some("ws://127.0.0.1:7842/ws?token=test")
+    );
+}
+
+#[test]
+fn auspex_attach_payload_carries_startup_and_instance_metadata() {
+    let startup = crate::web::WebStartupInfo {
+        schema_version: 2,
+        addr: "127.0.0.1:7842".into(),
+        http_base: "http://127.0.0.1:7842".into(),
+        state_url: "http://127.0.0.1:7842/api/state".into(),
+        startup_url: "http://127.0.0.1:7842/api/startup".into(),
+        health_url: "http://127.0.0.1:7842/api/healthz".into(),
+        ready_url: "http://127.0.0.1:7842/api/readyz".into(),
+        ws_url: "ws://127.0.0.1:7842/ws?token=test".into(),
+        token: "test".into(),
+        auth_mode: "ephemeral-bearer".into(),
+        auth_source: "generated".into(),
+        control_plane_state: crate::web::ControlPlaneState::Ready,
+        instance_descriptor: Some(omegon_traits::OmegonInstanceDescriptor {
+            schema_version: 1,
+            identity: omegon_traits::OmegonIdentity {
+                instance_id: "instance-1".into(),
+                workspace_id: "workspace-1".into(),
+                session_id: "session-1".into(),
+                role: omegon_traits::OmegonRole::PrimaryDriver,
+                profile: "primary-interactive".into(),
+            },
+            ownership: omegon_traits::OmegonOwnership {
+                owner_kind: omegon_traits::OmegonOwnerKind::Operator,
+                owner_id: "local-terminal".into(),
+                parent_instance_id: None,
+            },
+            placement: omegon_traits::OmegonPlacement {
+                kind: omegon_traits::OmegonPlacementKind::LocalProcess,
+                host: Some("localhost".into()),
+                pid: Some(12345),
+                cwd: "/tmp/project".into(),
+                namespace: None,
+                pod_name: None,
+                container_name: None,
+            },
+            control_plane: omegon_traits::OmegonControlPlane {
+                server_instance_id: "instance-1".into(),
+                protocol_version: 1,
+                schema_version: 1,
+                omegon_version: "0.15.10-rc.34".into(),
+                capabilities: vec!["state.snapshot".into(), "events.stream".into()],
+                ipc_socket_path: Some("/tmp/project/.omegon/ipc.sock".into()),
+                http_base: Some("http://127.0.0.1:7842".into()),
+                startup_url: Some("http://127.0.0.1:7842/api/startup".into()),
+                state_url: Some("http://127.0.0.1:7842/api/state".into()),
+                ws_url: Some("ws://127.0.0.1:7842/ws?token=test".into()),
+                auth_mode: Some("ephemeral-bearer".into()),
+                auth_source: Some("generated".into()),
+            },
+            runtime: omegon_traits::OmegonRuntime {
+                deployment_kind: omegon_traits::OmegonDeploymentKind::InteractiveTui,
+                health: omegon_traits::OmegonRuntimeHealth::Ready,
+                provider_ok: true,
+                memory_ok: true,
+                cleave_available: true,
+                context_class: Some("Squad".into()),
+                thinking_level: Some("Medium".into()),
+                capability_tier: Some("victory".into()),
+            },
+        }),
+    };
+
+    let payload = super::build_auspex_attach_payload(&startup).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&payload).unwrap();
+    assert_eq!(json["transport"], "omegon-ipc");
+    assert_eq!(json["startup_url"], "http://127.0.0.1:7842/api/startup");
+    assert_eq!(json["ws_token"], "test");
+    assert_eq!(json["instance"]["identity"]["instance_id"], "instance-1");
 }
 
 #[test]
