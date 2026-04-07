@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 35,
+    "rc_count": 36,
     "notes": [
       "feat(auspex): add mode-aware local handoff probe",
       "feat(auspex): launch desktop handoff from cached startup payload",
@@ -440,6 +440,7 @@
       "feat(otel-research): Research whether OpenTelemetry is an appropriate fit for the harness. Compare current telemetry needs against OpenTelemetry capabilities, integration cost, likely benefits, and adoption risks for this project.",
       "feat(patch): Implement the inference panel legend layout fix in the TUI code, add/update focused tests, run targeted and relevant validation, and leave the repo ready to commit.",
       "feat(patch): Implement the operator-first engine panel cleanup in core/crates/omegon/src/tui/footer.rs, update any relevant tests/snapshots in tui tests, run focused validations plus full suite, and leave the repo clean for release.",
+      "feat(primitives): Audit shared TUI rendering primitives and low-level drawing helpers for overdraw, underdraw, clipping, stale-cell retention, wide-glyph handling, and transparent/background issues that could leak terminal content behind the UI. Fix confirmed defects and add focused tests.",
       "feat(providers): wire ollama-cloud through runtime routing",
       "feat(runtime): add daemon event-ingress skeleton",
       "feat(runtime): surface child runtime metadata in daemon status",
@@ -484,6 +485,8 @@
       "fix(telemetry): format provider usage by active backend",
       "fix(tui): align footer context state with inference composition",
       "fix(tui): calm inference activity row glyphs",
+      "fix(tui): clear footer surfaces before repaint",
+      "fix(tui): clear overlay bodies when popup content shrinks",
       "fix(tui): clip tool rows to panel width",
       "fix(tui): harden cleave panel against border glyph leakage",
       "fix(tui): keep thinking telemetry in blue family",
@@ -491,6 +494,7 @@
       "fix(tui): make inference activity glyphs explicit",
       "fix(tui): make inference legend composition-only",
       "fix(tui): make tool rows width-aware and clear border-adjacent cells",
+      "fix(tui): reflect runtime activity in inference bar",
       "fix(tui): remove /clear and deduplicate slash palette commands",
       "fix(tui): remove fake tools context bucket",
       "fix(tui): remove unused widget renderer test import",
@@ -515,9 +519,10 @@
       "fix(web): render markdown tables in dashboard tool output",
       "fix(web): return structured slash results to dashboard clients",
       "refactor(tui): make /auspex open the primary browser launch path",
+      "refactor(tui): remove activity-row phase labels",
       "refactor(tui): simplify slash command auth and context paths"
     ],
-    "rc_version": "0.15.10-rc.35",
-    "last_rc": "2026-04-07T17:32:23Z"
+    "rc_version": "0.15.10-rc.36",
+    "last_rc": "2026-04-07T19:17:08Z"
   }
 }
