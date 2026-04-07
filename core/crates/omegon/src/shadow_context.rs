@@ -229,23 +229,55 @@ impl ShadowContext {
                 .then_with(|| a.id.cmp(&b.id))
         });
 
+        let candidate_audit = ordered
+            .iter()
+            .map(|entry| {
+                format!(
+                    "{} kind={:?} tier={} prio={} rel={:.3} rec={:.3} tok={} score={:.3}",
+                    entry.id,
+                    entry.kind,
+                    entry.kind.tier(),
+                    entry.priority,
+                    entry.relevance,
+                    entry.recency,
+                    entry.token_estimate,
+                    entry.combined_score(),
+                )
+            })
+            .collect::<Vec<_>>();
+
         tracing::debug!(
             turn,
             budget,
             candidate_count = ordered.len(),
             requested_class = %self.selector_policy.requested_class.short(),
             actual_class = %self.selector_policy.actual_class().short(),
+            candidates = ?candidate_audit,
             "shadow_context: selection starting"
         );
 
         let mut total_tokens = 0usize;
         let mut selected_ids = Vec::new();
+        let mut dropped_ids = Vec::new();
 
         for entry in ordered {
             if entry.kind.tier() == 0 || entry.mandatory || entry.pinned {
                 total_tokens += entry.token_estimate;
                 entry.last_included_turn = Some(turn);
                 selected_ids.push(entry.id.clone());
+                tracing::debug!(
+                    id = %entry.id,
+                    kind = ?entry.kind,
+                    priority = entry.priority,
+                    relevance = entry.relevance,
+                    recency = entry.recency,
+                    tokens = entry.token_estimate,
+                    score = entry.combined_score(),
+                    selected = true,
+                    reason = "mandatory_or_pinned",
+                    running_total = total_tokens,
+                    "shadow_context: entry decision"
+                );
                 continue;
             }
 
@@ -253,6 +285,34 @@ impl ShadowContext {
                 total_tokens += entry.token_estimate;
                 entry.last_included_turn = Some(turn);
                 selected_ids.push(entry.id.clone());
+                tracing::debug!(
+                    id = %entry.id,
+                    kind = ?entry.kind,
+                    priority = entry.priority,
+                    relevance = entry.relevance,
+                    recency = entry.recency,
+                    tokens = entry.token_estimate,
+                    score = entry.combined_score(),
+                    selected = true,
+                    reason = "fits_budget",
+                    running_total = total_tokens,
+                    "shadow_context: entry decision"
+                );
+            } else {
+                dropped_ids.push(entry.id.clone());
+                tracing::debug!(
+                    id = %entry.id,
+                    kind = ?entry.kind,
+                    priority = entry.priority,
+                    relevance = entry.relevance,
+                    recency = entry.recency,
+                    tokens = entry.token_estimate,
+                    score = entry.combined_score(),
+                    selected = false,
+                    reason = "over_budget",
+                    running_total = total_tokens,
+                    "shadow_context: entry decision"
+                );
             }
         }
 
@@ -260,8 +320,10 @@ impl ShadowContext {
             turn,
             budget,
             selected = selected_ids.len(),
+            dropped = dropped_ids.len(),
             total_tokens,
             selected_ids = ?selected_ids,
+            dropped_ids = ?dropped_ids,
             "shadow_context: selection complete"
         );
 
