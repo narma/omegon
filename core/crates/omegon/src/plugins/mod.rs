@@ -25,6 +25,24 @@ use manifest::PluginManifest;
 use omegon_traits::Feature;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, Default)]
+pub struct PluginSelectionFilter {
+    pub enabled_extensions: Vec<String>,
+    pub disabled_extensions: Vec<String>,
+}
+
+impl PluginSelectionFilter {
+    pub fn allows(&self, plugin_name: &str) -> bool {
+        if self.disabled_extensions.iter().any(|name| name == plugin_name) {
+            return false;
+        }
+        if self.enabled_extensions.is_empty() {
+            return true;
+        }
+        self.enabled_extensions.iter().any(|name| name == plugin_name)
+    }
+}
+
 /// Discover and load active plugins for the given working directory.
 /// Returns a list of Features ready to register with the EventBus.
 ///
@@ -34,7 +52,15 @@ pub async fn discover_plugins(
     cwd: &Path,
     secrets: Option<&omegon_secrets::SecretsManager>,
 ) -> Vec<Box<dyn omegon_traits::Feature>> {
-    let plugin_dirs = plugin_search_paths();
+    discover_plugins_filtered(cwd, secrets, &PluginSelectionFilter::default()).await
+}
+
+pub async fn discover_plugins_filtered(
+    cwd: &Path,
+    secrets: Option<&omegon_secrets::SecretsManager>,
+    filter: &PluginSelectionFilter,
+) -> Vec<Box<dyn omegon_traits::Feature>> {
+    let plugin_dirs = plugin_search_paths(cwd);
     let mut features: Vec<Box<dyn omegon_traits::Feature>> = Vec::new();
 
     for dir in &plugin_dirs {
@@ -50,6 +76,10 @@ pub async fn discover_plugins(
         for entry in entries.flatten() {
             let plugin_dir = entry.path();
             if !plugin_dir.is_dir() {
+                continue;
+            }
+            let plugin_name = entry.file_name().to_string_lossy().to_string();
+            if !filter.allows(&plugin_name) {
                 continue;
             }
 
@@ -226,7 +256,7 @@ async fn discover_project_mcp_servers(
 }
 
 /// Search paths for plugin directories (in priority order).
-fn plugin_search_paths() -> Vec<PathBuf> {
+fn plugin_search_paths(cwd: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
 
     // 1. ~/.omegon/plugins/ (user-level)
@@ -234,10 +264,8 @@ fn plugin_search_paths() -> Vec<PathBuf> {
         paths.push(home.join(".omegon").join("plugins"));
     }
 
-    // 2. .omegon/plugins/ (project-level)
-    if let Ok(cwd) = std::env::current_dir() {
-        paths.push(cwd.join(".omegon").join("plugins"));
-    }
+    // 2. <cwd>/.omegon/plugins/ (project-level for the targeted workspace)
+    paths.push(cwd.join(".omegon").join("plugins"));
 
     // 3. OMEGON_PLUGIN_DIR env var
     if let Ok(dir) = std::env::var("OMEGON_PLUGIN_DIR") {
@@ -256,6 +284,60 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let plugins = discover_plugins(dir.path(), None).await;
         assert!(plugins.is_empty());
+    }
+
+    #[tokio::test]
+    async fn discover_plugins_filtered_honors_enabled_extensions() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".marker"), "").unwrap();
+        let plugins_root = dir.path().join(".omegon").join("plugins");
+
+        let alpha = plugins_root.join("alpha");
+        std::fs::create_dir_all(&alpha).unwrap();
+        std::fs::write(
+            alpha.join("plugin.toml"),
+            r#"
+            [plugin]
+            name = "Alpha Plugin"
+            description = "Alpha test plugin"
+
+            [activation]
+            marker_files = [".marker"]
+
+            [[tools]]
+            name = "alpha_tool"
+            description = "does alpha"
+            endpoint = "http://localhost:9999/alpha"
+        "#,
+        )
+        .unwrap();
+        let beta = plugins_root.join("beta");
+        std::fs::create_dir_all(&beta).unwrap();
+        std::fs::write(
+            beta.join("plugin.toml"),
+            r#"
+            [plugin]
+            name = "Beta Plugin"
+            description = "Beta test plugin"
+
+            [activation]
+            marker_files = [".marker"]
+
+            [[tools]]
+            name = "beta_tool"
+            description = "does beta"
+            endpoint = "http://localhost:9999/beta"
+        "#,
+        )
+        .unwrap();
+
+        let filter = PluginSelectionFilter {
+            enabled_extensions: vec!["alpha".into()],
+            disabled_extensions: vec![],
+        };
+        let plugins = discover_plugins_filtered(dir.path(), None, &filter).await;
+        assert_eq!(plugins.len(), 1);
+        assert_eq!(plugins[0].name(), "Alpha Plugin");
     }
 
     /// Test helper: load a single plugin from a test directory using load_legacy_plugin.

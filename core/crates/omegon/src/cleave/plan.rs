@@ -32,6 +32,10 @@ pub struct CleaveChildRuntimeProfile {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enabled_extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_extensions: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preloaded_files: Vec<String>,
 }
 
@@ -143,6 +147,8 @@ mod tests {
                         "enabledTools": ["read", "bash"],
                         "disabledTools": ["web_search"],
                         "skills": ["rust", "security"],
+                        "enabledExtensions": ["scribe-rpc"],
+                        "disabledExtensions": ["legacy-http"],
                         "preloadedFiles": ["docs/spec.md"]
                     }
                 }
@@ -155,6 +161,8 @@ mod tests {
         assert_eq!(runtime.enabled_tools, vec!["read", "bash"]);
         assert_eq!(runtime.disabled_tools, vec!["web_search"]);
         assert_eq!(runtime.skills, vec!["rust", "security"]);
+        assert_eq!(runtime.enabled_extensions, vec!["scribe-rpc"]);
+        assert_eq!(runtime.disabled_extensions, vec!["legacy-http"]);
         assert_eq!(runtime.preloaded_files, vec!["docs/spec.md"]);
     }
 }

@@ -20,8 +20,9 @@ pub struct AvailablePlugin {
 pub fn scan_available() -> (Vec<AvailablePlugin>, Vec<AvailablePlugin>) {
     let mut personas = Vec::new();
     let mut tones = Vec::new();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    for dir in super::plugin_search_paths() {
+    for dir in super::plugin_search_paths(&cwd) {
         if !dir.is_dir() {
             continue;
         }

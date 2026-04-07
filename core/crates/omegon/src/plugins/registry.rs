@@ -118,19 +118,29 @@ impl PluginRegistry {
     ///
     /// Call once at session start. Silently skips missing directories.
     pub fn load_skills(&mut self, cwd: &std::path::Path) {
+        self.load_skills_subset(cwd, &[]);
+    }
+
+    /// Load only a named subset of skills from the canonical locations.
+    /// When `allowed` is empty, behaves like `load_skills` and loads all skills.
+    pub fn load_skills_subset(&mut self, cwd: &std::path::Path, allowed: &[String]) {
         let bundled = dirs::home_dir().map(|h| h.join(".omegon").join("skills"));
         let project = cwd.join(".omegon").join("skills");
         let dirs: Vec<std::path::PathBuf> = bundled
             .into_iter()
             .chain(std::iter::once(project))
             .collect();
-        self.loaded_skills = Self::load_from_dirs(&dirs);
+        self.loaded_skills = Self::load_from_dirs_filtered(&dirs, allowed);
     }
 
     /// Load skill content from an explicit list of directories.
     /// Used by `load_skills` in production and directly by tests to avoid
     /// reading from the real ~/.omegon/skills/ installation.
     fn load_from_dirs(dirs: &[std::path::PathBuf]) -> Vec<String> {
+        Self::load_from_dirs_filtered(dirs, &[])
+    }
+
+    fn load_from_dirs_filtered(dirs: &[std::path::PathBuf], allowed: &[String]) -> Vec<String> {
         let mut skills = Vec::new();
         for dir in dirs {
             if !dir.is_dir() {
@@ -142,6 +152,10 @@ impl PluginRegistry {
             };
             entries.sort_by_key(|e| e.file_name());
             for entry in entries {
+                let skill_name = entry.file_name().to_string_lossy().to_string();
+                if !allowed.is_empty() && !allowed.iter().any(|name| name == &skill_name) {
+                    continue;
+                }
                 let skill_file = entry.path().join("SKILL.md");
                 if let Ok(content) = std::fs::read_to_string(&skill_file) {
                     if !content.trim().is_empty() {
@@ -163,6 +177,11 @@ impl PluginRegistry {
     #[cfg(test)]
     fn load_skills_from_explicit(&mut self, dirs: &[std::path::PathBuf]) {
         self.loaded_skills = Self::load_from_dirs(dirs);
+    }
+
+    #[cfg(test)]
+    fn load_skills_subset_from_explicit(&mut self, dirs: &[std::path::PathBuf], allowed: &[String]) {
+        self.loaded_skills = Self::load_from_dirs_filtered(dirs, allowed);
     }
 
     /// Activate a persona. Replaces any previously active persona.
@@ -758,6 +777,27 @@ mod tests {
         let mut reg = PluginRegistry::new(LEX.into());
         reg.load_skills_from_explicit(&[tmp.path().join("skills")]);
         assert_eq!(reg.skill_count(), 0);
+    }
+
+    #[test]
+    fn load_skills_subset_filters_by_skill_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let rust_dir = tmp.path().join("skills").join("rust");
+        std::fs::create_dir_all(&rust_dir).unwrap();
+        std::fs::write(rust_dir.join("SKILL.md"), "# Rust\nUse cargo test.").unwrap();
+        let security_dir = tmp.path().join("skills").join("security");
+        std::fs::create_dir_all(&security_dir).unwrap();
+        std::fs::write(security_dir.join("SKILL.md"), "# Security\nValidate input.").unwrap();
+
+        let mut reg = PluginRegistry::new(LEX.into());
+        reg.load_skills_subset_from_explicit(
+            &[tmp.path().join("skills")],
+            &["security".to_string()],
+        );
+
+        let prompt = reg.build_system_prompt();
+        assert!(prompt.contains("Validate input."));
+        assert!(!prompt.contains("Use cargo test."));
     }
 
     #[test]

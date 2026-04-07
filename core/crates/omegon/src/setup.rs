@@ -411,7 +411,12 @@ impl AgentSetup {
         // ─── Persona system ────────────────────────────────────────────
         let mut persona_registry =
             crate::plugins::registry::PluginRegistry::new(crate::prompt::load_lex_imperialis());
-        persona_registry.load_skills(&cwd);
+        let child_skills = crate::parse_csv_env("OMEGON_CHILD_SKILLS");
+        if child_skills.is_empty() {
+            persona_registry.load_skills(&cwd);
+        } else {
+            persona_registry.load_skills_subset(&cwd, &child_skills);
+        }
         bus.register(Box::new(features::persona::PersonaFeature::new(
             persona_registry,
         )));
@@ -450,7 +455,16 @@ impl AgentSetup {
             };
 
         // ─── External plugins (TOML manifests) ────────────────────────
-        let plugins = crate::plugins::discover_plugins(&cwd, Some(secrets.as_ref())).await;
+        let plugin_filter = crate::plugins::PluginSelectionFilter {
+            enabled_extensions: crate::parse_csv_env("OMEGON_CHILD_ENABLED_EXTENSIONS"),
+            disabled_extensions: crate::parse_csv_env("OMEGON_CHILD_DISABLED_EXTENSIONS"),
+        };
+        let plugins = crate::plugins::discover_plugins_filtered(
+            &cwd,
+            Some(secrets.as_ref()),
+            &plugin_filter,
+        )
+        .await;
         for plugin in plugins {
             bus.register(plugin);
         }

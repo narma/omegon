@@ -830,6 +830,18 @@ async fn dispatch_child_inner(
     if !config.runtime.skills.is_empty() {
         child.env("OMEGON_CHILD_SKILLS", config.runtime.skills.join(","));
     }
+    if !config.runtime.enabled_extensions.is_empty() {
+        child.env(
+            "OMEGON_CHILD_ENABLED_EXTENSIONS",
+            config.runtime.enabled_extensions.join(","),
+        );
+    }
+    if !config.runtime.disabled_extensions.is_empty() {
+        child.env(
+            "OMEGON_CHILD_DISABLED_EXTENSIONS",
+            config.runtime.disabled_extensions.join(","),
+        );
+    }
     if !config.runtime.preloaded_files.is_empty() {
         child.env(
             "OMEGON_CHILD_PRELOADED_FILES",
