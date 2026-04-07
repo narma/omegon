@@ -3895,13 +3895,13 @@ impl App {
                 );
                 let ctx_window = self.footer_data.context_window;
                 if ctx_window > 0 {
-                    // Prefer actual provider-reported tokens; fall back to local estimate.
-                    let tokens = if actual_input_tokens > 0 {
-                        actual_input_tokens as usize
-                    } else if estimated_tokens > 0 {
+                    // Footer context posture is total live-context usage, not the last request's
+                    // provider-reported input tokens. ContextUpdated is the authoritative source;
+                    // TurnEnd may fill gaps when no prior context snapshot was emitted.
+                    let tokens = if estimated_tokens > 0 {
                         estimated_tokens
                     } else {
-                        (turn as usize) * 2000 + (self.tool_calls as usize) * 500
+                        self.footer_data.estimated_tokens
                     };
                     self.footer_data.estimated_tokens = tokens;
                     self.footer_data.context_percent =

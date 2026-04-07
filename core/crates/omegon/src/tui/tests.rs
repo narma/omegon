@@ -25,6 +25,45 @@ fn test_tx() -> mpsc::Sender<TuiCommand> {
     tx
 }
 
+#[test]
+fn turn_end_does_not_overwrite_footer_context_with_last_request_input_tokens() {
+    let mut app = test_app();
+
+    app.handle_agent_event(AgentEvent::ContextUpdated {
+        tokens: 144_000,
+        context_window: 272_000,
+        context_class: "Maniple".into(),
+        thinking_level: "high".into(),
+    });
+    let before = app.footer_data.context_percent;
+    assert!(before > 52.0 && before < 54.0, "expected ~53%, got {before}");
+
+    app.handle_agent_event(AgentEvent::TurnEnd {
+        turn: 3,
+        estimated_tokens: 144_000,
+        context_window: 272_000,
+        context_composition: omegon_traits::ContextComposition {
+            conversation_tokens: 120_000,
+            system_tokens: 8_000,
+            memory_tokens: 6_000,
+            tool_tokens: 4_000,
+            thinking_tokens: 6_000,
+            free_tokens: 128_000,
+        },
+        actual_input_tokens: 12_345,
+        actual_output_tokens: 413,
+        cache_read_tokens: 0,
+        provider_telemetry: None,
+    });
+
+    let after = app.footer_data.context_percent;
+    assert!(
+        (after - before).abs() < 0.0001,
+        "TurnEnd should preserve total-context percent from ContextUpdated; before={before} after={after}"
+    );
+    assert_eq!(app.footer_data.estimated_tokens, 144_000);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Slash command routing
 // ═══════════════════════════════════════════════════════════════════

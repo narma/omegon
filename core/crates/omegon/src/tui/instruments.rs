@@ -494,22 +494,29 @@ impl InstrumentPanel {
     }
 
     fn context_breakdown(&self) -> [(ContextBand, f64); 6] {
-        let ctx_window_f = self.context_window.max(1) as f64;
         let composition = &self.context_composition;
+        let used_target = self.context_fill.clamp(0.0, 1.0);
+        let free_target = (1.0 - used_target).clamp(0.0, 1.0);
+
+        let conversation = composition.conversation_tokens as f64;
+        let system = composition.system_tokens as f64;
+        let memory = composition.memory_tokens as f64;
+        let tools = composition.tool_tokens as f64;
+        let thinking = composition.thinking_tokens as f64;
+        let used_reported = conversation + system + memory + tools + thinking;
+        let scale = if used_reported > 0.0 {
+            used_target / used_reported
+        } else {
+            0.0
+        };
 
         [
-            (
-                ContextBand::Conversation,
-                composition.conversation_tokens as f64 / ctx_window_f,
-            ),
-            (ContextBand::System, composition.system_tokens as f64 / ctx_window_f),
-            (ContextBand::Memory, composition.memory_tokens as f64 / ctx_window_f),
-            (ContextBand::Tools, composition.tool_tokens as f64 / ctx_window_f),
-            (
-                ContextBand::Thinking,
-                composition.thinking_tokens as f64 / ctx_window_f,
-            ),
-            (ContextBand::Free, composition.free_tokens as f64 / ctx_window_f),
+            (ContextBand::Conversation, conversation * scale),
+            (ContextBand::System, system * scale),
+            (ContextBand::Memory, memory * scale),
+            (ContextBand::Tools, tools * scale),
+            (ContextBand::Thinking, thinking * scale),
+            (ContextBand::Free, free_target),
         ]
     }
 
@@ -2047,6 +2054,16 @@ mod tests {
         assert_eq!(breakdown[3].0, ContextBand::Tools);
         assert_eq!(breakdown[4].0, ContextBand::Thinking);
         assert_eq!(breakdown[5].0, ContextBand::Free);
+        let used: f64 = breakdown[..5].iter().map(|(_, frac)| frac).sum();
+        assert!(
+            (used - 0.62).abs() < 0.0001,
+            "used bands should match footer percent, got {used}"
+        );
+        assert!(
+            (breakdown[5].1 - 0.38).abs() < 0.0001,
+            "free band should be the complement of footer percent, got {}",
+            breakdown[5].1
+        );
     }
 
     #[test]
