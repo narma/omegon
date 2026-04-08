@@ -981,12 +981,7 @@ async fn stream_with_retry(
                 kind = kind_label,
                 "{reason}: {err_msg}"
             );
-            let advice = if stall_exhausted {
-                "The provider's stream is unresponsive. Switch provider with /model."
-            } else {
-                "This looks like a session or quota limit, not a transient issue. \
-                 Switch provider with /model or wait for your quota to reset."
-            };
+            let advice = exhaustion_advice(transient_kind, rate_limit_exhausted, stall_exhausted);
             let _ = events.send(AgentEvent::SystemNotification {
                 message: format!(
                     "🛑 {provider} {reason}: {attempt} consecutive {kind_label} failures over {:.0}s. {advice}",
@@ -1040,6 +1035,42 @@ async fn stream_with_retry(
         let _ = events.send(AgentEvent::SystemNotification { message: msg });
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         delay = (delay * 2).min(15_000); // exponential backoff, cap at 15s
+    }
+}
+
+fn exhaustion_advice(
+    transient_kind: Option<TransientFailureKind>,
+    rate_limit_exhausted: bool,
+    stall_exhausted: bool,
+) -> &'static str {
+    if stall_exhausted {
+        return "The provider's stream is unresponsive. Retry later or switch provider with /model.";
+    }
+    if rate_limit_exhausted || matches!(transient_kind, Some(TransientFailureKind::RateLimited)) {
+        return "This provider is rate-limiting the session. Wait for reset or switch provider with /model.";
+    }
+    match transient_kind {
+        Some(TransientFailureKind::ProviderOverloaded | TransientFailureKind::Upstream5xx) => {
+            "This is a provider-side outage or capacity problem. Retry later, switch provider with /model, or check the provider status page."
+        }
+        Some(
+            TransientFailureKind::Timeout
+            | TransientFailureKind::NetworkConnect
+            | TransientFailureKind::NetworkReset
+            | TransientFailureKind::Dns
+            | TransientFailureKind::DecodeBody
+            | TransientFailureKind::BridgeDropped
+            | TransientFailureKind::ResponseIncomplete
+            | TransientFailureKind::ResponseCancelled,
+        ) => {
+            "The provider or network path is unstable. Retry later or switch provider with /model."
+        }
+        Some(TransientFailureKind::StalledStream) => {
+            "The provider's stream is unresponsive. Retry later or switch provider with /model."
+        }
+        Some(TransientFailureKind::RateLimited) | None => {
+            "Retry later or switch provider with /model."
+        }
     }
 }
 
@@ -2235,5 +2266,33 @@ mod tests {
         let result = detector.check();
         // May or may not fire depending on threshold — just verify it doesn't panic
         let _ = result;
+    }
+
+    #[test]
+    fn exhaustion_advice_distinguishes_provider_outage_from_rate_limit() {
+        assert!(
+            exhaustion_advice(Some(TransientFailureKind::Upstream5xx), false, false)
+                .contains("provider-side outage or capacity problem")
+        );
+        assert!(
+            exhaustion_advice(Some(TransientFailureKind::ProviderOverloaded), false, false)
+                .contains("provider-side outage or capacity problem")
+        );
+        assert!(
+            exhaustion_advice(Some(TransientFailureKind::RateLimited), true, false)
+                .contains("rate-limiting the session")
+        );
+    }
+
+    #[test]
+    fn exhaustion_advice_distinguishes_unstable_network_and_stalled_stream() {
+        assert!(
+            exhaustion_advice(Some(TransientFailureKind::NetworkReset), false, false)
+                .contains("provider or network path is unstable")
+        );
+        assert!(
+            exhaustion_advice(Some(TransientFailureKind::StalledStream), false, true)
+                .contains("stream is unresponsive")
+        );
     }
 }

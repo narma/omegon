@@ -158,20 +158,45 @@ const GLOBAL_ERROR_RULES: &[ErrorRule] = &[
     ErrorRule {
         providers: &[],
         class: UpstreamErrorClass::RateLimited,
-        substrings: &["rate limit", "rate_limit", "too many requests"],
-        word_tokens: &["429"],
+        substrings: &[
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "retry-after",
+            "requests per min",
+            "tokens per min",
+            "request limit reached",
+            "try again in",
+        ],
+        word_tokens: &["429", "rpm", "tpm"],
     },
     ErrorRule {
         providers: &[],
         class: UpstreamErrorClass::ProviderOverloaded,
-        substrings: &["overloaded", "capacity"],
+        substrings: &[
+            "overloaded",
+            "capacity",
+            "at capacity",
+            "server is busy",
+            "high demand",
+            "currently unavailable due to load",
+        ],
         word_tokens: &["529"],
     },
     ErrorRule {
         providers: &[],
         class: UpstreamErrorClass::Upstream5xx,
-        substrings: &["error code: 520"],
-        word_tokens: &["520"],
+        substrings: &[
+            "error code: 520",
+            "origin error",
+            "origin unreachable",
+            "gateway timeout",
+            "upstream connect error",
+            "disconnect/reset before headers",
+            "server closed the connection without sending any data",
+            "cf_bad_gateway",
+        ],
+        word_tokens: &["500", "502", "503", "504", "520", "521", "522", "523", "524", "525", "526", "530"],
     },
     ErrorRule {
         providers: &[],
@@ -712,6 +737,46 @@ mod tests {
         assert_eq!(
             UpstreamErrorClass::Upstream5xx.transient_kind(),
             Some(TransientFailureKind::Upstream5xx),
+        );
+    }
+
+    #[test]
+    fn classify_edge_proxy_52x_and_gateway_failures_as_upstream_5xx() {
+        assert_eq!(
+            classify_upstream_error("504 Gateway Timeout"),
+            UpstreamErrorClass::Upstream5xx,
+        );
+        assert_eq!(
+            classify_upstream_error("Error 522: origin unreachable"),
+            UpstreamErrorClass::Upstream5xx,
+        );
+        assert_eq!(
+            classify_upstream_error("upstream connect error or disconnect/reset before headers"),
+            UpstreamErrorClass::Upstream5xx,
+        );
+    }
+
+    #[test]
+    fn classify_rate_limit_variants() {
+        assert_eq!(
+            classify_upstream_error("retry-after: 30; request limit reached for organization"),
+            UpstreamErrorClass::RateLimited,
+        );
+        assert_eq!(
+            classify_upstream_error("tokens per min exceeded (tpm)"),
+            UpstreamErrorClass::RateLimited,
+        );
+    }
+
+    #[test]
+    fn classify_capacity_variants_as_provider_overloaded() {
+        assert_eq!(
+            classify_upstream_error("Selected model is at capacity"),
+            UpstreamErrorClass::ProviderOverloaded,
+        );
+        assert_eq!(
+            classify_upstream_error("server is busy due to high demand"),
+            UpstreamErrorClass::ProviderOverloaded,
         );
     }
 
