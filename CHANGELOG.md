@@ -6,6 +6,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [Semantic V
 ## [Unreleased]
 
 - **Release-line correction** — `v0.15.11-rc.2` was published from a mistaken version-line advance after `0.15.10` had not actually closed cleanly. The active candidate line remains the `0.15.10` RC series; `v0.15.10-rc.30` is the corrective RC. See `docs/release-line-correction-0-15-10.md`.
+- **TUI attachment-token word navigation** — Meta/Alt word motion and word deletion now treat inline attachment placeholders like `[image0]` as atomic tokens instead of stepping into projected placeholder text. This fixes cursor lockups and broken editor navigation introduced with inline attachment token rendering.
 
 ## [0.15.10] - 2026-04-05
 
