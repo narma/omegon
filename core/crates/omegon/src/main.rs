@@ -3391,6 +3391,8 @@ mod tests {
                 pid: None,
                 started_at_unix_ms: None,
                 last_activity_unix_ms: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
             },
             cleave::state::ChildState {
                 child_id: 1,
@@ -3411,6 +3413,8 @@ mod tests {
                 pid: None,
                 started_at_unix_ms: None,
                 last_activity_unix_ms: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
             },
             cleave::state::ChildState {
                 child_id: 2,
@@ -3431,6 +3435,8 @@ mod tests {
                 pid: None,
                 started_at_unix_ms: None,
                 last_activity_unix_ms: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
             },
             cleave::state::ChildState {
                 child_id: 3,
@@ -3451,6 +3457,8 @@ mod tests {
                 pid: None,
                 started_at_unix_ms: None,
                 last_activity_unix_ms: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
             },
         ];
 
@@ -3483,6 +3491,8 @@ mod tests {
             pid: None,
             started_at_unix_ms: None,
             last_activity_unix_ms: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
         };
 
         let line = format_cleave_merge_result(

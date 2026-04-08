@@ -1362,6 +1362,8 @@ mod tests {
             pid: None,
             started_at_unix_ms: None,
             last_activity_unix_ms: None,
+                adoption_worktree_path: None,
+                adoption_model: None,
         };
 
         let completed = cleave::orchestrator::CleaveResult {

@@ -52,6 +52,10 @@ pub struct ChildState {
     pub started_at_unix_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_activity_unix_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adoption_worktree_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adoption_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -93,6 +97,12 @@ fn process_is_alive(pid: u32) -> bool {
     }
 }
 
+fn canonical_display(path: &str) -> Option<String> {
+    std::fs::canonicalize(path)
+        .ok()
+        .map(|p| p.to_string_lossy().to_string())
+}
+
 impl CleaveState {
     /// Save state to disk.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -120,8 +130,23 @@ impl CleaveState {
                 continue;
             }
             reconciliation.seen += 1;
+            let worktree_matches = child
+                .worktree_path
+                .as_deref()
+                .and_then(canonical_display)
+                .zip(child.adoption_worktree_path.as_ref())
+                .map(|(current, expected)| current == *expected)
+                .unwrap_or(false);
+            let model_matches = child
+                .execute_model
+                .as_ref()
+                .zip(child.adoption_model.as_ref())
+                .map(|(current, expected)| current == expected)
+                .unwrap_or(false);
             if let Some(pid) = child.pid
                 && process_is_alive(pid)
+                && worktree_matches
+                && model_matches
             {
                 reconciliation.still_running += 1;
                 continue;
@@ -134,6 +159,8 @@ impl CleaveState {
             child.pid = None;
             child.started_at_unix_ms = None;
             child.last_activity_unix_ms = None;
+            child.adoption_worktree_path = None;
+            child.adoption_model = None;
             reconciliation.requeued += 1;
         }
         reconciliation
@@ -146,6 +173,8 @@ impl CleaveState {
             child.pid = Some(pid);
             child.started_at_unix_ms = Some(now);
             child.last_activity_unix_ms = Some(now);
+            child.adoption_worktree_path = child.worktree_path.as_deref().and_then(canonical_display);
+            child.adoption_model = child.execute_model.clone();
         }
     }
 
@@ -197,6 +226,8 @@ impl CleaveState {
                     pid: None,
                     started_at_unix_ms: None,
                     last_activity_unix_ms: None,
+                    adoption_worktree_path: None,
+                    adoption_model: None,
                 }
             })
             .collect();
@@ -305,6 +336,8 @@ mod tests {
         assert!(state.children[0].pid.is_none());
         assert!(state.children[0].started_at_unix_ms.is_none());
         assert!(state.children[0].last_activity_unix_ms.is_none());
+        assert!(state.children[0].adoption_worktree_path.is_none());
+        assert!(state.children[0].adoption_model.is_none());
         assert_eq!(state.children[1].status, ChildStatus::Completed);
         assert_eq!(state.children[1].duration_secs, Some(42.5));
     }
@@ -321,8 +354,18 @@ mod tests {
             "model",
         );
         let pid = std::process::id();
+        let worktree = tempfile::tempdir().unwrap();
         state.children[0].status = ChildStatus::Running;
         state.children[0].pid = Some(pid);
+        state.children[0].worktree_path = Some(worktree.path().to_string_lossy().to_string());
+        state.children[0].adoption_worktree_path = Some(
+            std::fs::canonicalize(worktree.path())
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+        );
+        state.children[0].execute_model = Some("model".into());
+        state.children[0].adoption_model = Some("model".into());
         state.children[0].started_at_unix_ms = Some(1);
         state.children[0].last_activity_unix_ms = Some(2);
 
@@ -354,6 +397,37 @@ mod tests {
         assert_eq!(child.pid, Some(4242));
         assert!(child.started_at_unix_ms.is_some());
         assert!(child.last_activity_unix_ms.is_some());
+        assert!(child.adoption_worktree_path.is_none());
+        assert_eq!(child.adoption_model.as_deref(), Some("model"));
+    }
+
+    #[test]
+    fn reconcile_running_children_requeues_mismatched_adoption_fingerprint() {
+        let plan = sample_plan();
+        let mut state = CleaveState::from_plan(
+            "run-1",
+            "fix bugs",
+            Path::new("/repo"),
+            Path::new("/ws"),
+            &plan,
+            "model",
+        );
+        let pid = std::process::id();
+        let worktree = tempfile::tempdir().unwrap();
+        state.children[0].status = ChildStatus::Running;
+        state.children[0].pid = Some(pid);
+        state.children[0].worktree_path = Some(worktree.path().to_string_lossy().to_string());
+        state.children[0].adoption_worktree_path = Some("/tmp/other-worktree".into());
+        state.children[0].execute_model = Some("model".into());
+        state.children[0].adoption_model = Some("different-model".into());
+
+        let reconciliation = state.reconcile_running_children();
+
+        assert_eq!(reconciliation.seen, 1);
+        assert_eq!(reconciliation.still_running, 0);
+        assert_eq!(reconciliation.requeued, 1);
+        assert_eq!(state.children[0].status, ChildStatus::Pending);
+        assert!(state.children[0].pid.is_none());
     }
 
     #[test]
