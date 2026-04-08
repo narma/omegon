@@ -1588,21 +1588,37 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     };
                     let _ = events_tx.send(AgentEvent::SystemNotification { message });
                 } else if name == "context_request" {
-                    let (kind, query) = args.split_once(' ').unwrap_or((args.as_str(), ""));
-                    if kind.trim().is_empty() || query.trim().is_empty() {
-                        let _ = events_tx.send(AgentEvent::SystemNotification {
-                            message: "Usage: /context request <kind> <query>".to_string(),
-                        });
-                        continue;
-                    }
+                    let tool_args = if args.trim_start().starts_with('{') {
+                        match serde_json::from_str::<serde_json::Value>(&args) {
+                            Ok(value)
+                                if value.get("requests").and_then(|v| v.as_array()).is_some() =>
+                            {
+                                value
+                            }
+                            Ok(_) | Err(_) => {
+                                let _ = events_tx.send(AgentEvent::SystemNotification {
+                                    message: "Usage: /context request <kind> <query> or /context request {\"requests\":[...]}".to_string(),
+                                });
+                                continue;
+                            }
+                        }
+                    } else {
+                        let (kind, query) = args.split_once(' ').unwrap_or((args.as_str(), ""));
+                        if kind.trim().is_empty() || query.trim().is_empty() {
+                            let _ = events_tx.send(AgentEvent::SystemNotification {
+                                message: "Usage: /context request <kind> <query> or /context request {\"requests\":[...]}".to_string(),
+                            });
+                            continue;
+                        }
 
-                    let tool_args = serde_json::json!({
-                        "requests": [{
-                            "kind": kind.trim(),
-                            "query": query.trim(),
-                            "reason": "Operator-requested direct context inspection from slash command"
-                        }]
-                    });
+                        serde_json::json!({
+                            "requests": [{
+                                "kind": kind.trim(),
+                                "query": query.trim(),
+                                "reason": "Operator-requested direct context inspection from slash command"
+                            }]
+                        })
+                    };
 
                     let message = match agent
                         .bus
@@ -2687,6 +2703,48 @@ async fn execute_remote_slash_command(
                 Err(e) => SlashCommandResponse {
                     accepted: false,
                     output: Some(format!("Context request failed: {e}")),
+                },
+            }
+        }
+        CanonicalSlashCommand::ContextRequestJson(raw) => {
+            match serde_json::from_str::<serde_json::Value>(&raw) {
+                Ok(args) if args.get("requests").and_then(|v| v.as_array()).is_some() => {
+                    match agent
+                        .bus
+                        .execute_tool(
+                            crate::tool_registry::context::REQUEST_CONTEXT,
+                            "slash-context-request",
+                            args,
+                            tokio_util::sync::CancellationToken::new(),
+                        )
+                        .await
+                    {
+                        Ok(result) => {
+                            let text = result
+                                .content
+                                .iter()
+                                .filter_map(|c| match c {
+                                    omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n\n");
+                            SlashCommandResponse {
+                                accepted: true,
+                                output: Some(text),
+                            }
+                        }
+                        Err(e) => SlashCommandResponse {
+                            accepted: false,
+                            output: Some(format!("Context request failed: {e}")),
+                        },
+                    }
+                }
+                _ => SlashCommandResponse {
+                    accepted: false,
+                    output: Some(
+                        "Usage: /context request <kind> <query> or /context request {\"requests\":[...]}".to_string(),
+                    ),
                 },
             }
         }

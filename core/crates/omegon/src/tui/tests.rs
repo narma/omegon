@@ -1158,6 +1158,27 @@ fn slash_context_request_dispatches_direct_context_pack() {
 }
 
 #[test]
+fn slash_context_request_accepts_json_payload() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command(
+        "/context request {\"requests\":[{\"kind\":\"code\",\"query\":\"selector policy\",\"reason\":\"probe\"}]}",
+        &tx,
+    );
+
+    match result {
+        super::SlashResult::Display(text) => {
+            assert!(
+                text.contains("Requesting mediated context pack from JSON payload"),
+                "got {text}"
+            );
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}
+
+#[test]
 fn slash_context_compress_alias_requests_compaction() {
     let mut app = test_app();
     let tx = test_tx();

@@ -256,6 +256,7 @@ pub(crate) enum CanonicalSlashCommand {
     ContextCompact,
     ContextClear,
     ContextRequest { kind: String, query: String },
+    ContextRequestJson(String),
     SetContextClass(crate::settings::ContextClass),
     NewSession,
     ListSessions,
@@ -279,14 +280,23 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
                 "compact" | "compress" => Some(CanonicalSlashCommand::ContextCompact),
                 "clear" => Some(CanonicalSlashCommand::ContextClear),
                 "request" => {
-                    let (kind, query) = rest.split_once(' ').unwrap_or((rest, ""));
-                    if !kind.is_empty() && !query.trim().is_empty() {
-                        Some(CanonicalSlashCommand::ContextRequest {
-                            kind: kind.to_string(),
-                            query: query.trim().to_string(),
-                        })
+                    if rest.starts_with('{') {
+                        match serde_json::from_str::<serde_json::Value>(rest) {
+                            Ok(value) if value.get("requests").and_then(|v| v.as_array()).is_some() => {
+                                Some(CanonicalSlashCommand::ContextRequestJson(rest.to_string()))
+                            }
+                            _ => None,
+                        }
                     } else {
-                        None
+                        let (kind, query) = rest.split_once(' ').unwrap_or((rest, ""));
+                        if !kind.is_empty() && !query.trim().is_empty() {
+                            Some(CanonicalSlashCommand::ContextRequest {
+                                kind: kind.to_string(),
+                                query: query.trim().to_string(),
+                            })
+                        } else {
+                            None
+                        }
                     }
                 }
                 _ => crate::settings::ContextClass::parse(sub)
@@ -3230,6 +3240,15 @@ impl App {
                             SlashResult::Display(format!(
                                 "Requesting mediated context pack for {kind}: {query}"
                             ))
+                        }
+                        Some(CanonicalSlashCommand::ContextRequestJson(raw)) => {
+                            let _ = tx.try_send(TuiCommand::BusCommand {
+                                name: "context_request".to_string(),
+                                args: raw,
+                            });
+                            SlashResult::Display(
+                                "Requesting mediated context pack from JSON payload".into(),
+                            )
                         }
                         Some(CanonicalSlashCommand::SetContextClass(class)) => {
                             self.update_settings(|s| {
