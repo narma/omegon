@@ -8,6 +8,7 @@
 //!   - session stats (turns, tool calls, duration)
 //!   - active OpenSpec changes
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -52,6 +53,23 @@ struct UsageStats {
     total_cache_read_tokens: u64,
     max_input_tokens: u64,
     max_output_tokens: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct UsageBucket {
+    turns: usize,
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_cache_read_tokens: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedTurnUsage<'a> {
+    provider: &'a str,
+    model: &'a str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_tokens: u64,
 }
 
 impl SessionLog {
@@ -337,6 +355,8 @@ impl SessionLog {
 
         let selected: Vec<&str> = raw_entries.iter().rev().take(n).rev().copied().collect();
         let stats = summarize_usage_entries(&selected);
+        let provider_breakdown = summarize_usage_by_provider(&selected);
+        let model_breakdown = summarize_usage_by_model(&selected);
         let avg_input = if stats.turns > 0 {
             stats.total_input_tokens / stats.turns as u64
         } else {
@@ -347,9 +367,11 @@ impl SessionLog {
         } else {
             0
         };
+        let provider_lines = format_usage_breakdown(&provider_breakdown);
+        let model_lines = format_usage_breakdown(&model_breakdown);
 
         let text = format!(
-            "Session usage summary ({returned} of {total} sessions)\n\n- sessions: {sessions}\n- turns: {turns}\n- input tokens: {input}\n- output tokens: {output}\n- cache read tokens: {cache}\n- avg input/turn: {avg_input}\n- avg output/turn: {avg_output}\n- max input/turn: {max_input}\n- max output/turn: {max_output}",
+            "Session usage summary ({returned} of {total} sessions)\n\n- sessions: {sessions}\n- turns: {turns}\n- input tokens: {input}\n- output tokens: {output}\n- cache read tokens: {cache}\n- avg input/turn: {avg_input}\n- avg output/turn: {avg_output}\n- max input/turn: {max_input}\n- max output/turn: {max_output}\n\nProvider breakdown:\n{provider_lines}\n\nModel breakdown:\n{model_lines}",
             returned = selected.len(),
             total = raw_entries.len(),
             sessions = stats.sessions,
@@ -361,6 +383,8 @@ impl SessionLog {
             avg_output = avg_output,
             max_input = stats.max_input_tokens,
             max_output = stats.max_output_tokens,
+            provider_lines = provider_lines,
+            model_lines = model_lines,
         );
 
         Ok((
@@ -375,6 +399,8 @@ impl SessionLog {
                 "avg_output_tokens": avg_output,
                 "max_input_tokens": stats.max_input_tokens,
                 "max_output_tokens": stats.max_output_tokens,
+                "provider_breakdown": usage_breakdown_json(&provider_breakdown),
+                "model_breakdown": usage_breakdown_json(&model_breakdown),
                 "returned": selected.len(),
                 "total": raw_entries.len(),
             }),
@@ -409,29 +435,37 @@ fn format_context_composition(comp: &ContextComposition, context_window: usize) 
     )
 }
 
-fn parse_turn_usage_line(line: &str) -> Option<(u64, u64, u64)> {
-    let input = line
-        .split("in:")
-        .nth(1)?
+fn parse_turn_usage_line(line: &str) -> Option<ParsedTurnUsage<'_>> {
+    let rest = line.strip_prefix("- turn ")?;
+    let after_turn = rest.split_once("—")?.1.trim();
+    let (provider_model, usage) = after_turn.split_once(" in:")?;
+    let (provider, model) = provider_model.split_once(" / ")?;
+    let input_tokens = usage
         .split_whitespace()
         .next()?
         .parse::<u64>()
         .ok()?;
-    let output = line
+    let output_tokens = line
         .split("out:")
         .nth(1)?
         .split_whitespace()
         .next()?
         .parse::<u64>()
         .ok()?;
-    let cache = line
+    let cache_read_tokens = line
         .split("cache:")
         .nth(1)?
         .split_whitespace()
         .next()?
         .parse::<u64>()
         .ok()?;
-    Some((input, output, cache))
+    Some(ParsedTurnUsage {
+        provider: provider.trim(),
+        model: model.trim(),
+        input_tokens,
+        output_tokens,
+        cache_read_tokens,
+    })
 }
 
 fn summarize_usage_entries(entries: &[&str]) -> UsageStats {
@@ -446,19 +480,90 @@ fn summarize_usage_entries(entries: &[&str]) -> UsageStats {
             if !trimmed.starts_with("- turn ") {
                 continue;
             }
-            let Some((input, output, cache)) = parse_turn_usage_line(trimmed) else {
+            let Some(parsed) = parse_turn_usage_line(trimmed) else {
                 continue;
             };
             stats.turns += 1;
-            stats.total_input_tokens += input;
-            stats.total_output_tokens += output;
-            stats.total_cache_read_tokens += cache;
-            stats.max_input_tokens = stats.max_input_tokens.max(input);
-            stats.max_output_tokens = stats.max_output_tokens.max(output);
+            stats.total_input_tokens += parsed.input_tokens;
+            stats.total_output_tokens += parsed.output_tokens;
+            stats.total_cache_read_tokens += parsed.cache_read_tokens;
+            stats.max_input_tokens = stats.max_input_tokens.max(parsed.input_tokens);
+            stats.max_output_tokens = stats.max_output_tokens.max(parsed.output_tokens);
         }
     }
 
     stats
+}
+
+fn summarize_usage_by_provider(entries: &[&str]) -> BTreeMap<String, UsageBucket> {
+    summarize_usage_breakdown(entries, |parsed| parsed.provider.to_string())
+}
+
+fn summarize_usage_by_model(entries: &[&str]) -> BTreeMap<String, UsageBucket> {
+    summarize_usage_breakdown(entries, |parsed| parsed.model.to_string())
+}
+
+fn summarize_usage_breakdown<F>(
+    entries: &[&str],
+    key_fn: F,
+) -> BTreeMap<String, UsageBucket>
+where
+    F: Fn(&ParsedTurnUsage<'_>) -> String,
+{
+    let mut buckets = BTreeMap::new();
+    for entry in entries {
+        for line in entry.lines() {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("- turn ") {
+                continue;
+            }
+            let Some(parsed) = parse_turn_usage_line(trimmed) else {
+                continue;
+            };
+            let bucket = buckets.entry(key_fn(&parsed)).or_insert_with(UsageBucket::default);
+            bucket.turns += 1;
+            bucket.total_input_tokens += parsed.input_tokens;
+            bucket.total_output_tokens += parsed.output_tokens;
+            bucket.total_cache_read_tokens += parsed.cache_read_tokens;
+        }
+    }
+    buckets
+}
+
+fn format_usage_breakdown(buckets: &BTreeMap<String, UsageBucket>) -> String {
+    if buckets.is_empty() {
+        return "- none".to_string();
+    }
+    buckets
+        .iter()
+        .map(|(name, bucket)| {
+            format!(
+                "- {name}: {turns} turn(s), in {input}, out {output}, cache {cache}",
+                turns = bucket.turns,
+                input = bucket.total_input_tokens,
+                output = bucket.total_output_tokens,
+                cache = bucket.total_cache_read_tokens,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn usage_breakdown_json(buckets: &BTreeMap<String, UsageBucket>) -> Value {
+    Value::Array(
+        buckets
+            .iter()
+            .map(|(name, bucket)| {
+                json!({
+                    "name": name,
+                    "turns": bucket.turns,
+                    "total_input_tokens": bucket.total_input_tokens,
+                    "total_output_tokens": bucket.total_output_tokens,
+                    "total_cache_read_tokens": bucket.total_cache_read_tokens,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn format_turn_summary(summary: &TurnSummary) -> String {
@@ -860,6 +965,16 @@ mod tests {
         assert_eq!(stats.total_cache_read_tokens, 100);
         assert_eq!(stats.max_input_tokens, 1500);
         assert_eq!(stats.max_output_tokens, 300);
+
+        let providers = summarize_usage_by_provider(&entries);
+        assert_eq!(providers["anthropic"].turns, 2);
+        assert_eq!(providers["anthropic"].total_input_tokens, 2700);
+        assert_eq!(providers["openai-codex"].turns, 1);
+        assert_eq!(providers["openai-codex"].total_output_tokens, 100);
+
+        let models = summarize_usage_by_model(&entries);
+        assert_eq!(models["anthropic:claude-sonnet-4-6"].turns, 2);
+        assert_eq!(models["openai-codex:gpt-5.4"].total_cache_read_tokens, 0);
     }
 
     #[test]
@@ -881,8 +996,19 @@ mod tests {
         assert!(text.contains("sessions: 2"), "got: {text}");
         assert!(text.contains("turns: 3"), "got: {text}");
         assert!(text.contains("input tokens: 3600"), "got: {text}");
+        assert!(text.contains("Provider breakdown:"), "got: {text}");
+        assert!(
+            text.contains("- anthropic: 2 turn(s), in 2700, out 550, cache 100"),
+            "got: {text}"
+        );
+        assert!(
+            text.contains("- openai-codex:gpt-5.4: 1 turn(s), in 900, out 100, cache 0"),
+            "got: {text}"
+        );
         assert_eq!(details["total_input_tokens"].as_u64(), Some(3600));
         assert_eq!(details["turns"].as_u64(), Some(3));
+        assert_eq!(details["provider_breakdown"][0]["name"].as_str(), Some("anthropic"));
+        assert_eq!(details["provider_breakdown"][0]["turns"].as_u64(), Some(2));
     }
 
     #[test]

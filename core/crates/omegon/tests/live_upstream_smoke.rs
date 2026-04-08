@@ -35,6 +35,12 @@ fn live_enabled() -> bool {
         .unwrap_or(false)
 }
 
+fn ollama_local_enabled() -> bool {
+    std::env::var("OMEGON_RUN_OLLAMA_LOCAL_LIVE_TEST")
+        .map(|v| matches!(v.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
 fn resolve_omegon_binary() -> Result<PathBuf> {
     if let Ok(path) = std::env::var("CARGO_BIN_EXE_omegon") {
         return Ok(PathBuf::from(path));
@@ -183,8 +189,8 @@ fn live_openai_prompt_round_trip() -> Result<()> {
 
 #[test]
 fn live_ollama_local_prompt_round_trip() -> Result<()> {
-    if !live_enabled() {
-        eprintln!("skipping ollama live smoke");
+    if !live_enabled() || !ollama_local_enabled() {
+        eprintln!("skipping ollama local live smoke");
         return Ok(());
     }
     let out = run_prompt("qwen3:32b")?;

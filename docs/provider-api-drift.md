@@ -56,6 +56,10 @@ It falls back to the standard provider secrets if the dedicated drift secrets ar
 configured. The intended steady state is to provision separate drift-only credentials with
 low spend ceilings and no production coupling.
 
+Local Ollama verification is **disabled by default** in GitHub Actions. The daily workflow
+checks hosted upstream providers plus Ollama Cloud; local Ollama smoke remains opt-in via
+`OMEGON_RUN_OLLAMA_LOCAL_LIVE_TEST=1` on an environment that actually hosts an Ollama API.
+
 ## Non-blocking policy
 
 The drift workflow is the canonical detector. Release and nightly stay non-blocking with

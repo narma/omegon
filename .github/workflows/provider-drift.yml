@@ -12,9 +12,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   OMEGON_RUN_LIVE_UPSTREAM_TESTS: '1'
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_DRIFT_API_KEY || secrets.ANTHROPIC_API_KEY }}
-  OPENAI_API_KEY: ${{ secrets.OPENAI_DRIFT_API_KEY || secrets.OPENAI_API_KEY }}
-  OLLAMA_API_KEY: ${{ secrets.OLLAMA_DRIFT_API_KEY || secrets.OLLAMA_API_KEY }}
   OLLAMA_HOST: ${{ secrets.OLLAMA_HOST }}
 
 jobs:
@@ -28,6 +25,15 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve drift credentials
+        run: |
+          {
+            echo "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_DRIFT_API_KEY != '' && secrets.ANTHROPIC_DRIFT_API_KEY || secrets.ANTHROPIC_API_KEY }}"
+            echo "OPENAI_API_KEY=${{ secrets.OPENAI_DRIFT_API_KEY != '' && secrets.OPENAI_DRIFT_API_KEY || secrets.OPENAI_API_KEY }}"
+            echo "OLLAMA_API_KEY=${{ secrets.OLLAMA_DRIFT_API_KEY != '' && secrets.OLLAMA_DRIFT_API_KEY || secrets.OLLAMA_API_KEY }}"
+            echo "OMEGON_RUN_OLLAMA_LOCAL_LIVE_TEST=0"
+          } >> "$GITHUB_ENV"
 
       - name: Run live upstream drift suite
         id: drift
