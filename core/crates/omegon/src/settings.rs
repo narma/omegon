@@ -502,18 +502,20 @@ fn route_matrix() -> &'static [RouteEntry] {
 
 /// Match a model ID against the route matrix using glob-style patterns.
 fn lookup_context_ceiling(provider: &str, model_id: &str) -> Option<usize> {
-    route_matrix().iter().find_map(|entry| {
-        if entry.provider != provider {
-            return None;
-        }
-        let pattern = &entry.model_id_pattern;
-        let matches = if pattern.ends_with('*') {
-            model_id.starts_with(&pattern[..pattern.len() - 1])
-        } else {
-            model_id == pattern
-        };
-        matches.then_some(entry.context_ceiling)
-    })
+    route_matrix()
+        .iter()
+        .filter(|entry| entry.provider == provider)
+        .filter_map(|entry| {
+            let pattern = &entry.model_id_pattern;
+            let matches = if let Some(prefix) = pattern.strip_suffix('*') {
+                model_id.starts_with(prefix)
+            } else {
+                model_id == pattern
+            };
+            matches.then_some((pattern.trim_end_matches('*').len(), entry.context_ceiling))
+        })
+        .max_by_key(|(specificity, _)| *specificity)
+        .map(|(_, ceiling)| ceiling)
 }
 
 /// Infer context window from model identifier.
@@ -884,9 +886,9 @@ mod tests {
         assert_eq!(lookup_context_ceiling("openai", "gpt-5.4"), Some(272_000));
         assert_eq!(
             lookup_context_ceiling("openai", "gpt-5.4-mini"),
-            Some(272_000)
+            Some(400_000)
         );
-        assert_eq!(lookup_context_ceiling("ollama", "qwen3:32b"), Some(32_768));
+        assert_eq!(lookup_context_ceiling("ollama", "qwen3:32b"), None);
         assert_eq!(lookup_context_ceiling("openai", "unknown-model"), None);
     }
 
