@@ -1465,6 +1465,13 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                         }
                                         continue;
                                     }
+                                    web::WebCommand::CancelCleaveChild { label, respond_to } => {
+                                        tui::TuiCommand::RunSlashCommand {
+                                            name: "cleave".to_string(),
+                                            args: format!("cancel {label}"),
+                                            respond_to,
+                                        }
+                                    }
                                 };
                                 if cmd_tx_clone.send(tui_cmd).await.is_err() {
                                     break;

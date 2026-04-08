@@ -207,6 +207,48 @@ async fn handle_client_command(
         "cancel" => {
             let _ = command_tx.send(WebCommand::Cancel).await;
         }
+        "cancel_cleave_child" => {
+            if let Some(label) = cmd["label"].as_str() {
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let accepted = command_tx
+                    .send(WebCommand::CancelCleaveChild {
+                        label: label.to_string(),
+                        respond_to: Some(reply_tx),
+                    })
+                    .await
+                    .is_ok();
+                let message = if accepted {
+                    match reply_rx.await {
+                        Ok(response) => slash_command_result_message(
+                            "cleave",
+                            &format!("cancel {label}"),
+                            response,
+                        ),
+                        Err(_) => slash_command_result_message(
+                            "cleave",
+                            &format!("cancel {label}"),
+                            omegon_traits::SlashCommandResponse {
+                                accepted: false,
+                                output: Some(
+                                    "cleave child cancel executor dropped response before completion"
+                                        .to_string(),
+                                ),
+                            },
+                        ),
+                    }
+                } else {
+                    slash_command_result_message(
+                        "cleave",
+                        &format!("cancel {label}"),
+                        omegon_traits::SlashCommandResponse {
+                            accepted: false,
+                            output: Some("failed to enqueue cleave child cancel".to_string()),
+                        },
+                    )
+                };
+                let _ = snapshot_tx.send(message).await;
+            }
+        }
         "request_snapshot" => {
             let snapshot = build_snapshot(state);
             let _ = snapshot_tx.send(snapshot_message(snapshot)).await;

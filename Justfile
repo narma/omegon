@@ -70,10 +70,14 @@ link:
             echo "   export PATH=\"\$HOME/.local/bin:\$PATH\""
         fi
     fi
-    # Remove stale install at the other location to prevent bash hash table confusion
+    # Remove stale install at the other location to prevent bash hash table confusion.
+    # If that location is root-owned and we're linking into ~/.local/bin, warn instead of failing.
     if [ -e "$ALT" ] || [ -L "$ALT" ]; then
-        rm -f "$ALT"
-        echo "  removed stale install at $ALT"
+        if rm -f "$ALT" 2>/dev/null; then
+            echo "  removed stale install at $ALT"
+        else
+            echo "  ! could not remove stale install at $ALT (permission denied)"
+        fi
     fi
     ln -sf "$BINARY" "$DEST"
     echo "✓ omegon → $DEST"

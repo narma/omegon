@@ -265,6 +265,10 @@ pub enum WebCommand {
         respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::SlashCommandResponse>>,
     },
     Cancel,
+    CancelCleaveChild {
+        label: String,
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::SlashCommandResponse>>,
+    },
 }
 
 /// Start the embedded web server. Returns the bound address and a receiver
@@ -472,6 +476,14 @@ pub(crate) async fn process_next_daemon_event(state: &WebState) -> anyhow::Resul
                 respond_to: None,
             }),
         "cancel" => Some(WebCommand::Cancel),
+        "cancel-cleave-child" => event
+            .payload
+            .get("label")
+            .and_then(|value| value.as_str())
+            .map(|label| WebCommand::CancelCleaveChild {
+                label: label.to_string(),
+                respond_to: None,
+            }),
         _ => None,
     };
 
@@ -699,6 +711,32 @@ mod tests {
             .daemon_status
             .clone();
         assert_eq!(startup_status.processed_events, 1);
+    }
+
+    #[tokio::test]
+    async fn daemon_event_worker_dispatches_cancel_cleave_child_trigger() {
+        let (events_tx, _events_rx) = tokio::sync::broadcast::channel(4);
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(4);
+        let state = WebState::new(DashboardHandles::default(), events_tx);
+        let state = WebState {
+            command_tx,
+            ..state
+        };
+        state.daemon_events.lock().unwrap().push(DaemonEventEnvelope {
+            event_id: "evt-cancel-child".into(),
+            source: "manual/test".into(),
+            trigger_kind: "cancel-cleave-child".into(),
+            payload: serde_json::json!({"label": "alpha"}),
+        });
+        state.daemon_status.lock().unwrap().queued_events = 1;
+
+        let processed = process_next_daemon_event(&state).await.unwrap();
+        assert!(processed);
+        let command = command_rx.recv().await.unwrap();
+        match command {
+            WebCommand::CancelCleaveChild { label, .. } => assert_eq!(label, "alpha"),
+            other => panic!("wrong command: {other:?}"),
+        }
     }
 
     #[tokio::test]
