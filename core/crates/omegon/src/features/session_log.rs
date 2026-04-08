@@ -61,6 +61,15 @@ struct UsageBucket {
     total_input_tokens: u64,
     total_output_tokens: u64,
     total_cache_read_tokens: u64,
+    total_ctx_est_tokens: u64,
+    total_ctx_window_tokens: u64,
+    total_system_tokens: u64,
+    total_tool_schema_tokens: u64,
+    total_conversation_tokens: u64,
+    total_memory_tokens: u64,
+    total_tool_history_tokens: u64,
+    total_thinking_tokens: u64,
+    total_free_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +79,20 @@ struct ParsedTurnUsage<'a> {
     input_tokens: u64,
     output_tokens: u64,
     cache_read_tokens: u64,
+    context: Option<ParsedContextComposition>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ParsedContextComposition {
+    est_tokens: u64,
+    window_tokens: u64,
+    system_tokens: u64,
+    tool_schema_tokens: u64,
+    conversation_tokens: u64,
+    memory_tokens: u64,
+    tool_history_tokens: u64,
+    thinking_tokens: u64,
+    free_tokens: u64,
 }
 
 impl SessionLog {
@@ -438,9 +461,9 @@ fn format_context_composition(comp: &ContextComposition, context_window: usize) 
 fn parse_turn_usage_line(line: &str) -> Option<ParsedTurnUsage<'_>> {
     let rest = line.strip_prefix("- turn ")?;
     let after_turn = rest.split_once("—")?.1.trim();
-    let (provider_model, usage) = after_turn.split_once(" in:")?;
+    let (provider_model, usage_and_context) = after_turn.split_once(" in:")?;
     let (provider, model) = provider_model.split_once(" / ")?;
-    let input_tokens = usage
+    let input_tokens = usage_and_context
         .split_whitespace()
         .next()?
         .parse::<u64>()
@@ -465,7 +488,31 @@ fn parse_turn_usage_line(line: &str) -> Option<ParsedTurnUsage<'_>> {
         input_tokens,
         output_tokens,
         cache_read_tokens,
+        context: parse_context_composition(line),
     })
+}
+
+fn parse_context_composition(line: &str) -> Option<ParsedContextComposition> {
+    Some(ParsedContextComposition {
+        est_tokens: parse_context_field(line, "ctx est:")?,
+        window_tokens: parse_context_field(line, "win:")?,
+        system_tokens: parse_context_field(line, "sys:")?,
+        tool_schema_tokens: parse_context_field(line, "tools:")?,
+        conversation_tokens: parse_context_field(line, "conv:")?,
+        memory_tokens: parse_context_field(line, "mem:")?,
+        tool_history_tokens: parse_context_field(line, "hist:")?,
+        thinking_tokens: parse_context_field(line, "think:")?,
+        free_tokens: parse_context_field(line, "free:")?,
+    })
+}
+
+fn parse_context_field(line: &str, key: &str) -> Option<u64> {
+    line.split(key)
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()
 }
 
 fn summarize_usage_entries(entries: &[&str]) -> UsageStats {
@@ -525,6 +572,17 @@ where
             bucket.total_input_tokens += parsed.input_tokens;
             bucket.total_output_tokens += parsed.output_tokens;
             bucket.total_cache_read_tokens += parsed.cache_read_tokens;
+            if let Some(context) = parsed.context {
+                bucket.total_ctx_est_tokens += context.est_tokens;
+                bucket.total_ctx_window_tokens += context.window_tokens;
+                bucket.total_system_tokens += context.system_tokens;
+                bucket.total_tool_schema_tokens += context.tool_schema_tokens;
+                bucket.total_conversation_tokens += context.conversation_tokens;
+                bucket.total_memory_tokens += context.memory_tokens;
+                bucket.total_tool_history_tokens += context.tool_history_tokens;
+                bucket.total_thinking_tokens += context.thinking_tokens;
+                bucket.total_free_tokens += context.free_tokens;
+            }
         }
     }
     buckets
@@ -537,12 +595,28 @@ fn format_usage_breakdown(buckets: &BTreeMap<String, UsageBucket>) -> String {
     buckets
         .iter()
         .map(|(name, bucket)| {
+            let avg = |total: u64| -> u64 {
+                if bucket.turns > 0 {
+                    total / bucket.turns as u64
+                } else {
+                    0
+                }
+            };
             format!(
-                "- {name}: {turns} turn(s), in {input}, out {output}, cache {cache}",
+                "- {name}: {turns} turn(s), in {input}, out {output}, cache {cache}, avg ctx est {ctx_est}, avg win {win}, avg sys {sys}, avg tools {tools}, avg conv {conv}, avg mem {mem}, avg hist {hist}, avg think {think}, avg free {free}",
                 turns = bucket.turns,
                 input = bucket.total_input_tokens,
                 output = bucket.total_output_tokens,
                 cache = bucket.total_cache_read_tokens,
+                ctx_est = avg(bucket.total_ctx_est_tokens),
+                win = avg(bucket.total_ctx_window_tokens),
+                sys = avg(bucket.total_system_tokens),
+                tools = avg(bucket.total_tool_schema_tokens),
+                conv = avg(bucket.total_conversation_tokens),
+                mem = avg(bucket.total_memory_tokens),
+                hist = avg(bucket.total_tool_history_tokens),
+                think = avg(bucket.total_thinking_tokens),
+                free = avg(bucket.total_free_tokens),
             )
         })
         .collect::<Vec<_>>()
@@ -560,6 +634,15 @@ fn usage_breakdown_json(buckets: &BTreeMap<String, UsageBucket>) -> Value {
                     "total_input_tokens": bucket.total_input_tokens,
                     "total_output_tokens": bucket.total_output_tokens,
                     "total_cache_read_tokens": bucket.total_cache_read_tokens,
+                    "avg_ctx_est_tokens": if bucket.turns > 0 { bucket.total_ctx_est_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_ctx_window_tokens": if bucket.turns > 0 { bucket.total_ctx_window_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_system_tokens": if bucket.turns > 0 { bucket.total_system_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_tool_schema_tokens": if bucket.turns > 0 { bucket.total_tool_schema_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_conversation_tokens": if bucket.turns > 0 { bucket.total_conversation_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_memory_tokens": if bucket.turns > 0 { bucket.total_memory_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_tool_history_tokens": if bucket.turns > 0 { bucket.total_tool_history_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_thinking_tokens": if bucket.turns > 0 { bucket.total_thinking_tokens / bucket.turns as u64 } else { 0 },
+                    "avg_free_tokens": if bucket.turns > 0 { bucket.total_free_tokens / bucket.turns as u64 } else { 0 },
                 })
             })
             .collect(),
@@ -954,8 +1037,8 @@ mod tests {
     #[test]
     fn summarize_usage_entries_counts_turn_tokens() {
         let entries = vec![
-            "2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60",
-            "2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0",
+            "2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40 · ctx est:6655 win:200000 sys:1000 tools:500 conv:3000 mem:250 hist:1200 think:705 free:193345\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60 · ctx est:7050 win:200000 sys:1100 tools:500 conv:3200 mem:250 hist:1300 think:700 free:192950",
+            "2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0 · ctx est:5100 win:200000 sys:900 tools:400 conv:2000 mem:200 hist:900 think:700 free:194900",
         ];
         let stats = summarize_usage_entries(&entries);
         assert_eq!(stats.sessions, 2);
@@ -969,8 +1052,11 @@ mod tests {
         let providers = summarize_usage_by_provider(&entries);
         assert_eq!(providers["anthropic"].turns, 2);
         assert_eq!(providers["anthropic"].total_input_tokens, 2700);
+        assert_eq!(providers["anthropic"].total_ctx_est_tokens, 13_705);
+        assert_eq!(providers["anthropic"].total_system_tokens, 2_100);
         assert_eq!(providers["openai-codex"].turns, 1);
         assert_eq!(providers["openai-codex"].total_output_tokens, 100);
+        assert_eq!(providers["openai-codex"].total_conversation_tokens, 2_000);
 
         let models = summarize_usage_by_model(&entries);
         assert_eq!(models["anthropic:claude-sonnet-4-6"].turns, 2);
@@ -987,7 +1073,7 @@ mod tests {
         };
         fs::write(
             &log_path,
-            "# Agent Journal\n\n## 2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60\n\n## 2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0\n",
+            "# Agent Journal\n\n## 2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40 · ctx est:6655 win:200000 sys:1000 tools:500 conv:3000 mem:250 hist:1200 think:705 free:193345\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60 · ctx est:7050 win:200000 sys:1100 tools:500 conv:3200 mem:250 hist:1300 think:700 free:192950\n\n## 2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0 · ctx est:5100 win:200000 sys:900 tools:400 conv:2000 mem:200 hist:900 think:700 free:194900\n",
         )
         .unwrap();
 
@@ -998,17 +1084,25 @@ mod tests {
         assert!(text.contains("input tokens: 3600"), "got: {text}");
         assert!(text.contains("Provider breakdown:"), "got: {text}");
         assert!(
-            text.contains("- anthropic: 2 turn(s), in 2700, out 550, cache 100"),
+            text.contains("- anthropic: 2 turn(s), in 2700, out 550, cache 100, avg ctx est 6852, avg win 200000, avg sys 1050, avg tools 500, avg conv 3100, avg mem 250, avg hist 1250, avg think 702, avg free 193147"),
             "got: {text}"
         );
         assert!(
-            text.contains("- openai-codex:gpt-5.4: 1 turn(s), in 900, out 100, cache 0"),
+            text.contains("- openai-codex:gpt-5.4: 1 turn(s), in 900, out 100, cache 0, avg ctx est 5100, avg win 200000, avg sys 900, avg tools 400, avg conv 2000, avg mem 200, avg hist 900, avg think 700, avg free 194900"),
             "got: {text}"
         );
         assert_eq!(details["total_input_tokens"].as_u64(), Some(3600));
         assert_eq!(details["turns"].as_u64(), Some(3));
         assert_eq!(details["provider_breakdown"][0]["name"].as_str(), Some("anthropic"));
         assert_eq!(details["provider_breakdown"][0]["turns"].as_u64(), Some(2));
+        assert_eq!(
+            details["provider_breakdown"][0]["avg_ctx_est_tokens"].as_u64(),
+            Some(6852)
+        );
+        assert_eq!(
+            details["provider_breakdown"][0]["avg_tool_history_tokens"].as_u64(),
+            Some(1250)
+        );
     }
 
     #[test]
