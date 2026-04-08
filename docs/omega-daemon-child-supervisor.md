@@ -70,6 +70,12 @@ Control-surface definition doc written at `docs/omegon-daemon-child-supervisor-c
 
 **Rationale:** There is no separate meaningful 'Omega' layer here. Auspex should supervise the Omegon daemon process externally, while Omegon owns agent semantics, child orchestration, restart recovery, and control surfaces for its internal cleave workers.
 
+### Auspex owns durable non-interactive child supervision
+
+**Status:** accepted
+
+**Rationale:** Omegon's local lease/fingerprint supervisor is sufficient for interactive bootstrap continuity and degraded same-host recovery, but it is not the right authority model for durable non-interactive execution. Persistent lifecycle ownership, restart-safe control, and future identity-backed leases belong in Auspex as the out-of-process supervisor.
+
 ## Open Questions
 
 - What is the durable child-registry source of truth after daemon restart: `state.json` only, a separate supervisor journal/checkpoint file, or an embedded local store that tracks child command, pid, start time, worktree, and last-seen progress?
