@@ -3393,7 +3393,8 @@ mod tests {
                 last_activity_unix_ms: None,
             adoption_worktree_path: None,
             adoption_model: None,
-            },
+            supervisor_token: None,
+        },
             cleave::state::ChildState {
                 child_id: 1,
                 label: "failed".to_string(),
@@ -3415,7 +3416,8 @@ mod tests {
                 last_activity_unix_ms: None,
             adoption_worktree_path: None,
             adoption_model: None,
-            },
+            supervisor_token: None,
+        },
             cleave::state::ChildState {
                 child_id: 2,
                 label: "exhausted".to_string(),
@@ -3437,7 +3439,8 @@ mod tests {
                 last_activity_unix_ms: None,
             adoption_worktree_path: None,
             adoption_model: None,
-            },
+            supervisor_token: None,
+        },
             cleave::state::ChildState {
                 child_id: 3,
                 label: "pending".to_string(),
@@ -3459,7 +3462,8 @@ mod tests {
                 last_activity_unix_ms: None,
             adoption_worktree_path: None,
             adoption_model: None,
-            },
+            supervisor_token: None,
+        },
         ];
 
         let (completed, failed, upstream_exhausted, unfinished) =
@@ -3493,6 +3497,7 @@ mod tests {
             last_activity_unix_ms: None,
             adoption_worktree_path: None,
             adoption_model: None,
+            supervisor_token: None,
         };
 
         let line = format_cleave_merge_result(

@@ -1063,11 +1063,14 @@ mod tests {
         let workspace = dir.path().join(".omegon/cleave-workspace");
         std::fs::create_dir_all(&workspace).unwrap();
         let state_path = workspace.join("state.json");
+        let worktree = workspace.join("alpha-wt");
+        std::fs::create_dir_all(&worktree).unwrap();
         let state_json = serde_json::json!({
             "runId": "run-1",
             "directive": "test",
             "repoPath": dir.path().display().to_string(),
             "workspacePath": workspace.display().to_string(),
+            "supervisorToken": "test-supervisor",
             "children": [{
                 "childId": 0,
                 "label": "alpha",
@@ -1076,7 +1079,12 @@ mod tests {
                 "dependsOn": [],
                 "status": "running",
                 "backend": "native",
-                "pid": 4242
+                "worktreePath": worktree.display().to_string(),
+                "executeModel": "model",
+                "pid": std::process::id(),
+                "adoptionWorktreePath": std::fs::canonicalize(&worktree).unwrap().to_string_lossy().to_string(),
+                "adoptionModel": "model",
+                "supervisorToken": "test-supervisor"
             }],
             "plan": {"children": []}
         });
@@ -1089,7 +1097,7 @@ mod tests {
         assert_eq!(progress.total_children, 1);
         assert_eq!(progress.children[0].label, "alpha");
         assert_eq!(progress.children[0].status, "running");
-        assert_eq!(progress.children[0].pid, Some(4242));
+        assert_eq!(progress.children[0].pid, Some(std::process::id()));
     }
 
     #[test]
@@ -1098,11 +1106,14 @@ mod tests {
         let workspace = dir.path().join(".omegon/cleave-workspace");
         std::fs::create_dir_all(&workspace).unwrap();
         let state_path = workspace.join("state.json");
+        let worktree = workspace.join("alpha-wt");
+        std::fs::create_dir_all(&worktree).unwrap();
         let state_json = serde_json::json!({
             "runId": "run-1",
             "directive": "test",
             "repoPath": dir.path().display().to_string(),
             "workspacePath": workspace.display().to_string(),
+            "supervisorToken": "test-supervisor",
             "children": [{
                 "childId": 0,
                 "label": "alpha",
@@ -1111,7 +1122,12 @@ mod tests {
                 "dependsOn": [],
                 "status": "running",
                 "backend": "native",
-                "pid": 999_999
+                "worktreePath": worktree.display().to_string(),
+                "executeModel": "model",
+                "pid": 999999,
+                "adoptionWorktreePath": std::fs::canonicalize(&worktree).unwrap().to_string_lossy().to_string(),
+                "adoptionModel": "model",
+                "supervisorToken": "test-supervisor"
             }],
             "plan": {"children": []}
         });
@@ -1362,8 +1378,9 @@ mod tests {
             pid: None,
             started_at_unix_ms: None,
             last_activity_unix_ms: None,
-                adoption_worktree_path: None,
-                adoption_model: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
+            supervisor_token: None,
         };
 
         let completed = cleave::orchestrator::CleaveResult {
@@ -1372,6 +1389,7 @@ mod tests {
                 directive: "test".into(),
                 repo_path: "/tmp/repo".into(),
                 workspace_path: "/tmp/workspace".into(),
+                supervisor_token: "test-supervisor".into(),
                 children: vec![mk_child(ChildStatus::Completed)],
                 plan: json!({}),
                 started_at: None,
@@ -1387,6 +1405,7 @@ mod tests {
                 directive: "test".into(),
                 repo_path: "/tmp/repo".into(),
                 workspace_path: "/tmp/workspace".into(),
+                supervisor_token: "test-supervisor".into(),
                 children: vec![mk_child(ChildStatus::Completed), mk_child(ChildStatus::Failed)],
                 plan: json!({}),
                 started_at: None,

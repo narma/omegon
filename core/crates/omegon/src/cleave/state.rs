@@ -107,11 +107,11 @@ fn canonical_display(path: &str) -> Option<String> {
 }
 
 fn local_supervisor_token() -> String {
-    format!(
-        "supv-{}-{}",
-        crate::cleave::orchestrator::nanoid(8),
-        crate::cleave::orchestrator::nanoid(6)
-    )
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("supv-{nanos:x}")
 }
 
 impl CleaveState {

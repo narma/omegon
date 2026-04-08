@@ -1264,7 +1264,8 @@ mod tests {
                 last_activity_unix_ms: None,
                 adoption_worktree_path: None,
                 adoption_model: None,
-            },
+            supervisor_token: None,
+        },
             crate::cleave::state::ChildState {
                 child_id: 2,
                 label: "gamma".into(),
@@ -1286,7 +1287,8 @@ mod tests {
                 last_activity_unix_ms: None,
                 adoption_worktree_path: None,
                 adoption_model: None,
-            },
+            supervisor_token: None,
+        },
         ];
 
         let task = build_task_file(
@@ -1328,6 +1330,7 @@ mod tests {
             last_activity_unix_ms: None,
                 adoption_worktree_path: None,
                 adoption_model: None,
+            supervisor_token: None,
         };
 
         let taken = child.worktree_path.take();
@@ -1410,8 +1413,9 @@ fn build_task_file_includes_all_sections() {
             pid: None,
             started_at_unix_ms: None,
             last_activity_unix_ms: None,
-                adoption_worktree_path: None,
-                adoption_model: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
+            supervisor_token: None,
         },
         crate::cleave::state::ChildState {
             child_id: 1,
@@ -1432,8 +1436,9 @@ fn build_task_file_includes_all_sections() {
             pid: None,
             started_at_unix_ms: None,
             last_activity_unix_ms: None,
-                adoption_worktree_path: None,
-                adoption_model: None,
+            adoption_worktree_path: None,
+            adoption_model: None,
+            supervisor_token: None,
         },
     ];
     let guardrails = "## Project Guardrails\n\n1. **typecheck**: `tsc`\n";
@@ -1503,6 +1508,7 @@ fn build_task_file_rust_scope_gets_rust_test_convention() {
         last_activity_unix_ms: None,
                 adoption_worktree_path: None,
                 adoption_model: None,
+        supervisor_token: None,
     }];
     let task = build_task_file(
         0,
