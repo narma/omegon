@@ -16,8 +16,8 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 
 use omegon_traits::{
-    BusEvent, BusRequest, CommandDefinition, CommandResult, ContentBlock, ContextInjection,
-    ContextSignals, Feature, ToolDefinition, ToolResult,
+    BusEvent, BusRequest, CommandDefinition, CommandResult, ContentBlock, ContextComposition,
+    ContextInjection, ContextSignals, Feature, ToolDefinition, ToolResult,
 };
 
 pub struct SessionLog {
@@ -34,10 +34,24 @@ struct TurnSummary {
     turn: u32,
     model: Option<String>,
     provider: Option<String>,
+    estimated_tokens: usize,
+    context_window: usize,
+    context_composition: ContextComposition,
     actual_input_tokens: u64,
     actual_output_tokens: u64,
     cache_read_tokens: u64,
     provider_telemetry: Option<omegon_traits::ProviderTelemetrySnapshot>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct UsageStats {
+    sessions: usize,
+    turns: usize,
+    total_input_tokens: u64,
+    total_output_tokens: u64,
+    total_cache_read_tokens: u64,
+    max_input_tokens: u64,
+    max_output_tokens: u64,
 }
 
 impl SessionLog {
@@ -303,6 +317,148 @@ impl SessionLog {
             Err(e) => CommandResult::Display(format!("Error reading session log: {e}")),
         }
     }
+
+    fn usage_report_text(&self, n: usize) -> anyhow::Result<(String, Value)> {
+        if !self.log_path.exists() {
+            return Ok((
+                format!("No agent journal found at {}", self.log_path.display()),
+                json!({"sessions": 0, "turns": 0}),
+            ));
+        }
+
+        let content = fs::read_to_string(&self.log_path)?;
+        let entries: Vec<&str> = content.split("\n## ").collect();
+        let raw_entries: Vec<&str> = entries
+            .iter()
+            .skip(1)
+            .filter(|entry| !entry.trim().is_empty())
+            .copied()
+            .collect();
+
+        let selected: Vec<&str> = raw_entries.iter().rev().take(n).rev().copied().collect();
+        let stats = summarize_usage_entries(&selected);
+        let avg_input = if stats.turns > 0 {
+            stats.total_input_tokens / stats.turns as u64
+        } else {
+            0
+        };
+        let avg_output = if stats.turns > 0 {
+            stats.total_output_tokens / stats.turns as u64
+        } else {
+            0
+        };
+
+        let text = format!(
+            "Session usage summary ({returned} of {total} sessions)\n\n- sessions: {sessions}\n- turns: {turns}\n- input tokens: {input}\n- output tokens: {output}\n- cache read tokens: {cache}\n- avg input/turn: {avg_input}\n- avg output/turn: {avg_output}\n- max input/turn: {max_input}\n- max output/turn: {max_output}",
+            returned = selected.len(),
+            total = raw_entries.len(),
+            sessions = stats.sessions,
+            turns = stats.turns,
+            input = stats.total_input_tokens,
+            output = stats.total_output_tokens,
+            cache = stats.total_cache_read_tokens,
+            avg_input = avg_input,
+            avg_output = avg_output,
+            max_input = stats.max_input_tokens,
+            max_output = stats.max_output_tokens,
+        );
+
+        Ok((
+            text,
+            json!({
+                "sessions": stats.sessions,
+                "turns": stats.turns,
+                "total_input_tokens": stats.total_input_tokens,
+                "total_output_tokens": stats.total_output_tokens,
+                "total_cache_read_tokens": stats.total_cache_read_tokens,
+                "avg_input_tokens": avg_input,
+                "avg_output_tokens": avg_output,
+                "max_input_tokens": stats.max_input_tokens,
+                "max_output_tokens": stats.max_output_tokens,
+                "returned": selected.len(),
+                "total": raw_entries.len(),
+            }),
+        ))
+    }
+
+    fn usage_report(&self, n: usize) -> CommandResult {
+        match self.usage_report_text(n) {
+            Ok((text, _details)) => CommandResult::Display(text),
+            Err(e) => CommandResult::Display(format!("Error reading session log usage: {e}")),
+        }
+    }
+}
+
+fn format_context_composition(comp: &ContextComposition, context_window: usize) -> String {
+    format!(
+        "ctx est:{} win:{} sys:{} tools:{} conv:{} mem:{} hist:{} think:{} free:{}",
+        comp.conversation_tokens
+            + comp.system_tokens
+            + comp.memory_tokens
+            + comp.tool_schema_tokens
+            + comp.tool_history_tokens
+            + comp.thinking_tokens,
+        context_window,
+        comp.system_tokens,
+        comp.tool_schema_tokens,
+        comp.conversation_tokens,
+        comp.memory_tokens,
+        comp.tool_history_tokens,
+        comp.thinking_tokens,
+        comp.free_tokens,
+    )
+}
+
+fn parse_turn_usage_line(line: &str) -> Option<(u64, u64, u64)> {
+    let input = line
+        .split("in:")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    let output = line
+        .split("out:")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    let cache = line
+        .split("cache:")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    Some((input, output, cache))
+}
+
+fn summarize_usage_entries(entries: &[&str]) -> UsageStats {
+    let mut stats = UsageStats {
+        sessions: entries.len(),
+        ..UsageStats::default()
+    };
+
+    for entry in entries {
+        for line in entry.lines() {
+            let trimmed = line.trim();
+            if !trimmed.starts_with("- turn ") {
+                continue;
+            }
+            let Some((input, output, cache)) = parse_turn_usage_line(trimmed) else {
+                continue;
+            };
+            stats.turns += 1;
+            stats.total_input_tokens += input;
+            stats.total_output_tokens += output;
+            stats.total_cache_read_tokens += cache;
+            stats.max_input_tokens = stats.max_input_tokens.max(input);
+            stats.max_output_tokens = stats.max_output_tokens.max(output);
+        }
+    }
+
+    stats
 }
 
 fn format_turn_summary(summary: &TurnSummary) -> String {
@@ -317,6 +473,10 @@ fn format_turn_summary(summary: &TurnSummary) -> String {
         summary.actual_output_tokens,
         summary.cache_read_tokens
     )];
+    parts.push(format_context_composition(
+        &summary.context_composition,
+        summary.context_window,
+    ));
 
     if let Some(telemetry) = &summary.provider_telemetry {
         match telemetry.provider.as_str() {
@@ -375,8 +535,8 @@ impl Feature for SessionLog {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["read", "recent"],
-                        "description": "Read session log entries"
+                        "enum": ["read", "recent", "usage"],
+                        "description": "Read session log entries or summarize token usage"
                     },
                     "count": {
                         "type": "number",
@@ -409,6 +569,13 @@ impl Feature for SessionLog {
                     details,
                 })
             }
+            "usage" => {
+                let (text, details) = self.usage_report_text(count)?;
+                Ok(ToolResult {
+                    content: vec![ContentBlock::Text { text }],
+                    details,
+                })
+            }
             _ => anyhow::bail!("Unknown action: {action}"),
         }
     }
@@ -416,8 +583,8 @@ impl Feature for SessionLog {
     fn commands(&self) -> Vec<CommandDefinition> {
         vec![CommandDefinition {
             name: "session-log".into(),
-            description: "Read .omegon/agent-journal.md entries".into(),
-            subcommands: vec!["read".into()],
+            description: "Read .omegon/agent-journal.md entries and summarize usage".into(),
+            subcommands: vec!["read".into(), "usage".into()],
         }]
     }
 
@@ -432,8 +599,13 @@ impl Feature for SessionLog {
             let n = n_str.parse::<usize>().unwrap_or(5);
             return self.read_entries(n);
         }
+        if trimmed.starts_with("usage") {
+            let n_str = trimmed.strip_prefix("usage").unwrap_or("").trim();
+            let n = n_str.parse::<usize>().unwrap_or(10);
+            return self.usage_report(n);
+        }
 
-        CommandResult::Display("Usage: /session-log [read [n]]".into())
+        CommandResult::Display("Usage: /session-log [read [n] | usage [n]]".into())
     }
 
     fn provide_context(&self, _signals: &ContextSignals<'_>) -> Option<ContextInjection> {
@@ -462,9 +634,9 @@ impl Feature for SessionLog {
                 turn,
                 model,
                 provider,
-                estimated_tokens: _,
-                context_window: _,
-                context_composition: _,
+                estimated_tokens,
+                context_window,
+                context_composition,
                 actual_input_tokens,
                 actual_output_tokens,
                 cache_read_tokens,
@@ -474,6 +646,9 @@ impl Feature for SessionLog {
                     turn: *turn,
                     model: model.clone(),
                     provider: provider.clone(),
+                    estimated_tokens: *estimated_tokens,
+                    context_window: *context_window,
+                    context_composition: context_composition.clone(),
                     actual_input_tokens: *actual_input_tokens,
                     actual_output_tokens: *actual_output_tokens,
                     cache_read_tokens: *cache_read_tokens,
@@ -630,7 +805,15 @@ mod tests {
             provider: Some("anthropic".into()),
             estimated_tokens: 12_000,
             context_window: 200_000,
-            context_composition: omegon_traits::ContextComposition::default(),
+            context_composition: omegon_traits::ContextComposition {
+                system_tokens: 1000,
+                tool_schema_tokens: 500,
+                conversation_tokens: 3000,
+                memory_tokens: 250,
+                tool_history_tokens: 1200,
+                thinking_tokens: 700,
+                free_tokens: 193_350,
+            },
             actual_input_tokens: 1200,
             actual_output_tokens: 300,
             cache_read_tokens: 40,
@@ -659,6 +842,47 @@ mod tests {
             "should record provider/model"
         );
         assert!(content.contains("5h 42%"), "should record telemetry");
+        assert!(content.contains("ctx est:"), "should record context composition");
+        assert!(content.contains("sys:"), "should record composition components");
+    }
+
+    #[test]
+    fn summarize_usage_entries_counts_turn_tokens() {
+        let entries = vec![
+            "2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60",
+            "2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0",
+        ];
+        let stats = summarize_usage_entries(&entries);
+        assert_eq!(stats.sessions, 2);
+        assert_eq!(stats.turns, 3);
+        assert_eq!(stats.total_input_tokens, 3600);
+        assert_eq!(stats.total_output_tokens, 650);
+        assert_eq!(stats.total_cache_read_tokens, 100);
+        assert_eq!(stats.max_input_tokens, 1500);
+        assert_eq!(stats.max_output_tokens, 300);
+    }
+
+    #[test]
+    fn usage_report_summarizes_recent_sessions() {
+        let dir = tempfile::tempdir().unwrap();
+        let log_path = {
+            let d = dir.path().join(".omegon");
+            std::fs::create_dir_all(&d).unwrap();
+            d.join("agent-journal.md")
+        };
+        fs::write(
+            &log_path,
+            "# Agent Journal\n\n## 2026-04-08 — main (2t 10tc 1m)\n\n**Turns:**\n- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:1200 out:300 cache:40\n- turn 2 — anthropic / anthropic:claude-sonnet-4-6 in:1500 out:250 cache:60\n\n## 2026-04-09 — main (1t 2tc 10s)\n\n**Turns:**\n- turn 1 — openai-codex / openai-codex:gpt-5.4 in:900 out:100 cache:0\n",
+        )
+        .unwrap();
+
+        let feature = SessionLog::new(dir.path());
+        let (text, details) = feature.usage_report_text(10).unwrap();
+        assert!(text.contains("sessions: 2"), "got: {text}");
+        assert!(text.contains("turns: 3"), "got: {text}");
+        assert!(text.contains("input tokens: 3600"), "got: {text}");
+        assert_eq!(details["total_input_tokens"].as_u64(), Some(3600));
+        assert_eq!(details["turns"].as_u64(), Some(3));
     }
 
     #[test]
@@ -667,6 +891,17 @@ mod tests {
             turn: 1,
             model: Some("openai-codex:gpt-5.4".into()),
             provider: Some("openai-codex".into()),
+            estimated_tokens: 150,
+            context_window: 200_000,
+            context_composition: omegon_traits::ContextComposition {
+                system_tokens: 20,
+                tool_schema_tokens: 10,
+                conversation_tokens: 80,
+                memory_tokens: 5,
+                tool_history_tokens: 15,
+                thinking_tokens: 20,
+                free_tokens: 199_850,
+            },
             actual_input_tokens: 100,
             actual_output_tokens: 20,
             cache_read_tokens: 0,
