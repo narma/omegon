@@ -2226,9 +2226,9 @@ impl App {
             let hint_text = if self.agent_active {
                 String::new()
             } else if self.editor.is_empty() {
-                "⏎ send  ⇧⏎/⌥⏎ newline  ^D tree  / commands ".into()
+                "⏎ send  ⇧⏎/⌥⏎ newline  ^F focus  ^D tree  / commands ".into()
             } else {
-                "⏎ send  ⇧⏎/⌥⏎ newline ".into()
+                "⏎ send  ⇧⏎/⌥⏎ newline  ↑/↓ history ".into()
             };
             let model_short = self
                 .footer_data
@@ -4111,7 +4111,7 @@ impl App {
     }
 
     fn should_use_arrow_history_recall(&self) -> bool {
-        self.terminal_copy_mode
+        !self.agent_active
     }
 
     /// Render tab bar showing all tabs, with active tab highlighted.
@@ -5909,6 +5909,11 @@ pub async fn run_tui(
                             app.conversation.toggle_pin();
                         }
 
+                        // Ctrl+F: toggle focus mode (copy-first selected segment view)
+                        (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
+                            app.set_focus_mode(!app.focus_mode);
+                        }
+
                         // Ctrl+D: toggle sidebar navigation mode (design tree)
                         (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                             app.dashboard.sidebar_active = !app.dashboard.sidebar_active;
@@ -6101,13 +6106,7 @@ pub async fn run_tui(
                             app.conversation.scroll_down(20);
                         }
                         (KeyCode::Up, _) => {
-                            if matches!(app.pane_focus, PaneFocus::Conversation) {
-                                app.conversation.scroll_up(3);
-                            } else if matches!(app.pane_focus, PaneFocus::Dashboard) {
-                                app.dashboard.scroll_up(3);
-                            } else if app.agent_active {
-                                app.conversation.scroll_up(3);
-                            } else if app.editor.line_count() > 1 && app.editor.cursor_row() > 0 {
+                            if app.editor.line_count() > 1 && app.editor.cursor_row() > 0 {
                                 // Multiline: move cursor up within editor
                                 app.editor.move_up();
                             } else if app.should_use_arrow_history_recall() {
@@ -6115,13 +6114,7 @@ pub async fn run_tui(
                             }
                         }
                         (KeyCode::Down, _) => {
-                            if matches!(app.pane_focus, PaneFocus::Conversation) {
-                                app.conversation.scroll_down(3);
-                            } else if matches!(app.pane_focus, PaneFocus::Dashboard) {
-                                app.dashboard.scroll_down(3);
-                            } else if app.agent_active {
-                                app.conversation.scroll_down(3);
-                            } else if app.editor.line_count() > 1
+                            if app.editor.line_count() > 1
                                 && app.editor.cursor_row() < app.editor.line_count() - 1
                             {
                                 // Multiline: move cursor down within editor
