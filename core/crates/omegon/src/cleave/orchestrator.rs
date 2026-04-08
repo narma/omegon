@@ -95,6 +95,7 @@ pub async fn run_cleave(
     workspace_path: &Path,
     config: &CleaveConfig,
     cancel: CancellationToken,
+    child_cancel_registry: Option<Arc<std::sync::Mutex<std::collections::HashMap<String, CancellationToken>>>>,
 ) -> Result<CleaveResult> {
     let started = Instant::now();
 
@@ -320,6 +321,7 @@ pub async fn run_cleave(
         for info in to_dispatch {
             let sem = semaphore.clone();
             let child_cancel = cancel.clone();
+            let child_cancel_registry = child_cancel_registry.clone();
             let agent_binary = config.agent_binary.clone();
             let bridge_path = config.bridge_path.clone();
             let node = config.node.clone();
@@ -352,6 +354,11 @@ pub async fn run_cleave(
                 &info.prompt,
             )?;
             state.mark_child_spawned(info.child_idx, pid);
+            if let Some(registry) = &child_cancel_registry
+                && let Ok(mut registry) = registry.lock()
+            {
+                registry.insert(info.label.clone(), child_cancel.clone());
+            }
             state.save(&state_path)?;
 
             let monitor_config = dispatch_config.clone();
@@ -367,6 +374,11 @@ pub async fn run_cleave(
                     child_cancel,
                 )
                 .await;
+                if let Some(registry) = &child_cancel_registry
+                    && let Ok(mut registry) = registry.lock()
+                {
+                    registry.remove(&child_label);
+                }
                 (child_idx, result)
             });
             handles.push(handle);

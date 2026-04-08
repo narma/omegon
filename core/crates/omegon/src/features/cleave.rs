@@ -9,6 +9,7 @@
 //! The orchestrator runs async in a spawned task. Progress events are
 //! collected and surfaced through the dashboard and conversation segments.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -442,6 +443,8 @@ pub struct CleaveFeature {
     /// Shared progress state — updated by the spawned orchestrator task,
     /// read by the dashboard renderer.
     progress: Arc<Mutex<CleaveProgress>>,
+    /// In-process cancel handles for active cleave children, keyed by label.
+    child_cancel_tokens: Arc<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>>,
     /// Provider inventory for per-child routing.
     pub inventory: Option<std::sync::Arc<tokio::sync::RwLock<crate::routing::ProviderInventory>>>,
     /// Startup-approved secret env inherited by child runs.
@@ -453,6 +456,7 @@ impl CleaveFeature {
         Self {
             repo_path: repo_path.to_path_buf(),
             progress: Arc::new(Mutex::new(CleaveProgress::default())),
+            child_cancel_tokens: Arc::new(Mutex::new(HashMap::new())),
             inventory: None,
             session_secret_env,
         }
@@ -466,6 +470,21 @@ impl CleaveFeature {
     /// Get a shared handle to the progress for live dashboard updates.
     pub fn shared_progress(&self) -> Arc<Mutex<CleaveProgress>> {
         Arc::clone(&self.progress)
+    }
+
+    /// Cancel a running child by label. Returns true if a live cancel handle existed.
+    pub fn cancel_child(&self, label: &str) -> bool {
+        let token = self
+            .child_cancel_tokens
+            .lock()
+            .ok()
+            .and_then(|map| map.get(label).cloned());
+        if let Some(token) = token {
+            token.cancel();
+            true
+        } else {
+            false
+        }
     }
 
     fn execute_assess(&self, args: &Value) -> anyhow::Result<ToolResult> {
@@ -542,6 +561,7 @@ impl CleaveFeature {
             let shared = self.shared_progress();
             progress::callback_progress_sink(move |event| apply_progress_event(&shared, event))
         };
+        let child_cancel_tokens = Arc::clone(&self.child_cancel_tokens);
 
         let config = cleave::orchestrator::CleaveConfig {
             agent_binary,
@@ -572,8 +592,14 @@ impl CleaveFeature {
             &workspace,
             &config,
             cancel,
+            Some(Arc::clone(&child_cancel_tokens)),
         )
         .await?;
+
+        {
+            let mut tokens = self.child_cancel_tokens.lock().unwrap();
+            tokens.clear();
+        }
 
         if should_cleanup_workspace(&result) {
             cleanup_workspace_dir(&workspace)?;
@@ -799,7 +825,7 @@ impl Feature for CleaveFeature {
         vec![CommandDefinition {
             name: "cleave".into(),
             description: "Show cleave status or trigger decomposition".into(),
-            subcommands: vec!["status".into()],
+            subcommands: vec!["status".into(), "cancel <label>".into()],
         }]
     }
 
@@ -839,8 +865,16 @@ impl Feature for CleaveFeature {
                         lines.push(format!("  {} {}{}", icon, child.label, dur));
                     }
                     CommandResult::Display(lines.join("\n"))
+                } else if let Some(label) = sub.strip_prefix("cancel ").map(str::trim) {
+                    if label.is_empty() {
+                        CommandResult::Display("Usage: /cleave cancel <label>".into())
+                    } else if self.cancel_child(label) {
+                        CommandResult::Display(format!("Cancelling cleave child '{label}'..."))
+                    } else {
+                        CommandResult::Display(format!("No active cleave child '{label}'."))
+                    }
                 } else {
-                    CommandResult::Display("Usage: /cleave [status]".into())
+                    CommandResult::Display("Usage: /cleave [status|cancel <label>]".into())
                 }
             }
             _ => CommandResult::NotHandled,
@@ -932,6 +966,21 @@ mod tests {
         let mut feature = CleaveFeature::new(dir.path(), vec![]);
         let result = feature.handle_command("cleave", "status");
         assert!(matches!(result, CommandResult::Display(ref s) if s.contains("No active")));
+    }
+
+    #[test]
+    fn cancel_child_uses_registered_token() {
+        let dir = tempfile::tempdir().unwrap();
+        let feature = CleaveFeature::new(dir.path(), vec![]);
+        let token = tokio_util::sync::CancellationToken::new();
+        {
+            let mut registry = feature.child_cancel_tokens.lock().unwrap();
+            registry.insert("alpha".into(), token.clone());
+        }
+
+        assert!(feature.cancel_child("alpha"));
+        assert!(token.is_cancelled());
+        assert!(!feature.cancel_child("beta"));
     }
 
     #[test]

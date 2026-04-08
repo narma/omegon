@@ -318,6 +318,7 @@ async fn run_scenario(cli: &Cli, scenario: &SmokeScenario) -> anyhow::Result<()>
         &workspace,
         &config,
         CancellationToken::new(),
+        None,
     )
     .await?;
 

@@ -771,7 +771,8 @@ async fn run_cleave_command(
     });
 
     let result =
-        cleave::run_cleave(&plan, directive, &repo_path, workspace, &config, cancel).await?;
+        cleave::run_cleave(&plan, directive, &repo_path, workspace, &config, cancel, None)
+            .await?;
 
     // Print report
     eprintln!("\n## Cleave Report: {}", result.state.run_id);
