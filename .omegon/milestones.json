@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 39,
+    "rc_count": 40,
     "notes": [
       "feat(auspex): add mode-aware local handoff probe",
       "feat(auspex): launch desktop handoff from cached startup payload",
@@ -471,8 +471,10 @@
       "fix(auth): route ollama-cloud login through hidden key entry",
       "fix(cleave): clean scratch workspace after successful runs",
       "fix(cli): align auth provider help with daemon support",
+      "fix(codescan): exclude transient omegon workspaces",
       "fix(compliance): warn instead of blocking Anthropic subscription automation",
       "fix(context): execute auto-compaction from real usage",
+      "fix(context): reduce code pack selector false positives",
       "fix(context): sync compact status with authoritative snapshot",
       "fix(context): wait for authoritative slash completion",
       "fix(footer): split model row into model + tier to prevent overflow",
@@ -503,6 +505,7 @@
       "fix(tui): harden cleave panel against border glyph leakage",
       "fix(tui): keep thinking telemetry in blue family",
       "fix(tui): keep version visible in persistent footer",
+      "fix(tui): make focus mode track and navigate selected segments",
       "fix(tui): make inference activity glyphs explicit",
       "fix(tui): make inference legend composition-only",
       "fix(tui): make tool rows width-aware and clear border-adjacent cells",
@@ -539,7 +542,7 @@
       "refactor(tui): remove activity-row phase labels",
       "refactor(tui): simplify slash command auth and context paths"
     ],
-    "rc_version": "0.15.10-rc.39",
-    "last_rc": "2026-04-08T00:04:12Z"
+    "rc_version": "0.15.10-rc.40",
+    "last_rc": "2026-04-08T01:23:12Z"
   }
 }
