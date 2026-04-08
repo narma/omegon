@@ -56,7 +56,7 @@ use omegon_traits::AgentEvent;
 use self::conversation::{ConversationView, Tab};
 use self::dashboard::DashboardState;
 use self::editor::Editor;
-use self::footer::FooterData;
+use self::footer::{FooterData, SessionUsageSlice};
 use self::instruments::InstrumentPanel;
 use self::segments::{SegmentContent, SegmentExportMode};
 
@@ -4164,6 +4164,8 @@ impl App {
             }
             AgentEvent::TurnEnd {
                 turn,
+                model,
+                provider,
                 estimated_tokens,
                 context_window,
                 context_composition,
@@ -4176,6 +4178,16 @@ impl App {
                 // Accumulate session-long token counts
                 self.footer_data.session_input_tokens += actual_input_tokens;
                 self.footer_data.session_output_tokens += actual_output_tokens;
+                if (actual_input_tokens > 0 || actual_output_tokens > 0)
+                    && let Some(model_id) = model
+                {
+                    self.footer_data.session_usage_slices.push(SessionUsageSlice {
+                        model_id,
+                        provider: provider.unwrap_or_default(),
+                        input_tokens: actual_input_tokens,
+                        output_tokens: actual_output_tokens,
+                    });
+                }
                 // Forward raw token counts to the instrument panel
                 self.instrument_panel.update_turn_tokens(
                     actual_input_tokens as u32,

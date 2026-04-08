@@ -230,6 +230,8 @@ pub async fn run(
             });
             let _ = events.send(AgentEvent::TurnEnd {
                 turn,
+                model: Some(config.model.clone()),
+                provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                 estimated_tokens: conversation.estimate_tokens(),
                 context_window,
                 context_composition,
@@ -454,6 +456,8 @@ pub async fn run(
                 });
                 let _ = events.send(AgentEvent::TurnEnd {
                     turn,
+                    model: Some(config.model.clone()),
+                    provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                     estimated_tokens: conversation.estimate_tokens(),
                     context_window,
                     context_composition: default_context_composition(context_window),
@@ -516,6 +520,8 @@ pub async fn run(
                 });
                 let _ = events.send(AgentEvent::TurnEnd {
                     turn,
+                    model: Some(config.model.clone()),
+                    provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                     estimated_tokens: conversation.estimate_tokens(),
                     context_window,
                     context_composition: compute_context_composition(
@@ -551,6 +557,8 @@ pub async fn run(
             });
             let _ = events.send(AgentEvent::TurnEnd {
                 turn,
+                model: Some(config.model.clone()),
+                provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                 estimated_tokens: conversation.estimate_tokens(),
                 context_window,
                 context_composition: turn_context_composition,
@@ -711,6 +719,8 @@ pub async fn run(
         });
         let _ = events.send(AgentEvent::TurnEnd {
             turn,
+            model: Some(config.model.clone()),
+            provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
             estimated_tokens,
             context_window,
             context_composition: turn_context_composition,

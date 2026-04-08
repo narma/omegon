@@ -291,6 +291,8 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
         }),
         AgentEvent::TurnEnd {
             turn,
+            model,
+            provider,
             estimated_tokens,
             actual_input_tokens,
             actual_output_tokens,
@@ -302,6 +304,8 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
             "event_name": "turn.ended",
             "turn": turn,
             "estimated_tokens": estimated_tokens,
+            "model": model,
+            "provider": provider,
             "actual_input_tokens": actual_input_tokens,
             "actual_output_tokens": actual_output_tokens,
             "cache_read_tokens": cache_read_tokens,
@@ -498,6 +502,8 @@ mod tests {
     fn serialize_turn_end_includes_usage_and_refresh_hint() {
         let event = AgentEvent::TurnEnd {
             turn: 2,
+            model: Some("anthropic:claude-sonnet-4-6".into()),
+            provider: Some("anthropic".into()),
             estimated_tokens: 123,
             context_window: 200_000,
             context_composition: omegon_traits::ContextComposition::default(),
@@ -566,6 +572,8 @@ mod tests {
             AgentEvent::TurnStart { turn: 1 },
             AgentEvent::TurnEnd {
                 turn: 1,
+                model: None,
+                provider: None,
                 estimated_tokens: 0,
                 context_window: 200_000,
                 context_composition: omegon_traits::ContextComposition::default(),

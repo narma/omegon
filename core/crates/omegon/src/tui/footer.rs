@@ -22,6 +22,14 @@ pub struct OperatorEventLine {
     pub color: Color,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionUsageSlice {
+    pub model_id: String,
+    pub provider: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+}
+
 /// Footer data — updated by the TUI on every event and rendered each frame.
 #[derive(Default)]
 pub struct FooterData {
@@ -42,6 +50,8 @@ pub struct FooterData {
     pub session_input_tokens: u64,
     /// Cumulative output tokens for the entire session.
     pub session_output_tokens: u64,
+    /// Per-turn usage attributed to the model/provider active for that turn.
+    pub session_usage_slices: Vec<SessionUsageSlice>,
     pub tool_calls: u32,
     pub turn: u32,
     pub compactions: u32,
@@ -259,10 +269,10 @@ impl FooterData {
             };
             let state_line = context_text;
             let session_line = format_session_text(
-                &self.model_id,
                 self.turn,
                 self.session_input_tokens,
                 self.session_output_tokens,
+                &self.session_usage_slices,
             );
 
             push_row(
@@ -914,11 +924,11 @@ fn short_model(model_id: &str) -> String {
     crate::settings::humanize_model_id(model_id)
 }
 
-fn format_session_text(
-    model_id: &str,
+pub(crate) fn format_session_text(
     turn: u32,
     session_input_tokens: u64,
     session_output_tokens: u64,
+    session_usage_slices: &[SessionUsageSlice],
 ) -> String {
     let mut parts = vec![format!("T{turn}")];
 
@@ -930,9 +940,7 @@ fn format_session_text(
         ));
     }
 
-    if let Some(cost) =
-        estimate_session_cost_usd(model_id, session_input_tokens, session_output_tokens)
-    {
+    if let Some(cost) = estimate_session_cost_usd(session_usage_slices) {
         parts.push(format_cost_usd(cost));
     }
 
@@ -960,13 +968,19 @@ fn format_failure_age(timestamp: &str) -> Option<String> {
     Some(format!("last {}d ago", age.num_days()))
 }
 
-fn estimate_session_cost_usd(
-    model_id: &str,
-    session_input_tokens: u64,
-    session_output_tokens: u64,
-) -> Option<f64> {
-    let pricing = ModelCatalog::pricing_for_model(model_id)?;
-    Some(pricing.estimate_cost_usd(session_input_tokens, session_output_tokens))
+fn estimate_session_cost_usd(session_usage_slices: &[SessionUsageSlice]) -> Option<f64> {
+    let mut total_cost = 0.0;
+    let mut priced_any = false;
+
+    for slice in session_usage_slices {
+        let Some(pricing) = ModelCatalog::pricing_for_model(&slice.model_id) else {
+            continue;
+        };
+        total_cost += pricing.estimate_cost_usd(slice.input_tokens, slice.output_tokens);
+        priced_any = true;
+    }
+
+    priced_any.then_some(total_cost)
 }
 
 fn format_cost_usd(cost_usd: f64) -> String {
@@ -1181,7 +1195,17 @@ mod tests {
 
     #[test]
     fn session_text_is_compact_and_includes_cost_when_priced() {
-        let text = format_session_text("anthropic:claude-sonnet-4-6", 1, 12_000, 3_000);
+        let text = format_session_text(
+            1,
+            12_000,
+            3_000,
+            &[SessionUsageSlice {
+                model_id: "anthropic:claude-sonnet-4-6".into(),
+                provider: "anthropic".into(),
+                input_tokens: 12_000,
+                output_tokens: 3_000,
+            }],
+        );
         assert!(text.starts_with("T1 "), "got {text}");
         assert!(text.contains("¤12k/¤3k"), "got {text}");
         assert!(text.contains("~$"), "got {text}");
@@ -1249,14 +1273,59 @@ mod tests {
 
     #[test]
     fn session_text_falls_back_to_tokens_when_pricing_unknown() {
-        let text = format_session_text("unknown:custom-model", 2, 12_000, 3_000);
+        let text = format_session_text(
+            2,
+            12_000,
+            3_000,
+            &[SessionUsageSlice {
+                model_id: "unknown:custom-model".into(),
+                provider: "unknown".into(),
+                input_tokens: 12_000,
+                output_tokens: 3_000,
+            }],
+        );
         assert_eq!(text, "T2 ¤12k/¤3k");
     }
 
     #[test]
     fn session_text_shows_cost_for_priced_models_even_without_catalog_availability() {
-        let text = format_session_text("openai:gpt-5.4", 2, 12_000, 3_000);
+        let text = format_session_text(
+            2,
+            12_000,
+            3_000,
+            &[SessionUsageSlice {
+                model_id: "openai:gpt-5.4".into(),
+                provider: "openai".into(),
+                input_tokens: 12_000,
+                output_tokens: 3_000,
+            }],
+        );
         assert!(text.contains("~$"), "got {text}");
+    }
+
+    #[test]
+    fn session_text_sums_cost_across_mixed_model_slices() {
+        let text = format_session_text(
+            3,
+            112_000,
+            23_000,
+            &[
+                SessionUsageSlice {
+                    model_id: "openai:gpt-5.4".into(),
+                    provider: "openai".into(),
+                    input_tokens: 100_000,
+                    output_tokens: 20_000,
+                },
+                SessionUsageSlice {
+                    model_id: "openrouter:qwen/qwen-qwq-32b".into(),
+                    provider: "openrouter".into(),
+                    input_tokens: 12_000,
+                    output_tokens: 3_000,
+                },
+            ],
+        );
+        assert!(text.contains("¤112k/¤23k"), "got {text}");
+        assert!(text.contains("~$0.55"), "got {text}");
     }
 
     #[test]

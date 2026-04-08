@@ -154,6 +154,8 @@ fn turn_end_does_not_overwrite_footer_context_with_last_request_input_tokens() {
 
     app.handle_agent_event(AgentEvent::TurnEnd {
         turn: 3,
+        model: Some("anthropic:claude-sonnet-4-6".into()),
+        provider: Some("anthropic".into()),
         estimated_tokens: 144_000,
         context_window: 272_000,
         context_composition: omegon_traits::ContextComposition {
@@ -177,6 +179,48 @@ fn turn_end_does_not_overwrite_footer_context_with_last_request_input_tokens() {
         "TurnEnd should preserve total-context percent from ContextUpdated; before={before} after={after}"
     );
     assert_eq!(app.footer_data.estimated_tokens, 144_000);
+}
+
+#[test]
+fn turn_end_tracks_session_usage_by_model_attribution() {
+    let mut app = test_app();
+
+    app.handle_agent_event(AgentEvent::TurnEnd {
+        turn: 1,
+        model: Some("openai:gpt-5.4".into()),
+        provider: Some("openai".into()),
+        estimated_tokens: 50_000,
+        context_window: 272_000,
+        context_composition: omegon_traits::ContextComposition::default(),
+        actual_input_tokens: 100_000,
+        actual_output_tokens: 20_000,
+        cache_read_tokens: 0,
+        provider_telemetry: None,
+    });
+    app.handle_agent_event(AgentEvent::TurnEnd {
+        turn: 2,
+        model: Some("openrouter:qwen/qwen-qwq-32b".into()),
+        provider: Some("openrouter".into()),
+        estimated_tokens: 60_000,
+        context_window: 272_000,
+        context_composition: omegon_traits::ContextComposition::default(),
+        actual_input_tokens: 12_000,
+        actual_output_tokens: 3_000,
+        cache_read_tokens: 0,
+        provider_telemetry: None,
+    });
+
+    assert_eq!(app.footer_data.session_input_tokens, 112_000);
+    assert_eq!(app.footer_data.session_output_tokens, 23_000);
+    assert_eq!(app.footer_data.session_usage_slices.len(), 2);
+
+    let session_text = crate::tui::footer::format_session_text(
+        app.footer_data.turn,
+        app.footer_data.session_input_tokens,
+        app.footer_data.session_output_tokens,
+        &app.footer_data.session_usage_slices,
+    );
+    assert!(session_text.contains("~$0.55"), "{session_text}");
 }
 
 // ═══════════════════════════════════════════════════════════════════

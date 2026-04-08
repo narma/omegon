@@ -1132,6 +1132,10 @@ pub enum AgentEvent {
     },
     TurnEnd {
         turn: u32,
+        /// Model that produced this turn's usage. Optional on legacy/early-exit paths.
+        model: Option<String>,
+        /// Provider that produced this turn's usage. Optional on legacy/early-exit paths.
+        provider: Option<String>,
         /// Real token estimate from conversation history. Zero on early-exit paths.
         estimated_tokens: usize,
         /// Context window used for the turn.
