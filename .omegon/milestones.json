@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 43,
+    "rc_count": 44,
     "notes": [
       "feat(anthropic): prefer adaptive thinking for claude 4.6",
       "feat(auspex): add mode-aware local handoff probe",
@@ -454,8 +454,12 @@
       "feat(reasoning): improve upstream thinking fidelity",
       "feat(runtime): add daemon event-ingress skeleton",
       "feat(runtime): surface child runtime metadata in daemon status",
+      "feat(runtime-matrix): Inspect and extend the Rust live upstream smoke/drift test surface. Define or add a checked-in expectation matrix and determine the minimal viable assertions for provider-specific endpoint drift (not just round-trip OK), plus tests or validation around the matrix parsing/execution path.",
       "feat(runtime-state): Implement persistent daemon runtime state for the serve/embedded runtime: runtime directory layout, persisted daemon instance/session metadata as appropriate, durable queued-event storage replacing in-memory-only queue, and ownership/runtime mode metadata in shared descriptors. Reuse the existing embedded/web runtime rather than introducing a new stack.",
+      "feat(session-log): add context composition usage substats",
+      "feat(session-log): add provider and model usage breakdowns",
       "feat(session-log): record provider telemetry per turn",
+      "feat(session-log): track token usage trends and prompt composition",
       "feat(telemetry): parse ChatGPT Codex x-codex-* quota headers into provider telemetry",
       "feat(telemetry): scaffold provider usage snapshot events",
       "feat(telemetry): surface provider quota snapshots in footer",
@@ -469,6 +473,7 @@
       "feat(usage): add telemetry advisory command",
       "feat(validate-note): After the contract changes land, validate the resulting control-plane surface against the current Auspex client expectations and write a concise migration note documenting the canonical backend fields/events now guaranteed for Auspex. Keep this note in Omegon docs near the control-plane/Auspex contract docs and ensure tests/builds cover the touched code.",
       "feat(web): mirror omegon instance descriptor into startup and state",
+      "feat(workflow-issueing): Inspect and repair/replace the stale provider-drift GitHub Actions workflow. Design the daily control-plane workflow, issue dedupe/update behavior, artifact/log strategy, and docs. Implement the workflow and any helper scripts/files needed for issue creation/reporting without making release/nightly blocking.",
       "feat(ws-contract): Audit and implement WebSocket event contract changes needed for Auspex compatibility. Focus on core/crates/omegon/src/web/ws.rs plus any upstream event types it serializes so streamed events expose the fields Auspex expects or can safely ignore, especially turn-end/session/harness updates and state snapshot refresh semantics. Add tests for event serialization.",
       "fix(agent): hide attachment redisplay hints from user messages",
       "fix(auspex): report chosen local handoff mode",
@@ -493,6 +498,7 @@
       "fix(providers): preserve ollama-cloud tool calls and thinking",
       "fix(providers): route ollama-cloud through native api chat",
       "fix(providers): send images to ollama cloud chat API",
+      "fix(providers): stop sending effort in anthropic requests",
       "fix(release): derive Homebrew updates from published release manifest",
       "fix(release): harden signing detection and brew push flow",
       "fix(release): script preflight checks and ignore python bytecode",
@@ -501,7 +507,9 @@
       "fix(telemetry): format provider usage by active backend",
       "fix(tui): accept json context request slash payloads",
       "fix(tui): align activity row with context band semantics",
+      "fix(tui): align cursor with inline attachment tokens",
       "fix(tui): align footer context state with inference composition",
+      "fix(tui): attribute session pricing to per-turn model usage",
       "fix(tui): calm inference activity row glyphs",
       "fix(tui): clear conversation viewport before segment repaint",
       "fix(tui): clear footer surfaces before repaint",
@@ -518,7 +526,9 @@
       "fix(tui): make inference activity glyphs explicit",
       "fix(tui): make inference legend composition-only",
       "fix(tui): make tool rows width-aware and clear border-adjacent cells",
+      "fix(tui): make word navigation atomic over attachment tokens",
       "fix(tui): preserve codebase tables in narrow tool cards",
+      "fix(tui): preserve trailing blank editor lines",
       "fix(tui): reflect runtime activity in inference bar",
       "fix(tui): remove /clear and deduplicate slash palette commands",
       "fix(tui): remove fake tools context bucket",
@@ -553,7 +563,7 @@
       "refactor(tui): remove activity-row phase labels",
       "refactor(tui): simplify slash command auth and context paths"
     ],
-    "rc_version": "0.15.10-rc.48",
-    "last_rc": "2026-04-08T11:40:08Z"
+    "rc_version": "0.15.10-rc.49",
+    "last_rc": "2026-04-08T15:26:27Z"
   }
 }

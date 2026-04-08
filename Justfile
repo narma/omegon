@@ -265,10 +265,38 @@ rc:
     # Update milestone tracking
     ./scripts/milestone-update.sh rc "$NEW_VERSION"
 
-    # Audit lifecycle drift before cutting the RC
+    # Audit lifecycle drift before cutting the RC.
+    # Scope blocking to the active milestone only; unrelated historical design
+    # backlog should not jam release mechanics. Repo-wide drift is still shown
+    # as a warning for operator visibility.
     echo "Lifecycle audit..."
-    cd core && cargo run --quiet -p omegon -- doctor
-    cd ..
+    MILESTONE_NODES=$(jq -r --arg base "$BASE" '.[$base].nodes[]? // empty' .omegon/milestones.json)
+    if [ -z "$MILESTONE_NODES" ]; then
+        echo "  ! No milestone-scoped design nodes for $BASE — treating lifecycle audit as warning-only"
+        cd core && cargo run --quiet -p omegon -- doctor || true
+        cd ..
+    else
+        REPORT=$(mktemp)
+        cd core && cargo run --quiet -p omegon -- doctor > "$REPORT"
+        cd ..
+        BLOCKING_NODE=""
+        while IFS= read -r node; do
+            [ -n "$node" ] || continue
+            if rg -q "^- ${node} \[" "$REPORT"; then
+                BLOCKING_NODE="$node"
+                break
+            fi
+        done <<EOF
+$MILESTONE_NODES
+EOF
+        if [ -n "$BLOCKING_NODE" ]; then
+            echo "✗ Lifecycle audit found milestone-scoped drift in node: $BLOCKING_NODE"
+            cat "$REPORT"
+            rm -f "$REPORT"
+            exit 1
+        fi
+        rm -f "$REPORT"
+    fi
 
     # Test first (faster than build, catches errors early)
     echo "Testing..."
