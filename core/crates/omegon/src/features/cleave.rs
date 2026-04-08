@@ -1097,6 +1097,9 @@ mod tests {
             duration_secs: None,
             stdout: None,
             runtime: None,
+            pid: None,
+            started_at_unix_ms: None,
+            last_activity_unix_ms: None,
         };
 
         let completed = cleave::orchestrator::CleaveResult {

@@ -3,7 +3,7 @@
 use super::plan::CleaveChildRuntimeProfile;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Overall cleave run state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +46,12 @@ pub struct ChildState {
     pub stdout: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<CleaveChildRuntimeProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at_unix_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_activity_unix_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -58,6 +64,33 @@ pub enum ChildStatus {
     /// Provider upstream exhausted (rate-limit after all retries). May be retried
     /// by the orchestrator using a cross-provider fallback.
     UpstreamExhausted,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct RunningChildReconciliation {
+    pub seen: usize,
+    pub still_running: usize,
+    pub requeued: usize,
+}
+
+fn unix_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn process_is_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // SAFETY: kill(pid, 0) probes for process existence without sending a signal.
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        false
+    }
 }
 
 impl CleaveState {
@@ -74,24 +107,52 @@ impl CleaveState {
         Ok(serde_json::from_str(&json)?)
     }
 
-    /// Requeue children that were marked running by an interrupted parent process.
+    /// Reconcile children that were marked running by a previous orchestrator.
     ///
-    /// Persisted `running` means only that the previous orchestrator had dispatched
-    /// the child before it died or was interrupted. It does not prove the child is
-    /// still alive or manageable, so resumed cleave runs must treat that state as
-    /// stale and requeue the child.
-    pub fn requeue_interrupted_children(&mut self) -> usize {
-        let mut requeued = 0;
+    /// If the persisted PID is still alive, keep the child in `running` so a daemon
+    /// supervisor can truthfully report in-flight work. Otherwise demote it back to
+    /// `pending` because the previous parent is gone and the child is no longer
+    /// manageable.
+    pub fn reconcile_running_children(&mut self) -> RunningChildReconciliation {
+        let mut reconciliation = RunningChildReconciliation::default();
         for child in &mut self.children {
-            if child.status == ChildStatus::Running {
-                child.status = ChildStatus::Pending;
-                child.error = None;
-                child.duration_secs = None;
-                child.stdout = None;
-                requeued += 1;
+            if child.status != ChildStatus::Running {
+                continue;
             }
+            reconciliation.seen += 1;
+            if let Some(pid) = child.pid
+                && process_is_alive(pid)
+            {
+                reconciliation.still_running += 1;
+                continue;
+            }
+
+            child.status = ChildStatus::Pending;
+            child.error = None;
+            child.duration_secs = None;
+            child.stdout = None;
+            child.pid = None;
+            child.started_at_unix_ms = None;
+            child.last_activity_unix_ms = None;
+            reconciliation.requeued += 1;
         }
-        requeued
+        reconciliation
+    }
+
+    pub fn mark_child_spawned(&mut self, child_idx: usize, pid: u32) {
+        if let Some(child) = self.children.get_mut(child_idx) {
+            let now = unix_time_ms();
+            child.status = ChildStatus::Running;
+            child.pid = Some(pid);
+            child.started_at_unix_ms = Some(now);
+            child.last_activity_unix_ms = Some(now);
+        }
+    }
+
+    pub fn mark_child_activity(&mut self, child_idx: usize) {
+        if let Some(child) = self.children.get_mut(child_idx) {
+            child.last_activity_unix_ms = Some(unix_time_ms());
+        }
     }
 
     /// Build initial state from a plan.
@@ -133,6 +194,9 @@ impl CleaveState {
                     duration_secs: None,
                     stdout: None,
                     runtime: c.runtime.clone(),
+                    pid: None,
+                    started_at_unix_ms: None,
+                    last_activity_unix_ms: None,
                 }
             })
             .collect();
@@ -230,15 +294,66 @@ mod tests {
         state.children[1].status = ChildStatus::Completed;
         state.children[1].duration_secs = Some(42.5);
 
-        let requeued = state.requeue_interrupted_children();
+        let reconciliation = state.reconcile_running_children();
 
-        assert_eq!(requeued, 1);
+        assert_eq!(reconciliation.requeued, 1);
+        assert_eq!(reconciliation.still_running, 0);
         assert_eq!(state.children[0].status, ChildStatus::Pending);
         assert!(state.children[0].error.is_none());
         assert!(state.children[0].duration_secs.is_none());
         assert!(state.children[0].stdout.is_none());
+        assert!(state.children[0].pid.is_none());
+        assert!(state.children[0].started_at_unix_ms.is_none());
+        assert!(state.children[0].last_activity_unix_ms.is_none());
         assert_eq!(state.children[1].status, ChildStatus::Completed);
         assert_eq!(state.children[1].duration_secs, Some(42.5));
+    }
+
+    #[test]
+    fn reconcile_running_children_preserves_live_pid() {
+        let plan = sample_plan();
+        let mut state = CleaveState::from_plan(
+            "run-1",
+            "fix bugs",
+            Path::new("/repo"),
+            Path::new("/ws"),
+            &plan,
+            "model",
+        );
+        let pid = std::process::id();
+        state.children[0].status = ChildStatus::Running;
+        state.children[0].pid = Some(pid);
+        state.children[0].started_at_unix_ms = Some(1);
+        state.children[0].last_activity_unix_ms = Some(2);
+
+        let reconciliation = state.reconcile_running_children();
+
+        assert_eq!(reconciliation.seen, 1);
+        assert_eq!(reconciliation.still_running, 1);
+        assert_eq!(reconciliation.requeued, 0);
+        assert_eq!(state.children[0].status, ChildStatus::Running);
+        assert_eq!(state.children[0].pid, Some(pid));
+    }
+
+    #[test]
+    fn mark_child_spawned_sets_pid_and_timestamps() {
+        let plan = sample_plan();
+        let mut state = CleaveState::from_plan(
+            "run-1",
+            "fix bugs",
+            Path::new("/repo"),
+            Path::new("/ws"),
+            &plan,
+            "model",
+        );
+
+        state.mark_child_spawned(0, 4242);
+        let child = &state.children[0];
+
+        assert_eq!(child.status, ChildStatus::Running);
+        assert_eq!(child.pid, Some(4242));
+        assert!(child.started_at_unix_ms.is_some());
+        assert!(child.last_activity_unix_ms.is_some());
     }
 
     #[test]

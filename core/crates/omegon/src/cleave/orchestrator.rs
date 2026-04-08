@@ -110,12 +110,12 @@ pub async fn run_cleave(
     // with worktree paths, enriched task files, etc.)
     let mut state = if state_path.exists() {
         let mut s = CleaveState::load(&state_path)?;
-        let requeued = s.requeue_interrupted_children();
+        let reconciliation = s.reconcile_running_children();
         s.started_at = Some(Instant::now());
-        if requeued > 0 {
-            tracing::warn!(requeued, "resuming from existing state.json after interrupted cleave; re-queued stale running children");
-        } else {
-            tracing::info!("resuming from existing state.json");
+        match (reconciliation.requeued, reconciliation.still_running) {
+            (0, 0) => tracing::info!("resuming from existing state.json"),
+            (0, still_running) => tracing::warn!(still_running, "resuming from existing state.json with verified live child processes"),
+            (requeued, still_running) => tracing::warn!(requeued, still_running, "resuming from existing state.json after interruption; re-queued stale running children and preserved verified live children"),
         }
         s
     } else {
@@ -245,8 +245,6 @@ pub async fn run_cleave(
                         std::fs::write(&task_path, &task_content)?;
                     }
 
-                    state.children[child_idx].status = ChildStatus::Running;
-
                     to_dispatch.push(ChildDispatchInfo {
                         child_idx,
                         wt_path,
@@ -371,9 +369,11 @@ pub async fn run_cleave(
 
             match result {
                 Ok(output) => {
+                    state.mark_child_spawned(child_idx, output.pid);
                     state.children[child_idx].status = ChildStatus::Completed;
                     state.children[child_idx].duration_secs = Some(output.duration_secs);
                     state.children[child_idx].stdout = Some(output.stdout.clone());
+                    state.children[child_idx].pid = None;
                     tracing::info!(
                         child = %label,
                         duration = format!("{:.0}s", output.duration_secs),
@@ -475,11 +475,13 @@ pub async fn run_cleave(
 
                                 match fallback_result {
                                     Ok(output) => {
+                                        state.mark_child_spawned(child_idx, output.pid);
                                         state.children[child_idx].status = ChildStatus::Completed;
                                         state.children[child_idx].duration_secs =
                                             Some(output.duration_secs);
                                         state.children[child_idx].stdout =
                                             Some(output.stdout.clone());
+                                        state.children[child_idx].pid = None;
                                         tracing::info!(
                                             child = %label, fallback = %fb_model,
                                             duration = format!("{:.0}s", output.duration_secs),
@@ -694,6 +696,7 @@ struct ChildOutput {
     duration_secs: f64,
     #[allow(dead_code)]
     stdout: String,
+    pid: u32,
 }
 
 /// Configuration for dispatching a child agent process.
@@ -969,6 +972,7 @@ async fn dispatch_child_inner(
         Ok(()) if exit.success() => Ok(ChildOutput {
             duration_secs,
             stdout: stdout_buf,
+            pid,
         }),
         Ok(()) => Err(anyhow::anyhow!(
             "Child exited with code {}{}",
@@ -1334,6 +1338,9 @@ mod tests {
                 duration_secs: None,
                 stdout: None,
                 runtime: None,
+                pid: None,
+                started_at_unix_ms: None,
+                last_activity_unix_ms: None,
             },
             crate::cleave::state::ChildState {
                 child_id: 2,
@@ -1351,6 +1358,9 @@ mod tests {
                 duration_secs: None,
                 stdout: None,
                 runtime: None,
+                pid: None,
+                started_at_unix_ms: None,
+                last_activity_unix_ms: None,
             },
         ];
 
@@ -1388,6 +1398,9 @@ mod tests {
             duration_secs: None,
             stdout: None,
             runtime: None,
+            pid: None,
+            started_at_unix_ms: None,
+            last_activity_unix_ms: None,
         };
 
         let taken = child.worktree_path.take();
@@ -1437,9 +1450,10 @@ mod tests {
         state.children[0].duration_secs = Some(9.0);
         state.children[1].status = ChildStatus::Completed;
 
-        let requeued = state.requeue_interrupted_children();
+        let reconciliation = state.reconcile_running_children();
 
-        assert_eq!(requeued, 1);
+        assert_eq!(reconciliation.requeued, 1);
+        assert_eq!(reconciliation.still_running, 0);
         assert_eq!(state.children[0].status, ChildStatus::Pending);
         assert!(state.children[0].error.is_none());
         assert!(state.children[0].duration_secs.is_none());
@@ -1466,6 +1480,9 @@ fn build_task_file_includes_all_sections() {
             duration_secs: None,
             stdout: None,
             runtime: None,
+            pid: None,
+            started_at_unix_ms: None,
+            last_activity_unix_ms: None,
         },
         crate::cleave::state::ChildState {
             child_id: 1,
@@ -1483,6 +1500,9 @@ fn build_task_file_includes_all_sections() {
             duration_secs: None,
             stdout: None,
             runtime: None,
+            pid: None,
+            started_at_unix_ms: None,
+            last_activity_unix_ms: None,
         },
     ];
     let guardrails = "## Project Guardrails\n\n1. **typecheck**: `tsc`\n";
@@ -1547,6 +1567,9 @@ fn build_task_file_rust_scope_gets_rust_test_convention() {
         duration_secs: None,
         stdout: None,
         runtime: None,
+        pid: None,
+        started_at_unix_ms: None,
+        last_activity_unix_ms: None,
     }];
     let task = build_task_file(
         0,
