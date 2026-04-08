@@ -402,6 +402,7 @@ fn refresh_startup_daemon_status(state: &WebState) {
                         supervision_mode: child.supervision_mode.map(|mode| match mode {
                             crate::features::cleave::ChildSupervisionMode::Attached => "attached".to_string(),
                             crate::features::cleave::ChildSupervisionMode::RecoveredDegraded => "recovered_degraded".to_string(),
+                            crate::features::cleave::ChildSupervisionMode::Lost => "lost".to_string(),
                         }),
                         pid: child.pid,
                         model: runtime.model.clone(),

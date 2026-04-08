@@ -288,6 +288,7 @@ pub struct ChildRuntimeSummary {
 pub enum ChildSupervisionMode {
     Attached,
     RecoveredDegraded,
+    Lost,
 }
 
 #[derive(Clone)]
@@ -522,9 +523,21 @@ impl CleaveFeature {
 
     fn refresh_progress_from_workspace_state(&self) {
         let state_path = self.workspace_state_path();
-        let Ok(state) = crate::cleave::state::CleaveState::load(&state_path) else {
+        let raw_json = match std::fs::read_to_string(&state_path) {
+            Ok(raw) => raw,
+            Err(_) => return,
+        };
+        let raw_state: serde_json::Value = match serde_json::from_str(&raw_json) {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let Ok(mut state) = crate::cleave::state::CleaveState::load(&state_path) else {
             return;
         };
+        let reconciliation = state.reconcile_running_children();
+        if reconciliation.requeued > 0 {
+            let _ = state.save(&state_path);
+        }
         let mut progress = self.progress.lock().unwrap();
         progress.run_id = state.run_id.clone();
         progress.total_children = state.children.len();
@@ -538,11 +551,27 @@ impl CleaveFeature {
             .iter()
             .filter(|c| c.status == ChildStatus::Failed)
             .count();
-        progress.active = state.children.iter().any(|c| c.status == ChildStatus::Running);
+        progress.active = false;
+        let raw_children = raw_state
+            .get("children")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
         progress.children = state
             .children
             .iter()
-            .map(|c| {
+            .enumerate()
+            .map(|(idx, c)| {
+                let raw_status = raw_children
+                    .get(idx)
+                    .and_then(|value| value.get("status"))
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default();
+                let raw_pid = raw_children
+                    .get(idx)
+                    .and_then(|value| value.get("pid"))
+                    .and_then(|value| value.as_u64())
+                    .map(|value| value as u32);
                 let mut child = ChildProgress {
                     label: c.label.clone(),
                     status: match c.status {
@@ -555,10 +584,16 @@ impl CleaveFeature {
                     duration_secs: c.duration_secs,
                     supervision_mode: if c.status == ChildStatus::Running {
                         Some(ChildSupervisionMode::RecoveredDegraded)
+                    } else if c.status == ChildStatus::Pending && raw_status == "running" {
+                        Some(ChildSupervisionMode::Lost)
                     } else {
                         None
                     },
-                    pid: c.pid,
+                    pid: if c.status == ChildStatus::Pending && raw_status == "running" {
+                        raw_pid
+                    } else {
+                        c.pid
+                    },
                     last_tool: None,
                     last_turn: None,
                     started_at: None,
@@ -571,6 +606,7 @@ impl CleaveFeature {
                 child
             })
             .collect();
+        progress.active = progress.children.iter().any(|c| matches!(c.supervision_mode, Some(ChildSupervisionMode::Attached | ChildSupervisionMode::RecoveredDegraded | ChildSupervisionMode::Lost)) || c.status == "running");
     }
 
     /// Get a clone of the current progress for dashboard rendering.
@@ -596,6 +632,18 @@ impl CleaveFeature {
             return true;
         }
 
+        let fallback_pid = self
+            .progress
+            .lock()
+            .ok()
+            .and_then(|progress| {
+                progress
+                    .children
+                    .iter()
+                    .find(|child| child.label == label)
+                    .and_then(|child| child.pid)
+            });
+
         let state_path = self.workspace_state_path();
         let Ok(mut state) = crate::cleave::state::CleaveState::load(&state_path) else {
             return false;
@@ -603,7 +651,7 @@ impl CleaveFeature {
         let Some(child) = state.children.iter_mut().find(|c| c.label == label) else {
             return false;
         };
-        let Some(pid) = child.pid else {
+        let Some(pid) = child.pid.or(fallback_pid) else {
             return false;
         };
 
@@ -1168,6 +1216,47 @@ mod tests {
     }
 
     #[test]
+    fn new_marks_unadoptable_running_children_as_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let workspace = dir.path().join(".omegon/cleave-workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let state_path = workspace.join("state.json");
+        let worktree = workspace.join("alpha-wt");
+        std::fs::create_dir_all(&worktree).unwrap();
+        let state_json = serde_json::json!({
+            "runId": "run-1",
+            "directive": "test",
+            "repoPath": dir.path().display().to_string(),
+            "workspacePath": workspace.display().to_string(),
+            "supervisorToken": "test-supervisor",
+            "children": [{
+                "childId": 0,
+                "label": "alpha",
+                "description": "do alpha",
+                "scope": [],
+                "dependsOn": [],
+                "status": "running",
+                "backend": "native",
+                "worktreePath": worktree.display().to_string(),
+                "executeModel": "model",
+                "pid": std::process::id(),
+                "adoptionWorktreePath": std::fs::canonicalize(&worktree).unwrap().to_string_lossy().to_string(),
+                "adoptionModel": "different-model",
+                "supervisorToken": "test-supervisor"
+            }],
+            "plan": {"children": []}
+        });
+        std::fs::write(&state_path, serde_json::to_string_pretty(&state_json).unwrap()).unwrap();
+
+        let feature = CleaveFeature::new(dir.path(), vec![]);
+        let progress = feature.progress();
+        assert!(progress.active);
+        assert_eq!(progress.children[0].status, "pending");
+        assert_eq!(progress.children[0].supervision_mode, Some(ChildSupervisionMode::Lost));
+        assert_eq!(progress.children[0].pid, Some(std::process::id()));
+    }
+
+    #[test]
     fn cancel_child_falls_back_to_persisted_pid_state() {
         let dir = tempfile::tempdir().unwrap();
         let workspace = dir.path().join(".omegon/cleave-workspace");
@@ -1204,6 +1293,7 @@ mod tests {
         assert!(feature.cancel_child("alpha"));
         let progress = feature.progress();
         assert!(!progress.active);
+        assert_eq!(progress.children[0].supervision_mode, None);
         assert_eq!(progress.children[0].status, "failed");
         assert_eq!(progress.children[0].pid, None);
         let saved = crate::cleave::state::CleaveState::load(&state_path).unwrap();
