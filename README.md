@@ -152,18 +152,27 @@ That means:
 - merge and conflict detection
 - better operator control over risky multi-file changes
 
-### Slim mode for quick sessions
+### Benchmarking and signal shaping
 
-Use `--slim` when you want Omegon to start with a smaller default surface:
+Omegon now ships with an in-repo token-efficiency comparison harness under `scripts/benchmark_harness.py` and `ai/benchmarks/`.
 
-- lower default thinking (`low`)
-- smaller requested working-set class (`squad`)
-- fewer always-on prompt sections
-- a more aggressively disabled default tool set
+Use it for two things:
 
-This is meant for fast interactive work, not full lifecycle-heavy orchestration. Tools can still be re-enabled during the session.
+1. **compare harnesses honestly** — same task, same acceptance, different agent surface
+2. **shape Omegon’s signal profile with evidence** — inspect totals, wall clock, and Omegon’s `sys/tools/conv/mem/hist/think` buckets before changing prompt, history, or tool-surface behavior
 
----
+Current stance:
+
+- `omegon --slim` is the de-facto comparison profile for mainstream CLI coding agents
+- default Omegon is the premium harness mode when richer systems-engineering behavior is worth extra token cost
+- the benchmark harness stays **in-repo for now** because it is still tightly coupled to Omegon internals (`--usage-json`, `omegon_context`, auth/provider behavior, and clean-room runtime mechanics)
+
+Design notes:
+
+- [[docs/design/evidence-driven-signal-shaping|Evidence-Driven Signal Shaping]]
+- [[docs/design/signal-shaping-profiles|Signal Shaping Profiles]]
+- [[docs/design/signal-classes-and-retention-policy|Signal Classes and Retention Policy]]
+
 
 ## Quick example
 

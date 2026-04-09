@@ -435,5 +435,17 @@ Only proceed if Phase 2 produces useful signals.
 
 ## Recommendation
 
-Proceed with **Phase 1 only** until there is a real task file and one successful Omegon run artifact.
-Do not implement the Claude Code adapter, aggregate suite support, or any reporting surface beyond a simple file-backed summary until the local runner proves useful.
+Proceed with `omegon --slim` as the **de-facto comparison profile** against mainstream CLI coding agents.
+Do not use default Omegon as the fairness baseline for token-efficiency claims unless the comparison explicitly intends to include the extra systems-engineering harness surface.
+
+Keep the benchmark harness **in-repo for now**. It remains tightly coupled to Omegon-specific telemetry (`--usage-json`, `omegon_context`), auth/provider behavior, and clean-room runtime mechanics. Extraction to a separate repository should wait until adapter contracts and result schemas stabilize.
+
+Use the harness as an evidence loop:
+
+1. benchmark a real task
+2. inspect total tokens, wall clock, and bucket movement
+3. form a hypothesis about waste vs productive scaffolding
+4. change one signal dimension
+5. benchmark again
+
+Do not implement new prompt/history/tool-surface reductions without rerunning the same task family and checking for regressions in total task tokens or verified pass rate.
