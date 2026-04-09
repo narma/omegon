@@ -1963,9 +1963,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 }
 
                 while let Some(active) = runtime.maybe_start_next_turn() {
-                    if let Ok(mut ss) = agent.dashboard_handles.session.lock() {
-                        ss.busy = true;
-                    }
+                    mark_interactive_session_busy(&agent.dashboard_handles, true);
 
                     let mut quit_after_turn = false;
                     let state_for_turn = runtime_state;
@@ -1986,10 +1984,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                 runtime_state = match turn_result {
                                     Ok(runtime_state) => runtime_state,
                                     Err(join_err) => {
-                                        let message = format!(
-                                            "⚠ Interactive turn worker crashed — ending session safely: {join_err}"
-                                        );
+                                        let message = format_interactive_turn_task_failure(&join_err);
                                         tracing::error!("interactive turn task failed: {join_err}");
+                                        mark_interactive_session_busy(&agent.dashboard_handles, false);
                                         let _ = events_tx.send(AgentEvent::SystemNotification {
                                             message: message.clone(),
                                         });
@@ -2034,9 +2031,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     }
 
                     runtime.complete_active_turn();
-                    if let Ok(mut ss) = agent.dashboard_handles.session.lock() {
-                        ss.busy = runtime.is_busy();
-                    }
+                    mark_interactive_session_busy(&agent.dashboard_handles, runtime.is_busy());
 
                     if quit_after_turn {
                         break 'interactive;
@@ -2068,6 +2063,15 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     Ok(())
         })
         .await
+}
+
+fn mark_interactive_session_busy(
+    handles: &crate::tui::dashboard::DashboardHandles,
+    busy: bool,
+) {
+    if let Ok(mut ss) = handles.session.lock() {
+        ss.busy = busy;
+    }
 }
 
 fn format_interactive_turn_task_failure(join_err: &tokio::task::JoinError) -> String {
@@ -3728,6 +3732,18 @@ mod tests {
             !system_prompt.is_empty(),
             "context manager should still build prompts after split"
         );
+    }
+
+    #[tokio::test]
+    async fn mark_interactive_session_busy_updates_dashboard_flag() {
+        let agent = setup::AgentSetup::new(Path::new("."), None, None)
+            .await
+            .expect("agent setup");
+        let handles = agent.dashboard_handles.clone();
+        mark_interactive_session_busy(&handles, true);
+        assert!(handles.session.lock().expect("session lock").busy);
+        mark_interactive_session_busy(&handles, false);
+        assert!(!handles.session.lock().expect("session lock").busy);
     }
 
     #[test]
