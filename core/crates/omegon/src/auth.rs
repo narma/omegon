@@ -11,8 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::time::Duration;
 
 // ─── Canonical provider credential map ──────────────────────────────────────
 // Single source of truth for every provider's auth.json key, env vars,
@@ -310,25 +311,19 @@ pub fn write_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Re
         auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     let _ = std::fs::create_dir_all(path.parent().unwrap());
 
-    let mut auth: Value = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&content).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
+    with_auth_json_lock(&path, || {
+        let mut auth: Value = if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            serde_json::from_str(&content).unwrap_or(json!({}))
+        } else {
+            json!({})
+        };
 
-    auth[provider] = serde_json::to_value(creds)?;
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
-
-    // Restrict permissions — API keys and OAuth tokens are sensitive
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&path, perms)?;
-    }
-
-    Ok(())
+        auth[provider] = serde_json::to_value(creds)?;
+        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        set_auth_file_permissions(&path)?;
+        Ok(())
+    })
 }
 
 /// Probe all authentication providers to get current status.
@@ -418,23 +413,26 @@ pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("No credentials found for {provider}"));
     }
 
-    let content = std::fs::read_to_string(&path)?;
-    let mut auth: Value = serde_json::from_str(&content)?;
+    with_auth_json_lock(&path, || {
+        let content = std::fs::read_to_string(&path)?;
+        let mut auth: Value = serde_json::from_str(&content)?;
 
-    let auth_key = auth_json_key(provider);
+        let auth_key = auth_json_key(provider);
 
-    if auth.get(auth_key).is_none() {
-        return Err(anyhow::anyhow!("No credentials found for {provider}"));
-    }
+        if auth.get(auth_key).is_none() {
+            return Err(anyhow::anyhow!("No credentials found for {provider}"));
+        }
 
-    // Remove the provider's entry
-    if let Some(obj) = auth.as_object_mut() {
-        obj.remove(auth_key);
-    }
+        // Remove the provider's entry
+        if let Some(obj) = auth.as_object_mut() {
+            obj.remove(auth_key);
+        }
 
-    // Write back
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
-    Ok(())
+        // Write back
+        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        set_auth_file_permissions(&path)?;
+        Ok(())
+    })
 }
 
 /// Resolve API key with automatic token refresh.
@@ -960,26 +958,62 @@ fn write_credentials_with_extra(
     let path =
         auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
     let _ = std::fs::create_dir_all(path.parent().unwrap());
-    let mut auth: Value = if path.exists() {
-        let content = std::fs::read_to_string(&path)?;
-        serde_json::from_str(&content).unwrap_or(json!({}))
-    } else {
-        json!({})
-    };
-    let mut entry = serde_json::to_value(creds)?;
-    if let Some(id) = account_id {
-        entry["accountId"] = json!(id);
-    }
-    auth[provider] = entry;
-    std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+    with_auth_json_lock(&path, || {
+        let mut auth: Value = if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            serde_json::from_str(&content).unwrap_or(json!({}))
+        } else {
+            json!({})
+        };
+        let mut entry = serde_json::to_value(creds)?;
+        if let Some(id) = account_id {
+            entry["accountId"] = json!(id);
+        }
+        auth[provider] = entry;
+        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        set_auth_file_permissions(&path)?;
+        Ok(())
+    })
+}
 
+fn auth_json_lock_path(path: &Path) -> PathBuf {
+    let mut os = path.as_os_str().to_os_string();
+    os.push(".lock");
+    PathBuf::from(os)
+}
+
+fn with_auth_json_lock<T>(path: &Path, f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let lock_path = auth_json_lock_path(path);
+    for _ in 0..200 {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(_) => {
+                let result = f();
+                let _ = std::fs::remove_file(&lock_path);
+                return result;
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "Timed out waiting for auth.json lock: {}",
+        lock_path.display()
+    ))
+}
+
+fn set_auth_file_permissions(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&path, perms)?;
+        std::fs::set_permissions(path, perms)?;
     }
-
     Ok(())
 }
 
