@@ -123,4 +123,13 @@ Append-only record of agent sessions. Read recent entries for context.
   bdae0e4a chore(release): 0.15.10-rc.40
   37dd89da fix(codescan): exclude transient omegon workspaces
   d8c39e36 fix(tui): make focus mode track and navigate selected segments
+## 2026-04-09 — main (1t 0tc 2s)
+
+**Turns:**
+- turn 1 — anthropic / anthropic:claude-sonnet-4-6 in:28036 out:34 cache:0 · ctx est:25273 win:1000000 sys:20184 tools:5067 conv:7 mem:0 hist:0 think:15 free:974727 · 5h 0% · 7d 0%
+
+**Commits:**
+  b8ff8b0f fix(auth): verify anthropic login persistence
+  103a0a45 test(runtime): cover queued quit semantics and harden auth task panics
+  22720985 test(runtime): cover busy state and local worker failure messaging
 
