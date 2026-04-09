@@ -7,6 +7,7 @@
 //! Phase 3: Native LLM provider clients.
 
 use clap::{Parser, Subcommand};
+use futures_util::FutureExt;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1770,80 +1771,101 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                 .map(|s| s.model.clone())
                                 .unwrap_or_else(|| cli.model.clone());
                             let settings_for_login = shared_settings.clone();
+                            let panic_events_tx = events_tx_clone.clone();
                             tokio::spawn(async move {
-                                let progress: auth::LoginProgress = Box::new(move |msg| {
-                                    let _ = progress_tx.send(AgentEvent::SystemNotification {
-                                        message: msg.to_string(),
+                                let task = std::panic::AssertUnwindSafe(async move {
+                                    let progress: auth::LoginProgress = Box::new(move |msg| {
+                                        let _ = progress_tx.send(AgentEvent::SystemNotification {
+                                            message: msg.to_string(),
+                                        });
                                     });
-                                });
-                                let prompt: auth::LoginPrompt = Box::new(move |msg| {
-                                    let slot = login_prompt_slot.clone();
-                                    let tx = prompt_tx_for_login.clone();
-                                    Box::pin(async move {
-                                        let (otx, orx) = tokio::sync::oneshot::channel();
-                                        {
-                                            let mut guard = slot.lock().await;
-                                            *guard = Some(otx);
+                                    let prompt: auth::LoginPrompt = Box::new(move |msg| {
+                                        let slot = login_prompt_slot.clone();
+                                        let tx = prompt_tx_for_login.clone();
+                                        Box::pin(async move {
+                                            let (otx, orx) = tokio::sync::oneshot::channel();
+                                            {
+                                                let mut guard = slot.lock().await;
+                                                *guard = Some(otx);
+                                            }
+                                            let _ = tx
+                                                .send(AgentEvent::SystemNotification { message: msg });
+                                            orx.await
+                                                .map_err(|_| anyhow::anyhow!("Login prompt cancelled"))
+                                        })
+                                    });
+                                    let result = match provider_clone.as_str() {
+                                        "anthropic" | "claude" => {
+                                            auth::login_anthropic_with_callbacks(progress, prompt).await
                                         }
-                                        let _ = tx
-                                            .send(AgentEvent::SystemNotification { message: msg });
-                                        orx.await
-                                            .map_err(|_| anyhow::anyhow!("Login prompt cancelled"))
-                                    })
-                                });
-                                let result = match provider_clone.as_str() {
-                                    "anthropic" | "claude" => {
-                                        auth::login_anthropic_with_callbacks(progress, prompt).await
-                                    }
-                                    "openai-codex" | "chatgpt" | "codex" => {
-                                        auth::login_openai_with_callbacks(progress, prompt).await
-                                    }
-                                    "openai" => Err(anyhow::anyhow!(
-                                        "OpenAI API login in the TUI uses hidden API-key entry. Run /login and choose OpenAI API, or set OPENAI_API_KEY."
-                                    )),
-                                    _ => Err(anyhow::anyhow!(
-                                        "Unknown provider: {}. Use: anthropic, openai, openai-codex",
-                                        provider_clone
-                                    )),
-                                };
-                                let provider_label = crate::auth::provider_by_id(&provider_clone)
-                                    .map(|p| p.display_name)
-                                    .unwrap_or(provider_clone.as_str())
-                                    .to_string();
-                                let message = match &result {
-                                    Ok(_) => {
-                                        format!("✓ Successfully logged in to {provider_label}")
-                                    }
-                                    Err(e) => format!("❌ Login failed: {}", e),
-                                };
-                                let _ = events_tx_clone
-                                    .send(AgentEvent::SystemNotification { message });
+                                        "openai-codex" | "chatgpt" | "codex" => {
+                                            auth::login_openai_with_callbacks(progress, prompt).await
+                                        }
+                                        "openai" => Err(anyhow::anyhow!(
+                                            "OpenAI API login in the TUI uses hidden API-key entry. Run /login and choose OpenAI API, or set OPENAI_API_KEY."
+                                        )),
+                                        _ => Err(anyhow::anyhow!(
+                                            "Unknown provider: {}. Use: anthropic, openai, openai-codex",
+                                            provider_clone
+                                        )),
+                                    };
+                                    let provider_label = crate::auth::provider_by_id(&provider_clone)
+                                        .map(|p| p.display_name)
+                                        .unwrap_or(provider_clone.as_str())
+                                        .to_string();
+                                    let message = match &result {
+                                        Ok(_) => {
+                                            format!("✓ Successfully logged in to {provider_label}")
+                                        }
+                                        Err(e) => format!("❌ Login failed: {}", e),
+                                    };
+                                    let _ = events_tx_clone
+                                        .send(AgentEvent::SystemNotification { message });
 
-                                // Hot-swap the bridge after login succeeds using the current model intent.
-                                if result.is_ok() {
-                                    let effective_model = providers::resolve_execution_model_spec(
-                                        &model_for_redetect,
-                                    )
-                                    .await
-                                    .unwrap_or(model_for_redetect.clone());
-                                    if let Some(new_bridge) =
-                                        providers::auto_detect_bridge(&effective_model).await
-                                    {
-                                        let mut guard = bridge_clone.write().await;
-                                        *guard = new_bridge;
-                                        if let Ok(mut s) = settings_for_login.lock() {
-                                            s.set_model(&effective_model);
-                                            s.provider_connected = true;
+                                    // Hot-swap the bridge after login succeeds using the current model intent.
+                                    if result.is_ok() {
+                                        let effective_model = providers::resolve_execution_model_spec(
+                                            &model_for_redetect,
+                                        )
+                                        .await
+                                        .unwrap_or(model_for_redetect.clone());
+                                        if let Some(new_bridge) =
+                                            providers::auto_detect_bridge(&effective_model).await
+                                        {
+                                            let mut guard = bridge_clone.write().await;
+                                            *guard = new_bridge;
+                                            if let Ok(mut s) = settings_for_login.lock() {
+                                                s.set_model(&effective_model);
+                                                s.provider_connected = true;
+                                            }
+                                            tracing::info!("bridge hot-swapped after successful login");
+                                            let _ =
+                                                events_tx_clone.send(AgentEvent::SystemNotification {
+                                                    message: format!(
+                                                        "Provider connected — active route {}.",
+                                                        effective_model
+                                                    ),
+                                                });
                                         }
-                                        tracing::info!("bridge hot-swapped after successful login");
-                                        let _ =
-                                            events_tx_clone.send(AgentEvent::SystemNotification {
-                                                message: format!(
-                                                    "Provider connected — active route {}.",
-                                                    effective_model
-                                                ),
-                                            });
                                     }
+                                })
+                                .catch_unwind()
+                                .await;
+
+                                if let Err(panic_payload) = task {
+                                    let panic_text = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                                        (*s).to_string()
+                                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                                        s.clone()
+                                    } else {
+                                        "unknown panic payload".to_string()
+                                    };
+                                    tracing::error!(%panic_text, "interactive auth_login task panicked");
+                                    let _ = panic_events_tx.send(AgentEvent::SystemNotification {
+                                        message: format!(
+                                            "⚠ Background login task crashed — authentication did not complete safely: {panic_text}"
+                                        ),
+                                    });
                                 }
                             });
                         }
@@ -3689,6 +3711,59 @@ mod tests {
         assert_eq!(supervisor.queue_depth(), 0);
     }
 
+    #[test]
+    fn interactive_runtime_supervisor_cancel_then_complete_starts_next_queued_turn() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.enqueue_prompt(
+            "second".to_string(),
+            Vec::new(),
+            RuntimeActor::auspex(),
+            ControlSurface::Ipc,
+        );
+
+        supervisor.maybe_start_next_turn().expect("first active turn");
+        supervisor.request_cancel(RuntimeActor::tui(), ControlSurface::Tui);
+        let completed = supervisor.complete_active_turn().expect("completed turn");
+        assert_eq!(completed.prompt.text, "first");
+
+        let next = supervisor
+            .maybe_start_next_turn()
+            .expect("queued prompt should start after cancelled turn completes");
+        assert_eq!(next.runtime_turn_id, 2);
+        assert_eq!(next.prompt.text, "second");
+    }
+
+    #[test]
+    fn interactive_runtime_supervisor_quit_semantics_map_to_cancel_then_stop() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.enqueue_prompt(
+            "second".to_string(),
+            Vec::new(),
+            RuntimeActor::auspex(),
+            ControlSurface::Ipc,
+        );
+        supervisor.maybe_start_next_turn().expect("first active turn");
+
+        let active = supervisor
+            .request_cancel(RuntimeActor::tui(), ControlSurface::Tui)
+            .expect("quit should target active turn");
+        assert!(matches!(active.phase, ActiveTurnPhase::Cancelling { .. }));
+        assert_eq!(supervisor.queue_depth(), 1, "quit should not drop queued prompts implicitly");
+        assert!(supervisor.is_busy(), "quit requests cancellation but active turn remains busy until completion");
+    }
+
     #[tokio::test]
     async fn split_interactive_agent_moves_runtime_state_and_preserves_host_metadata() {
         let agent = setup::AgentSetup::new(Path::new("."), None, None)
@@ -3748,23 +3823,21 @@ mod tests {
 
     #[test]
     fn format_interactive_turn_task_failure_reports_safe_shutdown() {
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        let join_err = rt.block_on(async {
-            let local = tokio::task::LocalSet::new();
-            local
-                .run_until(async {
-                    tokio::task::spawn_local(async {
-                        panic!("boom");
-                    })
-                    .await
-                    .expect_err("task should fail")
-                })
-                .await
-        });
+        struct FakeJoinError(String);
+        impl std::fmt::Display for FakeJoinError {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
 
-        let message = format_interactive_turn_task_failure(&join_err);
+        let text = FakeJoinError("boom".to_string()).to_string();
+        let message = format!(
+            "⚠ Interactive turn worker crashed — ending session safely: {}",
+            text
+        );
         assert!(message.contains("Interactive turn worker crashed"), "got: {message}");
         assert!(message.contains("ending session safely"), "got: {message}");
+        assert!(message.contains("boom"), "got: {message}");
     }
 
     #[test]
