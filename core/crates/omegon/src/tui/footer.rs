@@ -176,10 +176,14 @@ impl FooterData {
 
         let mut lines: Vec<Line<'static>> = Vec::new();
         let label_width = 7usize;
+        let value_width = inner
+            .width
+            .saturating_sub((label_width as u16).saturating_add(2)) as usize;
 
         let push_row = |lines: &mut Vec<Line<'static>>,
                         label: &str,
                         value: String,
+                        value_max_width: usize,
                         label_color: Color,
                         value_color: Color,
                         value_bold: bool| {
@@ -192,7 +196,7 @@ impl FooterData {
                     format!(" {:<width$} ", label, width = label_width),
                     Style::default().fg(label_color),
                 ),
-                Span::styled(value, value_style),
+                Span::styled(truncate_for_width(&value, value_max_width), value_style),
             ]));
         };
 
@@ -208,6 +212,7 @@ impl FooterData {
                 &mut lines,
                 "status",
                 "⚠ no provider".to_string(),
+                value_width,
                 t.border_dim(),
                 t.warning(),
                 true,
@@ -216,6 +221,7 @@ impl FooterData {
                 &mut lines,
                 "action",
                 "/login to connect".to_string(),
+                value_width,
                 t.border_dim(),
                 t.muted(),
                 false,
@@ -224,6 +230,7 @@ impl FooterData {
                 &mut lines,
                 "version",
                 format_version_text(self.update_available.as_deref()),
+                value_width,
                 t.border_dim(),
                 t.dim(),
                 false,
@@ -279,6 +286,7 @@ impl FooterData {
                 &mut lines,
                 "provider",
                 provider_text,
+                value_width,
                 t.border_dim(),
                 t.fg(),
                 true,
@@ -303,6 +311,7 @@ impl FooterData {
                     &mut lines,
                     "status",
                     format!("≈ degraded · {failures}× {kind} · {status_suffix}"),
+                    value_width,
                     t.border_dim(),
                     t.warning(),
                     false,
@@ -312,6 +321,7 @@ impl FooterData {
                 &mut lines,
                 "model",
                 model_short.to_string(),
+                value_width,
                 t.border_dim(),
                 t.muted(),
                 true,
@@ -320,6 +330,7 @@ impl FooterData {
                 &mut lines,
                 "version",
                 format_version_text(self.update_available.as_deref()),
+                value_width,
                 t.border_dim(),
                 t.dim(),
                 false,
@@ -329,6 +340,7 @@ impl FooterData {
                     &mut lines,
                     "tier",
                     tier_line,
+                    value_width,
                     t.border_dim(),
                     t.dim(),
                     false,
@@ -338,6 +350,7 @@ impl FooterData {
                 &mut lines,
                 "state",
                 state_line,
+                value_width,
                 t.border_dim(),
                 widgets::percent_color(self.context_percent.min(100.0), t),
                 false,
@@ -347,6 +360,7 @@ impl FooterData {
                     &mut lines,
                     "session",
                     session_line,
+                    value_width,
                     t.border_dim(),
                     t.muted(),
                     false,
@@ -359,6 +373,7 @@ impl FooterData {
                     &mut lines,
                     "limit",
                     quota_line,
+                    value_width / 2,
                     t.border_dim(),
                     t.accent_muted(),
                     false,
@@ -371,7 +386,10 @@ impl FooterData {
                         format!(" {:<width$} ", event.icon, width = label_width),
                         Style::default().fg(event.color),
                     ),
-                    Span::styled(event.message.clone(), Style::default().fg(event.color)),
+                    Span::styled(
+                        truncate_for_width(&event.message, value_width),
+                        Style::default().fg(event.color),
+                    ),
                 ]));
             }
         }
@@ -848,6 +866,22 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+fn truncate_for_width(value: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    let len = value.chars().count();
+    if len <= max_width {
+        return value.to_string();
+    }
+    if max_width == 1 {
+        return "…".to_string();
+    }
+    let mut truncated = value.chars().take(max_width - 1).collect::<String>();
+    truncated.push('…');
+    truncated
+}
+
 fn shorten_cwd(cwd: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -1257,6 +1291,13 @@ mod tests {
         assert!(!text.contains("primary"), "got {text}");
         assert!(!text.contains('↻'), "got {text}");
         assert!(text.ends_with("ok"), "got {text}");
+    }
+
+    #[test]
+    fn truncate_for_width_adds_ellipsis() {
+        assert_eq!(truncate_for_width("weekly 4d0h", 6), "weekl…");
+        assert_eq!(truncate_for_width("ok", 6), "ok");
+        assert_eq!(truncate_for_width("ok", 0), "");
     }
 
     #[test]

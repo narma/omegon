@@ -7,6 +7,7 @@
 //! Phase 3: Native LLM provider clients.
 
 use clap::{Parser, Subcommand};
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -2175,6 +2176,143 @@ fn provider_status_hint(provider: &str) -> &'static str {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RuntimeActorKind {
+    Tui,
+    Auspex,
+    IpcClient,
+    WebClient,
+    DaemonEvent,
+    System,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RuntimeActor {
+    kind: RuntimeActorKind,
+    label: String,
+}
+
+impl RuntimeActor {
+    fn tui() -> Self {
+        Self {
+            kind: RuntimeActorKind::Tui,
+            label: "local-tui".to_string(),
+        }
+    }
+
+    fn auspex() -> Self {
+        Self {
+            kind: RuntimeActorKind::Auspex,
+            label: "auspex".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ControlSurface {
+    Tui,
+    Ipc,
+    WebSocket,
+    HttpEventIngress,
+    Internal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PromptEnvelope {
+    id: u64,
+    text: String,
+    image_paths: Vec<PathBuf>,
+    submitted_by: RuntimeActor,
+    via: ControlSurface,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ActiveTurnPhase {
+    Running,
+    Cancelling {
+        requested_by: RuntimeActor,
+        via: ControlSurface,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ActiveTurnMeta {
+    runtime_turn_id: u64,
+    prompt: PromptEnvelope,
+    phase: ActiveTurnPhase,
+}
+
+#[derive(Debug, Default)]
+struct InteractiveRuntimeSupervisor {
+    queue: VecDeque<PromptEnvelope>,
+    active_turn: Option<ActiveTurnMeta>,
+    next_prompt_id: u64,
+    next_runtime_turn_id: u64,
+}
+
+impl InteractiveRuntimeSupervisor {
+    fn enqueue_prompt(
+        &mut self,
+        text: String,
+        image_paths: Vec<PathBuf>,
+        actor: RuntimeActor,
+        via: ControlSurface,
+    ) -> u64 {
+        self.next_prompt_id += 1;
+        let prompt_id = self.next_prompt_id;
+        self.queue.push_back(PromptEnvelope {
+            id: prompt_id,
+            text,
+            image_paths,
+            submitted_by: actor,
+            via,
+        });
+        prompt_id
+    }
+
+    fn queue_depth(&self) -> usize {
+        self.queue.len()
+    }
+
+    fn is_busy(&self) -> bool {
+        self.active_turn.is_some()
+    }
+
+    fn maybe_start_next_turn(&mut self) -> Option<ActiveTurnMeta> {
+        if self.active_turn.is_some() {
+            return None;
+        }
+        let prompt = self.queue.pop_front()?;
+        self.next_runtime_turn_id += 1;
+        let active = ActiveTurnMeta {
+            runtime_turn_id: self.next_runtime_turn_id,
+            prompt,
+            phase: ActiveTurnPhase::Running,
+        };
+        self.active_turn = Some(active.clone());
+        Some(active)
+    }
+
+    fn request_cancel(
+        &mut self,
+        actor: RuntimeActor,
+        via: ControlSurface,
+    ) -> Option<&ActiveTurnMeta> {
+        let active = self.active_turn.as_mut()?;
+        if matches!(active.phase, ActiveTurnPhase::Running) {
+            active.phase = ActiveTurnPhase::Cancelling {
+                requested_by: actor,
+                via,
+            };
+        }
+        self.active_turn.as_ref()
+    }
+
+    fn complete_active_turn(&mut self) -> Option<ActiveTurnMeta> {
+        self.active_turn.take()
+    }
+}
+
 async fn run_smoke_command(cli: &Cli) -> anyhow::Result<()> {
     eprintln!("omegon {} — smoke test mode", env!("CARGO_PKG_VERSION"));
 
@@ -3240,6 +3378,107 @@ mod tests {
         assert!(result.contains("Upstream error (OpenAI/Codex)"), "got: {result}");
         assert!(result.contains("status.openai.com"), "got: {result}");
         assert!(!result.contains("error code: 520"), "got: {result}");
+    }
+
+    #[test]
+    fn interactive_runtime_supervisor_starts_first_prompt_fifo() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.enqueue_prompt(
+            "second".to_string(),
+            Vec::new(),
+            RuntimeActor::auspex(),
+            ControlSurface::Ipc,
+        );
+
+        let active = supervisor
+            .maybe_start_next_turn()
+            .expect("first queued prompt should start");
+
+        assert_eq!(active.runtime_turn_id, 1);
+        assert_eq!(active.prompt.text, "first");
+        assert_eq!(active.prompt.submitted_by.kind, RuntimeActorKind::Tui);
+        assert_eq!(supervisor.queue_depth(), 1);
+        assert!(supervisor.is_busy());
+    }
+
+    #[test]
+    fn interactive_runtime_supervisor_cancel_records_actor_identity() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.maybe_start_next_turn().expect("active turn");
+
+        let active = supervisor
+            .request_cancel(RuntimeActor::auspex(), ControlSurface::Ipc)
+            .expect("cancel should target active turn");
+
+        match &active.phase {
+            ActiveTurnPhase::Cancelling { requested_by, via } => {
+                assert_eq!(requested_by.kind, RuntimeActorKind::Auspex);
+                assert_eq!(requested_by.label, "auspex");
+                assert_eq!(*via, ControlSurface::Ipc);
+            }
+            other => panic!("expected cancelling phase, got {other:?}"),
+        }
+        assert!(supervisor.is_busy());
+    }
+
+    #[test]
+    fn interactive_runtime_supervisor_remains_busy_until_completion() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.maybe_start_next_turn().expect("active turn");
+        supervisor.request_cancel(RuntimeActor::tui(), ControlSurface::Tui);
+
+        assert!(supervisor.is_busy(), "cancel request must not imply idle");
+
+        let completed = supervisor.complete_active_turn().expect("completed turn");
+        assert_eq!(completed.prompt.text, "first");
+        assert!(!supervisor.is_busy(), "busy clears only after completion");
+    }
+
+    #[test]
+    fn interactive_runtime_supervisor_starts_next_queued_turn_after_completion() {
+        let mut supervisor = InteractiveRuntimeSupervisor::default();
+        supervisor.enqueue_prompt(
+            "first".to_string(),
+            Vec::new(),
+            RuntimeActor::tui(),
+            ControlSurface::Tui,
+        );
+        supervisor.enqueue_prompt(
+            "second".to_string(),
+            vec![PathBuf::from("/tmp/paste.png")],
+            RuntimeActor::auspex(),
+            ControlSurface::Ipc,
+        );
+
+        supervisor.maybe_start_next_turn().expect("first active turn");
+        supervisor.complete_active_turn().expect("first completion");
+        let active = supervisor
+            .maybe_start_next_turn()
+            .expect("second queued prompt should start");
+
+        assert_eq!(active.runtime_turn_id, 2);
+        assert_eq!(active.prompt.text, "second");
+        assert_eq!(active.prompt.image_paths, vec![PathBuf::from("/tmp/paste.png")]);
+        assert_eq!(active.prompt.submitted_by.kind, RuntimeActorKind::Auspex);
+        assert_eq!(supervisor.queue_depth(), 0);
     }
 
     #[test]
