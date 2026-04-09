@@ -778,14 +778,12 @@ impl Editor {
     pub fn move_left(&mut self) {
         self.textarea
             .move_cursor(ratatui_textarea::CursorMove::Back);
-        let _ = self.expand_collapsed_paste_at_cursor();
         self.normalize_cursor_outside_token(false);
     }
 
     pub fn move_right(&mut self) {
         self.textarea
             .move_cursor(ratatui_textarea::CursorMove::Forward);
-        let _ = self.expand_collapsed_paste_at_cursor();
         self.normalize_cursor_outside_token(true);
     }
 
@@ -1019,7 +1017,7 @@ mod tests {
     }
 
     #[test]
-    fn moving_into_collapsed_paste_expands_it_for_editing() {
+    fn collapsed_paste_token_stays_collapsed_during_lateral_navigation() {
         let mut e = Editor::new();
         e.insert('a');
         e.insert_paste("alpha\n\nbeta\n");
@@ -1029,7 +1027,7 @@ mod tests {
         e.move_left();
         e.move_left();
 
-        assert_eq!(e.render_text(), "aalpha\n\nbeta\nb");
+        assert_eq!(e.render_text(), "a[Pasted text #1 +2 lines]b");
     }
 
     #[test]
