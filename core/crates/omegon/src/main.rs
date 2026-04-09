@@ -3766,17 +3766,7 @@ mod tests {
         let login_prompt_tx = std::sync::Arc::new(tokio::sync::Mutex::new(None));
         let cli = Cli::try_parse_from(vec!["omegon"]).unwrap();
 
-        let mut runtime_state = InteractiveAgentState {
-            bus: std::mem::take(&mut agent.bus),
-            context_manager: std::mem::replace(
-                &mut agent.context_manager,
-                crate::context::ContextManager::new(String::new(), vec![]),
-            ),
-            conversation: std::mem::replace(
-                &mut agent.conversation,
-                crate::conversation::ConversationState::new(),
-            ),
-        };
+        let mut runtime_state = take_interactive_agent_state(&mut agent);
 
         let response = rt.block_on(execute_remote_slash_command(
             &mut runtime_state,
@@ -3808,17 +3798,7 @@ mod tests {
         let login_prompt_tx = std::sync::Arc::new(tokio::sync::Mutex::new(None));
         let cli = Cli::try_parse_from(vec!["omegon"]).unwrap();
 
-        let mut runtime_state = InteractiveAgentState {
-            bus: std::mem::take(&mut agent.bus),
-            context_manager: std::mem::replace(
-                &mut agent.context_manager,
-                crate::context::ContextManager::new(String::new(), vec![]),
-            ),
-            conversation: std::mem::replace(
-                &mut agent.conversation,
-                crate::conversation::ConversationState::new(),
-            ),
-        };
+        let mut runtime_state = take_interactive_agent_state(&mut agent);
 
         let response = rt.block_on(execute_remote_slash_command(
             &mut runtime_state,
