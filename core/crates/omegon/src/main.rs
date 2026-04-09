@@ -22,6 +22,7 @@ pub mod bus;
 mod cleave;
 mod cleave_smoke;
 mod context;
+mod control_actions;
 mod shadow_context;
 pub mod extensions;
 pub mod features;
