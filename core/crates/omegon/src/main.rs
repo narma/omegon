@@ -1986,10 +1986,15 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                 runtime_state = match turn_result {
                                     Ok(runtime_state) => runtime_state,
                                     Err(join_err) => {
+                                        let message = format!(
+                                            "⚠ Interactive turn worker crashed — ending session safely: {join_err}"
+                                        );
                                         tracing::error!("interactive turn task failed: {join_err}");
-                                        return Err(anyhow::anyhow!(
-                                            "interactive turn task failed: {join_err}"
-                                        ));
+                                        let _ = events_tx.send(AgentEvent::SystemNotification {
+                                            message: message.clone(),
+                                        });
+                                        let _ = events_tx.send(AgentEvent::AgentEnd);
+                                        return Err(anyhow::anyhow!(message));
                                     }
                                 };
                                 break;
@@ -2063,6 +2068,10 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     Ok(())
         })
         .await
+}
+
+fn format_interactive_turn_task_failure(join_err: &tokio::task::JoinError) -> String {
+    format!("⚠ Interactive turn worker crashed — ending session safely: {join_err}")
 }
 
 /// Format an agent loop error into a concise user-facing message.
@@ -3719,6 +3728,27 @@ mod tests {
             !system_prompt.is_empty(),
             "context manager should still build prompts after split"
         );
+    }
+
+    #[test]
+    fn format_interactive_turn_task_failure_reports_safe_shutdown() {
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let join_err = rt.block_on(async {
+            let local = tokio::task::LocalSet::new();
+            local
+                .run_until(async {
+                    tokio::task::spawn_local(async {
+                        panic!("boom");
+                    })
+                    .await
+                    .expect_err("task should fail")
+                })
+                .await
+        });
+
+        let message = format_interactive_turn_task_failure(&join_err);
+        assert!(message.contains("Interactive turn worker crashed"), "got: {message}");
+        assert!(message.contains("ending session safely"), "got: {message}");
     }
 
     #[test]

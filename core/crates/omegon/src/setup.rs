@@ -196,6 +196,12 @@ impl AgentSetup {
         secrets.preflight_session_cache_async(preflight).await;
         let mut session_secret_env = secrets.session_env();
         hydrate_provider_auth_env_from_auth_json(settings.as_ref(), &mut session_secret_env);
+        for (name, value) in &session_secret_env {
+            // SAFETY: setup runs before provider detection for this process; exporting
+            // startup-resolved secrets here makes the active provider path see the
+            // same credential surface as child/headless runs.
+            unsafe { std::env::set_var(name, value) };
+        }
 
         // Web auth secret: Try to load from preflight cache; fall back to ephemeral.
         // OMEGON_WEB_AUTH_SECRET is NOT preflighted (see above), so we'll get
