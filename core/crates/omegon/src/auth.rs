@@ -320,7 +320,7 @@ pub fn write_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Re
         };
 
         auth[provider] = serde_json::to_value(creds)?;
-        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        atomic_write_auth_json(&path, &auth)?;
         set_auth_file_permissions(&path)?;
         Ok(())
     })
@@ -429,7 +429,7 @@ pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
         }
 
         // Write back
-        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        atomic_write_auth_json(&path, &auth)?;
         set_auth_file_permissions(&path)?;
         Ok(())
     })
@@ -727,6 +727,11 @@ pub async fn login_anthropic_with_callbacks(
 
     // Save to auth.json
     write_credentials("anthropic", &creds)?;
+    let persisted = read_credentials("anthropic")
+        .ok_or_else(|| anyhow::anyhow!("Anthropic login completed but credentials were not persisted"))?;
+    if persisted.access != creds.access {
+        anyhow::bail!("Anthropic login completed but persisted credentials do not match the issued token");
+    }
     progress("✓ Authentication successful. Credentials saved.");
 
     Ok(creds)
@@ -970,10 +975,18 @@ fn write_credentials_with_extra(
             entry["accountId"] = json!(id);
         }
         auth[provider] = entry;
-        std::fs::write(&path, serde_json::to_string_pretty(&auth)?)?;
+        atomic_write_auth_json(&path, &auth)?;
         set_auth_file_permissions(&path)?;
         Ok(())
     })
+}
+
+fn atomic_write_auth_json(path: &Path, auth: &Value) -> anyhow::Result<()> {
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(auth)?)?;
+    set_auth_file_permissions(&tmp)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
 }
 
 fn auth_json_lock_path(path: &Path) -> PathBuf {
