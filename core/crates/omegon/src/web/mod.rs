@@ -274,6 +274,7 @@ pub enum WebCommand {
         respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::SlashCommandResponse>>,
     },
     Cancel,
+    Shutdown,
     CancelCleaveChild {
         label: String,
         respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::SlashCommandResponse>>,
@@ -492,6 +493,7 @@ pub(crate) async fn process_next_daemon_event(state: &WebState) -> anyhow::Resul
                 respond_to: None,
             }),
         "cancel" => Some(WebCommand::Cancel),
+        "shutdown" => Some(WebCommand::Shutdown),
         "cancel-cleave-child" => event
             .payload
             .get("label")
@@ -727,6 +729,35 @@ mod tests {
             .daemon_status
             .clone();
         assert_eq!(startup_status.processed_events, 1);
+    }
+
+    #[tokio::test]
+    async fn daemon_event_worker_dispatches_shutdown_trigger() {
+        let (events_tx, _events_rx) = tokio::sync::broadcast::channel(4);
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(4);
+        let state = WebState::new(DashboardHandles::default(), events_tx);
+        let state = WebState {
+            command_tx,
+            ..state
+        };
+        state.daemon_events.lock().unwrap().push(DaemonEventEnvelope {
+            event_id: "evt-shutdown".into(),
+            source: "manual/test".into(),
+            trigger_kind: "shutdown".into(),
+            payload: serde_json::json!({}),
+        });
+        state.daemon_status.lock().unwrap().queued_events = 1;
+
+        let processed = process_next_daemon_event(&state).await.unwrap();
+        assert!(processed);
+        let command = command_rx.recv().await.unwrap();
+        match command {
+            WebCommand::Shutdown => {}
+            other => panic!("wrong command: {other:?}"),
+        }
+        let status = state.daemon_status.lock().unwrap().clone();
+        assert_eq!(status.queued_events, 0);
+        assert_eq!(status.processed_events, 1);
     }
 
     #[tokio::test]
