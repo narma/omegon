@@ -15,7 +15,7 @@
 //! All use unified navy→teal→amber CIE L* perceptual color ramp.
 
 use super::theme::Theme;
-use super::widgets::{truncate_str, visible_width};
+use super::widgets::visible_width;
 use crate::features::cleave::CleaveProgress;
 use omegon_traits::ContextComposition;
 use ratatui::prelude::*;
@@ -1530,7 +1530,12 @@ impl InstrumentPanel {
                 ind_color
             });
             let short = tool_short_name(&tool.name);
-            let display_name = truncate_str(&short, name_w, "…");
+            let display_name = truncate_display_width(&short, name_w.saturating_sub(1));
+            let display_name = if visible_width(&short) > name_w {
+                format!("{}…", display_name)
+            } else {
+                display_name
+            };
             x = render_str_colored(&display_name, x, y, inner.right(), panel_bg(t), buf, |_| {
                 name_color
             });
@@ -2085,6 +2090,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn tools_panel_truncates_fallback_long_names_before_duration_column() {
+        let mut panel = InstrumentPanel::default();
+        panel.tool_started("context_clear");
+        panel.time = 18.1;
+        panel.tool_finished("context_clear", false);
+
+        let area = Rect::new(0, 0, 24, 6);
+        let backend = ratatui::backend::TestBackend::new(24, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let t = crate::tui::theme::Alpharius;
+
+        terminal
+            .draw(|f| {
+                panel.render_tools_panel(area, f, &t);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+        let rendered: String = (0..buf.area.width)
+            .map(|x| buf[(x, 1)].symbol().to_string())
+            .collect();
+
+        assert!(rendered.contains("18.1s"), "got {rendered:?}");
+        assert!(rendered.contains('…'), "got {rendered:?}");
+        assert!(!rendered.contains("context_clear18.1s"), "got {rendered:?}");
     }
 
     #[test]

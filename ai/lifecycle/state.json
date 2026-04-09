@@ -752,6 +752,21 @@
       "bound_change": null,
       "created_at": "2026-04-08T21:41:09Z",
       "updated_at": "2026-04-08T21:44:43Z"
+    },
+    {
+      "id": "benchmark-model-override-blocker",
+      "title": "Benchmark harness model override blocks Omegon token-comparison runs",
+      "state": "exploring",
+      "parent": null,
+      "tags": [],
+      "priority": null,
+      "issue_type": null,
+      "open_questions": [],
+      "decisions": [],
+      "overview": "",
+      "bound_change": null,
+      "created_at": "2026-04-09T11:52:29Z",
+      "updated_at": "2026-04-09T11:52:29Z"
     }
   ],
   "changes": [],
@@ -1706,6 +1721,24 @@
       "timestamp": "2026-04-08T21:44:43Z",
       "entity_type": "node",
       "entity_id": "omega-daemon-child-supervisor",
+      "from_state": "seed",
+      "to_state": "exploring",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-09T11:52:29Z",
+      "entity_type": "node",
+      "entity_id": "benchmark-model-override-blocker",
+      "from_state": "(new)",
+      "to_state": "seed",
+      "reason": null,
+      "forced": false
+    },
+    {
+      "timestamp": "2026-04-09T11:52:29Z",
+      "entity_type": "node",
+      "entity_id": "benchmark-model-override-blocker",
       "from_state": "seed",
       "to_state": "exploring",
       "reason": null,
