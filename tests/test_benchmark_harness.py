@@ -416,6 +416,70 @@ acceptance:
             self.assertIn("token ratio: 2.68x more tokens for omegon", result.stdout)
             self.assertIn("likely excess buckets: sys + tools + hist", result.stdout)
 
+    def test_report_mode_accepts_directory_and_groups_by_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            runs = repo / "runs"
+            runs.mkdir()
+            (runs / "task-a-omegon.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": "task-a",
+                        "harness": "omegon",
+                        "model": "anthropic:claude-sonnet-4-6",
+                        "status": "pass",
+                        "score": 1.0,
+                        "wall_clock_sec": 100,
+                        "tokens": {"total": 200},
+                        "omegon_context": {"sys": 90, "tools": 60, "hist": 30, "conv": 10, "mem": 5, "think": 2},
+                    }
+                )
+            )
+            (runs / "task-a-claude.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": "task-a",
+                        "harness": "claude-code",
+                        "model": "claude-sonnet-4-6",
+                        "status": "pass",
+                        "score": 1.0,
+                        "wall_clock_sec": 80,
+                        "tokens": {"total": 100},
+                    }
+                )
+            )
+            (runs / "task-b-pi.json").write_text(
+                json.dumps(
+                    {
+                        "task_id": "task-b",
+                        "harness": "pi",
+                        "model": "openai/gpt-4o",
+                        "status": "fail",
+                        "score": 0.0,
+                        "wall_clock_sec": 50,
+                        "tokens": {"total": 150},
+                    }
+                )
+            )
+            (runs / "notes.txt").write_text("ignore me\n")
+
+            result = self.run_script("--report", str(runs), cwd=repo)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Task: task-a", result.stdout)
+            self.assertIn("Task: task-b", result.stdout)
+            self.assertEqual(result.stdout.count("Task:"), 2)
+            self.assertIn("token ratio: 2.00x more tokens for omegon", result.stdout)
+            self.assertIn("- pi / openai/gpt-4o", result.stdout)
+
+    def test_report_mode_rejects_empty_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            empty = repo / "empty"
+            empty.mkdir()
+            result = self.run_script("--report", str(empty), cwd=repo)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("report requires at least one result artifact", result.stderr)
+
     def test_requires_task_when_not_reporting(self) -> None:
         result = self.run_script()
         self.assertEqual(result.returncode, 1)

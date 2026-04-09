@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import copytree, which
+from typing import Iterable
 from typing import Any
 
 import yaml
@@ -97,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--report",
         nargs="+",
-        help="Print a plain-text comparison report from one or more result JSON artifacts",
+        help="Print a plain-text comparison report from one or more result JSON artifacts or directories",
     )
     return parser.parse_args()
 
@@ -609,8 +610,10 @@ def render_report(results: list[dict[str, Any]]) -> str:
         r for r in results if r.get("status") == "pass" and isinstance(((r.get("tokens") or {}).get("total")), int)
     ]
     if len(passing) >= 2:
-        baseline = passing[0]
-        challenger = passing[1]
+        baseline = next((result for result in passing if result.get("harness") == "omegon"), passing[0])
+        challenger = next((result for result in passing if result is not baseline), None)
+        if challenger is None:
+            return "\n".join(lines).rstrip() + "\n"
         base_tokens = baseline["tokens"]["total"]
         challenger_tokens = challenger["tokens"]["total"]
         if challenger_tokens > 0:
@@ -628,10 +631,38 @@ def render_report(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def expand_report_inputs(paths: list[str]) -> list[Path]:
+    expanded: list[Path] = []
+    for raw_path in paths:
+        path = Path(raw_path).resolve()
+        if path.is_dir():
+            expanded.extend(sorted(candidate for candidate in path.iterdir() if candidate.is_file() and candidate.suffix == ".json"))
+        else:
+            expanded.append(path)
+    if not expanded:
+        raise TaskSpecError("report requires at least one result artifact")
+    return expanded
+
+
+def group_results_for_report(results: list[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    ordered: list[str] = []
+    for result in results:
+        task_id = result.get("task_id") if isinstance(result.get("task_id"), str) else "unknown-task"
+        if task_id not in grouped:
+            grouped[task_id] = []
+            ordered.append(task_id)
+        grouped[task_id].append(result)
+    for task_id in ordered:
+        yield grouped[task_id]
+
+
 def run_report_mode(paths: list[str]) -> int:
     try:
-        results = [load_result(Path(path).resolve()) for path in paths]
-        print(render_report(results), end="")
+        expanded_paths = expand_report_inputs(paths)
+        results = [load_result(path) for path in expanded_paths]
+        report_sections = [render_report(group) for group in group_results_for_report(results)]
+        print("\n".join(section.rstrip() for section in report_sections if section.strip()) + "\n", end="")
         return 0
     except (OSError, json.JSONDecodeError, TaskSpecError) as err:
         print(str(err), file=sys.stderr)

@@ -122,6 +122,7 @@ Important: these context buckets are a **snapshot diagnostic**, not an aggregate
   - `claude-code`
 - result JSON artifacts
 - a small comparison report (CLI text or markdown)
+- directory-level aggregation by reading a folder of result JSON artifacts and grouping summaries by task ID
 
 ### Out of scope
 
@@ -330,6 +331,8 @@ Delta
 - token ratio: 2.68x more tokens for Omegon
 - likely excess buckets: sys + tools + hist
 ```
+
+When `--report` is pointed at a directory, the harness should read `*.json` result files in that directory, ignore non-JSON files, and emit one grouped summary per `task_id`. This is intentionally minimal: no recursive scan, no persisted aggregate artifact, just directory-backed reporting over the existing per-run JSON schema.
 
 That is enough to drive engineering decisions.
 No charting is required for v1.
