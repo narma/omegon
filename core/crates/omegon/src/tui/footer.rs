@@ -1587,6 +1587,62 @@ mod tests {
     }
 
     #[test]
+    fn left_panel_truncates_codex_limit_row_aggressively() {
+        let data = FooterData {
+            model_id: "openai-codex:gpt-5.4".into(),
+            model_provider: "openai-codex".into(),
+            provider_connected: true,
+            is_oauth: true,
+            thinking_level: "high".into(),
+            model_tier: "victory".into(),
+            provider_telemetry: Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "openai-codex".into(),
+                source: "response_headers".into(),
+                codex_limit_name: Some("GPT-5.3-Codex-Spark".into()),
+                codex_active_limit: Some("codex".into()),
+                codex_primary_pct: Some(0),
+                codex_primary_reset_secs: Some(13_648),
+                codex_secondary_reset_secs: Some(348_644),
+                codex_credits_unlimited: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let text = render_left_panel_text(&data, 44, 10);
+
+        assert!(text.contains("limit"), "got {text}");
+        assert!(text.contains('…'), "got {text}");
+        assert!(!text.contains("weekly 4d"), "got {text}");
+        assert!(!text.contains("credits metered"), "got {text}");
+    }
+
+    #[test]
+    fn left_panel_truncates_anthropic_limit_row_aggressively() {
+        let data = FooterData {
+            model_id: "anthropic:claude-sonnet-4-6".into(),
+            model_provider: "anthropic".into(),
+            provider_connected: true,
+            thinking_level: "high".into(),
+            model_tier: "victory".into(),
+            provider_telemetry: Some(omegon_traits::ProviderTelemetrySnapshot {
+                provider: "anthropic".into(),
+                source: "response_headers".into(),
+                unified_5h_utilization_pct: Some(42.0),
+                unified_7d_utilization_pct: Some(64.0),
+                retry_after_secs: Some(17),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let text = render_left_panel_text(&data, 44, 10);
+
+        assert!(text.contains("limit"), "got {text}");
+        assert!(text.contains('…'), "got {text}");
+        assert!(text.contains("5h 42%"), "got {text}");
+        assert!(!text.contains("retry 17s"), "got {text}");
+    }
+
+    #[test]
     fn left_panel_clears_stale_rows_when_content_shrinks() {
         let backend = TestBackend::new(72, 10);
         let mut terminal = Terminal::new(backend).unwrap();
