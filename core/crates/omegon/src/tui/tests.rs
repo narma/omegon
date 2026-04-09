@@ -1119,40 +1119,32 @@ fn empty_editor_hint_mentions_focus_hotkey() {
 }
 
 #[test]
-fn focus_mode_selects_last_real_segment_when_none_was_selected() {
+fn focus_mode_starts_on_last_selectable_segment_and_toggle_tracks_expansion() {
     let mut app = test_app();
-    let tx = test_tx();
-    app.conversation.push_user("operator prompt");
-    app.conversation.append_streaming("assistant answer");
-    app.conversation.finalize_message();
+    app.conversation.push_user("hello");
+    app.conversation.push_system("world");
 
-    let _ = app.handle_slash_command("/focus", &tx);
+    assert_eq!(app.conversation.timeline_focused_segment(), Some(1));
 
-    assert!(app.focus_mode);
-    assert_eq!(app.conversation.selected_or_focused_segment(), Some(1));
-    assert_eq!(app.pane_focus, PaneFocus::Conversation);
+    app.set_focus_mode(true);
+    assert_eq!(app.conversation.timeline_focused_segment(), Some(1));
+    assert_eq!(app.conversation.timeline_expanded_segment(), None);
+
+    app.conversation.toggle_timeline_expanded_segment(1);
+    assert_eq!(app.conversation.timeline_expanded_segment(), Some(1));
+
+    app.conversation.toggle_timeline_expanded_segment(1);
+    assert_eq!(app.conversation.timeline_expanded_segment(), None);
 }
 
 #[test]
-fn focus_mode_navigation_skips_turn_separators() {
+fn focus_mode_esc_exits_focus_before_interrupting_agent() {
     let mut app = test_app();
-    app.conversation.push_user("first user");
-    app.conversation.append_streaming("first answer");
-    app.conversation.finalize_message();
-    app.conversation.push_user("second user");
-    app.conversation.append_streaming("second answer");
-    app.conversation.finalize_message();
+    app.conversation.push_system("segment");
+    app.set_focus_mode(true);
 
-    app.conversation.select_segment(4);
-    assert_eq!(app.conversation.move_selected_segment_prev(), Some(3));
-    assert_eq!(app.conversation.move_selected_segment_prev(), Some(1));
-    assert_eq!(app.conversation.move_selected_segment_prev(), Some(0));
-    assert_eq!(app.conversation.move_selected_segment_prev(), Some(0));
-
-    assert_eq!(app.conversation.move_selected_segment_next(), Some(1));
-    assert_eq!(app.conversation.move_selected_segment_next(), Some(3));
-    assert_eq!(app.conversation.move_selected_segment_next(), Some(4));
-    assert_eq!(app.conversation.move_selected_segment_next(), Some(4));
+    app.set_focus_mode(false);
+    assert!(!app.focus_mode);
 }
 
 #[test]

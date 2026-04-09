@@ -451,8 +451,34 @@ impl ConversationView {
         }
     }
 
+    pub fn clear_selected_segment(&mut self) {
+        self.selected_segment = None;
+    }
+
     pub fn selected_or_focused_segment(&self) -> Option<usize> {
         self.selected_segment.or_else(|| self.last_selectable_segment())
+    }
+
+    pub fn timeline_focused_segment(&self) -> Option<usize> {
+        self.selected_or_focused_segment()
+    }
+
+    pub fn timeline_expanded_segment(&self) -> Option<usize> {
+        self.pinned_segment
+    }
+
+    pub fn set_timeline_expanded_segment(&mut self, idx: Option<usize>) {
+        self.pinned_segment = idx;
+    }
+
+    pub fn toggle_timeline_expanded_segment(&mut self, idx: usize) -> Option<usize> {
+        if self.pinned_segment == Some(idx) {
+            self.pinned_segment = None;
+        } else if idx < self.segments.len() {
+            self.pinned_segment = Some(idx);
+            self.selected_segment = Some(idx);
+        }
+        self.pinned_segment
     }
 
     pub fn last_selectable_segment(&self) -> Option<usize> {

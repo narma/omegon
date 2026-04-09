@@ -745,16 +745,18 @@ impl App {
         }
         self.focus_mode = enabled;
         if enabled {
-            if self.conversation.selected_or_focused_segment().is_none()
-                && let Some(idx) = self.conversation.last_selectable_segment()
-            {
+            let focus_idx = self
+                .conversation
+                .timeline_focused_segment()
+                .or_else(|| self.conversation.last_selectable_segment());
+            if let Some(idx) = focus_idx {
                 self.conversation.select_segment(idx);
             }
             self.pane_focus = PaneFocus::Conversation;
             self.terminal_copy_mode = false;
             self.set_mouse_capture(false);
             self.show_toast(
-                "Focus mode active — conversation expanded for terminal-native reading and selection",
+                "Focus mode active — timeline navigation enabled for terminal-native reading and selection",
                 ratatui_toaster::ToastType::Info,
             );
         } else {
@@ -6092,6 +6094,13 @@ pub async fn run_tui(
                         {
                             if !app.agent_active {
                                 app.editor.insert_newline();
+                            }
+                        }
+
+                        // Enter in focus mode toggles expansion for the focused segment.
+                        (KeyCode::Enter, _) if app.focus_mode => {
+                            if let Some(idx) = app.conversation.timeline_focused_segment() {
+                                app.conversation.toggle_timeline_expanded_segment(idx);
                             }
                         }
 
