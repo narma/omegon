@@ -47,7 +47,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
@@ -2422,34 +2422,52 @@ impl App {
         self.editor_area = None;
         self.dashboard_area = None;
 
-        let t = &self.theme;
-        {
-            let (segments, conv_state) = self.conversation.segments_and_state();
-            let conv_widget = conv_widget::ConversationWidget::new(segments, t.as_ref());
-            frame.render_stateful_widget(conv_widget, area, conv_state);
-        }
-
-        let image_renders: Vec<(usize, Rect, std::path::PathBuf)> = {
-            let segments = self.conversation.segments();
-            self.conversation
-                .conv_state
-                .visible_image_areas(segments, area)
-                .into_iter()
-                .filter_map(|(idx, image_area)| {
-                    if let SegmentContent::Image { ref path, .. } = segments[idx].content {
-                        Some((idx, image_area, path.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
-
-        for (seg_idx, image_area, path) in image_renders {
-            if let Some(protocol) = self.conversation.image_cache.get_or_create(seg_idx, &path) {
-                image::render_image(image_area, frame, protocol);
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        for segment in self.conversation.segments() {
+            if matches!(segment.content, SegmentContent::TurnSeparator) {
+                if !lines.is_empty() {
+                    lines.push(Line::default());
+                }
+                continue;
             }
+
+            for line in segment
+                .export_text(SegmentExportMode::Raw)
+                .lines()
+                .map(|line| line.to_string())
+            {
+                lines.push(Line::from(line));
+            }
+            lines.push(Line::default());
         }
+        if lines.last().is_some_and(|line| line.spans.is_empty()) {
+            lines.pop();
+        }
+
+        let total_lines = lines.len() as u16;
+        let viewport_height = area.height.saturating_sub(1);
+        let max_scroll = total_lines.saturating_sub(viewport_height);
+        if self.conversation.conv_state.scroll_offset > max_scroll {
+            self.conversation.conv_state.scroll_offset = max_scroll;
+        }
+        self.conversation.conv_state.user_scrolled = self.conversation.conv_state.scroll_offset > 0;
+        let top_line = max_scroll.saturating_sub(self.conversation.conv_state.scroll_offset);
+
+        let paragraph = Paragraph::new(lines)
+            .style(
+                Style::default()
+                    .fg(self.theme.fg())
+                    .bg(self.theme.surface_bg()),
+            )
+            .wrap(Wrap { trim: false })
+            .scroll((top_line, 0));
+        let text_area = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: viewport_height,
+        };
+        frame.render_widget(paragraph, text_area);
 
         let overlay = Paragraph::new("↑/↓ scroll · PgUp/PgDn jump · Home/End top/bottom · drag to select · Ctrl+Y copy segment · Esc or /focus to return")
             .style(

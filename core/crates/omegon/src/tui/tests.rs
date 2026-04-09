@@ -1049,7 +1049,7 @@ fn focus_mode_navigation_skips_turn_separators() {
 }
 
 #[test]
-fn focus_mode_render_shows_fullscreen_conversation_instructions() {
+fn focus_mode_render_shows_plaintext_fullscreen_conversation() {
     let mut app = test_app();
     app.conversation.push_user("operator prompt");
     app.conversation.append_streaming("assistant answer");
@@ -1061,6 +1061,9 @@ fn focus_mode_render_shows_fullscreen_conversation_instructions() {
     assert!(rendered.contains("assistant answer"), "{rendered}");
     assert!(rendered.contains("PgUp/PgDn jump"), "{rendered}");
     assert!(!rendered.contains("focus — segment"), "{rendered}");
+    assert!(!rendered.contains("╭"), "{rendered}");
+    assert!(!rendered.contains("╰"), "{rendered}");
+    assert!(!rendered.contains("│"), "{rendered}");
 }
 
 #[test]
