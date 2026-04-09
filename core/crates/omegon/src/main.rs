@@ -172,6 +172,10 @@ struct Cli {
     #[arg(long)]
     context_class: Option<String>,
 
+    /// Enable slim runtime mode — reduce prompt and tool surface for quick interactive work.
+    #[arg(long)]
+    slim: bool,
+
     /// Log level: error, warn, info, debug, trace. Overrides RUST_LOG.
     #[arg(long, default_value = "info", global = true)]
     log_level: String,
@@ -592,6 +596,7 @@ async fn main() -> anyhow::Result<()> {
                     max_retries: cli.max_retries,
                     resume: cli.resume.clone(),
                     fresh: cli.fresh,
+                    slim: cli.slim,
                     no_session: cli.no_session,
                     no_splash: cli.no_splash,
                     tutorial: cli.tutorial,
@@ -924,6 +929,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     let profile = settings::Profile::load(&cli.cwd);
     if let Ok(mut s) = shared_settings.lock() {
         profile.apply_to(&mut s);
+        if cli.slim {
+            s.set_slim_mode(true);
+        }
         if let Ok(child_thinking) = std::env::var("OMEGON_CHILD_THINKING_LEVEL") {
             if let Some(level) = crate::settings::ThinkingLevel::parse(&child_thinking) {
                 s.thinking = level;
@@ -2495,6 +2503,9 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
     if let Ok(mut s) = shared_settings.lock() {
         profile.apply_to(&mut s);
         s.set_model(&cli.model);
+        if cli.slim {
+            s.set_slim_mode(true);
+        }
         if cli.max_turns != 50 {
             s.max_turns = cli.max_turns;
         }
@@ -3986,6 +3997,36 @@ mod tests {
             }
             _ => panic!("wrong command parsed"),
         }
+    }
+
+    #[test]
+    fn headless_benchmark_settings_enable_slim_mode_from_cli() {
+        let cli = Cli::try_parse_from([
+            "omegon",
+            "--slim",
+            "bench",
+            "run-task",
+            "--prompt",
+            "benchmark prompt",
+            "--usage-json",
+            "usage.json",
+        ])
+        .expect("bench run-task should parse with --slim");
+
+        let shared_settings = settings::shared(&cli.model);
+        let profile = settings::Profile::load(&cli.cwd);
+        {
+            let mut s = shared_settings.lock().unwrap();
+            profile.apply_to(&mut s);
+            s.set_model(&cli.model);
+            if cli.slim {
+                s.set_slim_mode(true);
+            }
+        }
+        let s = shared_settings.lock().unwrap();
+        assert!(s.slim_mode);
+        assert_eq!(s.thinking, crate::settings::ThinkingLevel::Low);
+        assert_eq!(s.requested_context_class, Some(crate::settings::ContextClass::Squad));
     }
 
     #[test]

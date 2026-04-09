@@ -18,16 +18,28 @@ pub struct PromptAssembly {
 /// lifecycle context (if artifacts exist), global/project AGENTS.md,
 /// project conventions (auto-detected from config files).
 pub fn build_base_prompt(cwd: &Path, tools: &[ToolDefinition]) -> String {
-    build_base_prompt_with_breakdown(cwd, tools).prompt
+    build_base_prompt_with_breakdown(cwd, tools, false).prompt
 }
 
 /// Build the base system prompt and return per-section size instrumentation.
-pub fn build_base_prompt_with_breakdown(cwd: &Path, tools: &[ToolDefinition]) -> PromptAssembly {
+pub fn build_base_prompt_with_breakdown(
+    cwd: &Path,
+    tools: &[ToolDefinition],
+    slim: bool,
+) -> PromptAssembly {
     let date = utc_date();
     let tool_list = format_tool_list(tools);
     let lex_imperialis = load_lex_imperialis();
-    let lifecycle_context = detect_lifecycle_context(cwd, tools);
-    let global_directives = load_global_directives();
+    let lifecycle_context = if slim {
+        String::new()
+    } else {
+        detect_lifecycle_context(cwd, tools)
+    };
+    let global_directives = if slim {
+        String::new()
+    } else {
+        load_global_directives()
+    };
     let project_directives = load_project_directives(cwd);
     let project_conventions = detect_project_conventions(cwd);
 
@@ -45,7 +57,11 @@ pub fn build_base_prompt_with_breakdown(cwd: &Path, tools: &[ToolDefinition]) ->
         prompt_section(
             "behavior",
             "Behavior",
-            "# Behavior\n\n- Always respond to the user. Tool calls gather information — they are not the answer. After calling tools, synthesize what you found into a direct response. Never end a turn with only tool calls and no text.\n- Be direct — act, don't narrate intent. Disagree when you see a better path.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines. Don't assert about unread code.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n- Prefer `request_context` before making multiple exploratory tool calls when you need session orientation or recent runtime evidence. Use direct read/search tools first only when you already know the exact target.\n",
+            if slim {
+                "# Behavior\n\n- Always respond to the user. Tool calls gather information — they are not the answer.\n- Be direct — act, don't narrate intent.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n"
+            } else {
+                "# Behavior\n\n- Always respond to the user. Tool calls gather information — they are not the answer. After calling tools, synthesize what you found into a direct response. Never end a turn with only tool calls and no text.\n- Be direct — act, don't narrate intent. Disagree when you see a better path.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines. Don't assert about unread code.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n- Prefer `request_context` before making multiple exploratory tool calls when you need session orientation or recent runtime evidence. Use direct read/search tools first only when you already know the exact target.\n"
+            },
         ),
         prompt_section("core_directives", "Core Directives", &lex_imperialis),
         prompt_section("project_lifecycle", "Project Lifecycle", &lifecycle_context),
@@ -444,7 +460,7 @@ mod tests {
             description: "A test tool".into(),
             parameters: serde_json::json!({}),
         }];
-        let assembly = build_base_prompt_with_breakdown(Path::new("/tmp"), &tools);
+        let assembly = build_base_prompt_with_breakdown(Path::new("/tmp"), &tools, false);
         assert_eq!(assembly.composition.total_chars, assembly.prompt.len());
         assert_eq!(
             assembly.composition.total_estimated_tokens,
@@ -471,8 +487,29 @@ mod tests {
     fn prompt_breakdown_preserves_prompt_output() {
         let tools = vec![];
         let prompt = build_base_prompt(Path::new("/tmp"), &tools);
-        let assembly = build_base_prompt_with_breakdown(Path::new("/tmp"), &tools);
+        let assembly = build_base_prompt_with_breakdown(Path::new("/tmp"), &tools, false);
         assert_eq!(prompt, assembly.prompt);
+    }
+
+    #[test]
+    fn slim_prompt_omits_lifecycle_and_global_operator_sections() {
+        let tools = vec![omegon_traits::ToolDefinition {
+            name: "bash".into(),
+            label: "test".into(),
+            description: "A test tool".into(),
+            parameters: serde_json::json!({}),
+        }];
+        let assembly = build_base_prompt_with_breakdown(Path::new("/tmp"), &tools, true);
+        let section_keys: Vec<&str> = assembly
+            .composition
+            .sections
+            .iter()
+            .filter(|section| section.chars > 0)
+            .map(|section| section.key.as_str())
+            .collect();
+        assert!(!section_keys.contains(&"project_lifecycle"));
+        assert!(!section_keys.contains(&"operator_directives"));
+        assert!(assembly.prompt.contains("Lex Imperialis"));
     }
 
     #[test]

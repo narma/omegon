@@ -492,6 +492,10 @@ impl AgentSetup {
         // to consume input tokens on every request.
         {
             use crate::tool_registry as reg;
+            let slim_mode = settings
+                .as_ref()
+                .and_then(|s| s.lock().ok().map(|g| g.slim_mode))
+                .unwrap_or(false);
             let mut disabled = disabled_handle.lock().unwrap();
             // Speculation tools — only needed when explicitly exploring
             disabled.insert(reg::core::SPECULATE_START.into());
@@ -517,8 +521,32 @@ impl AgentSetup {
             disabled.insert(reg::memory::MEMORY_INGEST_LIFECYCLE.into());
             disabled.insert(reg::memory::MEMORY_CONNECT.into());
             disabled.insert(reg::memory::MEMORY_SEARCH_ARCHIVE.into());
+            if slim_mode {
+                disabled.insert(reg::web_search::WEB_SEARCH.into());
+                disabled.insert(reg::local_inference::ASK_LOCAL_MODEL.into());
+                disabled.insert(reg::local_inference::LIST_LOCAL_MODELS.into());
+                disabled.insert(reg::local_inference::MANAGE_OLLAMA.into());
+                disabled.insert(reg::memory::MEMORY_STORE.into());
+                disabled.insert(reg::memory::MEMORY_RECALL.into());
+                disabled.insert(reg::memory::MEMORY_QUERY.into());
+                disabled.insert(reg::memory::MEMORY_ARCHIVE.into());
+                disabled.insert(reg::memory::MEMORY_SUPERSEDE.into());
+                disabled.insert(reg::memory::MEMORY_FOCUS.into());
+                disabled.insert(reg::memory::MEMORY_RELEASE.into());
+                disabled.insert(reg::memory::MEMORY_EPISODES.into());
+                disabled.insert(reg::memory::MEMORY_COMPACT.into());
+                disabled.insert(reg::lifecycle::DESIGN_TREE.into());
+                disabled.insert(reg::lifecycle::DESIGN_TREE_UPDATE.into());
+                disabled.insert(reg::lifecycle::OPENSPEC_MANAGE.into());
+                disabled.insert(reg::lifecycle::LIFECYCLE_DOCTOR.into());
+                disabled.insert(reg::cleave::CLEAVE_ASSESS.into());
+                disabled.insert(reg::cleave::CLEAVE_RUN.into());
+                disabled.insert(reg::codescan::CODEBASE_INDEX.into());
+                disabled.insert(reg::session_log::SESSION_LOG.into());
+            }
             tracing::info!(
                 disabled = disabled.len(),
+                slim = slim_mode,
                 "default tool profile applied — use manage_tools to re-enable"
             );
             let child_enabled_tools = crate::parse_csv_env("OMEGON_CHILD_ENABLED_TOOLS");
@@ -582,7 +610,11 @@ impl AgentSetup {
         // ─── System prompt + context ────────────────────────────────────
         // Build the base prompt from bus tool definitions (not the old tools vec)
         let tool_defs = bus.tool_definitions();
-        let base_prompt = prompt::build_base_prompt(&cwd, &tool_defs);
+        let slim_mode = settings
+            .as_ref()
+            .and_then(|s| s.lock().ok().map(|g| g.slim_mode))
+            .unwrap_or(false);
+        let base_prompt = prompt::build_base_prompt_with_breakdown(&cwd, &tool_defs, slim_mode).prompt;
 
         // Context providers: the bus collects context from features, but we
         // still need the ContextManager for the injection pipeline (TTL decay,
