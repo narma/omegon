@@ -448,6 +448,25 @@ def compute_total_tokens(usage: dict[str, Any]) -> int | None:
     return int(sum(v or 0 for v in values))
 
 
+def normalize_omegon_context(usage: dict[str, Any]) -> dict[str, int] | None:
+    composition = usage.get("context_composition")
+    if not isinstance(composition, dict):
+        return None
+
+    mapping = {
+        "sys": coerce_int(composition.get("system_tokens")),
+        "tools": coerce_int(composition.get("tool_schema_tokens")),
+        "conv": coerce_int(composition.get("conversation_tokens")),
+        "mem": coerce_int(composition.get("memory_tokens")),
+        "hist": coerce_int(composition.get("tool_history_tokens")),
+        "think": coerce_int(composition.get("thinking_tokens")),
+        "free": coerce_int(composition.get("free_tokens")),
+    }
+    if all(value is None for value in mapping.values()):
+        return None
+    return {key: int(value or 0) for key, value in mapping.items()}
+
+
 def build_result(
     *,
     spec: TaskSpec,
@@ -458,7 +477,7 @@ def build_result(
     wall_clock_sec: float,
 ) -> dict[str, Any]:
     total_tokens = compute_total_tokens(adapter.usage)
-    return {
+    payload = {
         "task_id": spec.id,
         "harness": harness,
         "model": adapter.model,
@@ -486,6 +505,16 @@ def build_result(
         },
         "extra": adapter.extra,
     }
+    omegon_context = normalize_omegon_context(adapter.usage)
+    if omegon_context is not None:
+        payload["omegon_context"] = omegon_context
+    if adapter.usage.get("estimated_tokens") is not None:
+        payload.setdefault("telemetry", {})
+        payload["telemetry"]["estimated_tokens"] = adapter.usage.get("estimated_tokens")
+    if adapter.usage.get("context_window") is not None:
+        payload.setdefault("telemetry", {})
+        payload["telemetry"]["context_window"] = adapter.usage.get("context_window")
+    return payload
 
 
 def write_result(out_dir: Path, spec: TaskSpec, harness: str, payload: dict[str, Any]) -> Path:

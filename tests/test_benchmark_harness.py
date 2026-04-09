@@ -102,7 +102,7 @@ acceptance: [echo ok]
                 "done\n"
                 "if [ -n \"$usage_json\" ]; then\n"
                 "  cat > \"$usage_json\" <<'JSON'\n"
-                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
+                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "estimated_tokens": 1700, "context_window": 200000, "context_composition": {"system_tokens": 100, "tool_schema_tokens": 50, "conversation_tokens": 400, "memory_tokens": 25, "tool_history_tokens": 75, "thinking_tokens": 10, "free_tokens": 199340}, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
                 "JSON\n"
                 "fi\n"
                 "echo fake omegon run\n"
@@ -140,6 +140,20 @@ acceptance:
             self.assertEqual(payload["tokens"]["total"], 1500)
             self.assertEqual(payload["harness"], "omegon")
             self.assertEqual(payload["extra"]["context"]["sys"], 100)
+            self.assertEqual(
+                payload["omegon_context"],
+                {
+                    "sys": 100,
+                    "tools": 50,
+                    "conv": 400,
+                    "mem": 25,
+                    "hist": 75,
+                    "think": 10,
+                    "free": 199340,
+                },
+            )
+            self.assertEqual(payload["telemetry"]["estimated_tokens"], 1700)
+            self.assertEqual(payload["telemetry"]["context_window"], 200000)
 
     def test_acceptance_runs_in_clean_repo_not_source_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
