@@ -3021,7 +3021,7 @@ async fn execute_remote_slash_command(
             }
         }
         CanonicalSlashCommand::ContextStatus => {
-            let est = agent.conversation.estimate_tokens();
+            let est = runtime_state.conversation.estimate_tokens();
             let settings = shared_settings.lock().unwrap();
             let ctx_window = settings.context_window;
             let pct = if ctx_window > 0 {
@@ -3053,12 +3053,12 @@ async fn execute_remote_slash_command(
                     ..Default::default()
                 }
             };
-            if let Some((payload, _)) = agent.conversation.build_compaction_payload() {
+            if let Some((payload, _)) = runtime_state.conversation.build_compaction_payload() {
                 match r#loop::compact_via_llm(bridge_guard.as_ref(), &payload, &stream_options).await
                 {
                     Ok(summary) => {
-                        agent.conversation.apply_compaction(summary);
-                        let est = agent.conversation.estimate_tokens();
+                        runtime_state.conversation.apply_compaction(summary);
+                        let est = runtime_state.conversation.estimate_tokens();
                         let settings = shared_settings.lock().unwrap();
                         if let Ok::<
                             std::sync::MutexGuard<'_, crate::features::context::SharedContextMetrics>,
@@ -3101,12 +3101,12 @@ async fn execute_remote_slash_command(
         CanonicalSlashCommand::ContextClear => {
             if !cli.no_session {
                 let _ = session::save_session(
-                    &agent.conversation,
+                    &runtime_state.conversation,
                     &agent.cwd,
                     Some(agent.session_id.as_str()),
                 );
             }
-            agent.conversation = crate::conversation::ConversationState::new();
+            runtime_state.conversation = crate::conversation::ConversationState::new();
             agent.session_id = crate::session::allocate_session_id();
             agent.resume_info = None;
             let context_window = if let Ok(mut metrics) = agent.context_metrics.lock() {
@@ -3136,7 +3136,7 @@ async fn execute_remote_slash_command(
                     "reason": "Operator-requested direct context inspection from slash command"
                 }]
             });
-            match agent
+            match runtime_state
                 .bus
                 .execute_tool(
                     crate::tool_registry::context::REQUEST_CONTEXT,
@@ -3170,7 +3170,7 @@ async fn execute_remote_slash_command(
         CanonicalSlashCommand::ContextRequestJson(raw) => {
             match serde_json::from_str::<serde_json::Value>(&raw) {
                 Ok(args) if args.get("requests").and_then(|v| v.as_array()).is_some() => {
-                    match agent
+                    match runtime_state
                         .bus
                         .execute_tool(
                             crate::tool_registry::context::REQUEST_CONTEXT,
@@ -3224,12 +3224,12 @@ async fn execute_remote_slash_command(
         CanonicalSlashCommand::NewSession => {
             if !cli.no_session {
                 let _ = session::save_session(
-                    &agent.conversation,
+                    &runtime_state.conversation,
                     &agent.cwd,
                     Some(agent.session_id.as_str()),
                 );
             }
-            agent.conversation = crate::conversation::ConversationState::new();
+            runtime_state.conversation = crate::conversation::ConversationState::new();
             agent.session_id = crate::session::allocate_session_id();
             agent.resume_info = None;
             let _ = events_tx.send(AgentEvent::SessionReset);
