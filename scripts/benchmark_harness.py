@@ -764,6 +764,10 @@ def build_result(
     if isinstance(adapter.usage.get("turn_end_reasons"), dict):
         payload.setdefault("telemetry", {})
         payload["telemetry"]["turn_end_reasons"] = adapter.usage.get("turn_end_reasons")
+    for key in ("dominant_phases", "drift_kinds", "progress_nudge_reasons"):
+        value = adapter.usage.get(key)
+        if isinstance(value, dict):
+            payload[key] = value
     return payload
 
 

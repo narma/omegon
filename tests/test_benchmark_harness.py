@@ -184,7 +184,7 @@ acceptance: [echo ok]
                 "done\n"
                 "if [ -n \"$usage_json\" ]; then\n"
                 "  cat > \"$usage_json\" <<'JSON'\n"
-                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "cache_write_tokens": 25, "estimated_tokens": 1700, "context_window": 200000, "turn_count": 4, "turn_end_reasons": {"tool_continuation": 3, "assistant_completed": 1}, "requested_model": "anthropic:claude-sonnet-4-6", "requested_provider": "anthropic", "resolved_provider": "anthropic", "provider": "anthropic", "per_turn": {"avg_input_tokens": 300, "avg_output_tokens": 75, "avg_cache_tokens": 0, "avg_cache_write_tokens": 6, "avg_estimated_tokens": 425}, "context_composition": {"system_tokens": 100, "tool_schema_tokens": 50, "conversation_tokens": 400, "memory_tokens": 25, "tool_history_tokens": 75, "thinking_tokens": 10, "free_tokens": 199340}, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
+                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "cache_write_tokens": 25, "estimated_tokens": 1700, "context_window": 200000, "turn_count": 4, "turn_end_reasons": {"tool_continuation": 3, "assistant_completed": 1}, "dominant_phases": {"observe": 2, "act": 2}, "drift_kinds": {"orientation_churn": 1}, "progress_nudge_reasons": {"anti_orientation": 1}, "requested_model": "anthropic:claude-sonnet-4-6", "requested_provider": "anthropic", "resolved_provider": "anthropic", "provider": "anthropic", "per_turn": {"avg_input_tokens": 300, "avg_output_tokens": 75, "avg_cache_tokens": 0, "avg_cache_write_tokens": 6, "avg_estimated_tokens": 425}, "context_composition": {"system_tokens": 100, "tool_schema_tokens": 50, "conversation_tokens": 400, "memory_tokens": 25, "tool_history_tokens": 75, "thinking_tokens": 10, "free_tokens": 199340}, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
                 "JSON\n"
                 "fi\n"
                 "echo fake omegon run\n"
@@ -225,6 +225,9 @@ acceptance:
             self.assertEqual(payload["requested_provider"], "anthropic")
             self.assertEqual(payload["resolved_provider"], "anthropic")
             self.assertEqual(payload["provider"], "anthropic")
+            self.assertEqual(payload["dominant_phases"], {"observe": 2, "act": 2})
+            self.assertEqual(payload["drift_kinds"], {"orientation_churn": 1})
+            self.assertEqual(payload["progress_nudge_reasons"], {"anti_orientation": 1})
             self.assertEqual(payload["extra"]["context"]["sys"], 100)
             self.assertEqual(
                 payload["omegon_context"],

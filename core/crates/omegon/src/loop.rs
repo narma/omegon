@@ -254,6 +254,22 @@ fn should_inject_execution_pressure(
         && tool_calls.iter().all(|call| is_repo_inspection_tool(&call.name))
 }
 
+fn should_inject_continuation_pressure(
+    turn: u32,
+    config: &LoopConfig,
+    conversation: &ConversationState,
+    tool_calls: &[ToolCall],
+    dominant_phase: Option<OodaPhase>,
+    drift_kind: Option<DriftKind>,
+) -> bool {
+    config.enforce_first_turn_execution_bias
+        && turn >= 6
+        && !tool_calls.is_empty()
+        && conversation.intent.files_modified.is_empty()
+        && matches!(dominant_phase, Some(OodaPhase::Observe | OodaPhase::Orient))
+        && matches!(drift_kind, Some(DriftKind::OrientationChurn))
+}
+
 pub(crate) fn compute_context_composition(
     system_prompt: &str,
     llm_messages: &[LlmMessage],
@@ -796,6 +812,19 @@ pub async fn run(
             tracing::info!("Execution stall detected after repo inspection — injecting execution-pressure nudge");
             conversation.push_user(
                 "[System: You now have enough local evidence. Do not use broad inspection/search tools again until you do one of these two things: (1) make one concrete code edit, or (2) name one specific blocking ambiguity tied to a file or symbol. Stop narrating. Pick the smallest justified patch now, apply it, then run the narrowest relevant validation.]"
+                    .to_string(),
+            );
+        } else if should_inject_continuation_pressure(
+            turn,
+            config,
+            conversation,
+            tool_calls,
+            dominant_phase,
+            drift_kind,
+        ) {
+            tracing::info!("Sustained tool-continuation churn detected — injecting continuation-pressure nudge");
+            conversation.push_user(
+                "[System: You are burning turns without converging. Stop broad inspection. On the next turn, either (1) make the smallest concrete code change you can justify from current evidence, or (2) run one narrow validation tied to the exact symbol/file you already inspected. Do not call more than one orientation tool before acting.]"
                     .to_string(),
             );
         }
@@ -2548,6 +2577,95 @@ mod tests {
             },
         ];
         assert!(!should_inject_execution_pressure(4, &config, &conversation, &tool_calls));
+    }
+
+    #[test]
+    fn continuation_pressure_detected_for_sustained_orientation_churn() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![
+            ToolCall {
+                id: "1".into(),
+                name: "read".into(),
+                arguments: Value::Null,
+            },
+            ToolCall {
+                id: "2".into(),
+                name: "codebase_search".into(),
+                arguments: Value::Null,
+            },
+        ];
+        assert!(should_inject_continuation_pressure(
+            6,
+            &config,
+            &conversation,
+            &tool_calls,
+            Some(OodaPhase::Observe),
+            Some(DriftKind::OrientationChurn),
+        ));
+    }
+
+    #[test]
+    fn continuation_pressure_not_detected_after_mutation_begins() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        conversation
+            .intent
+            .files_modified
+            .insert(std::path::PathBuf::from("core/src/main.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "read".into(),
+            arguments: Value::Null,
+        }];
+        assert!(!should_inject_continuation_pressure(
+            6,
+            &config,
+            &conversation,
+            &tool_calls,
+            Some(OodaPhase::Observe),
+            Some(DriftKind::OrientationChurn),
+        ));
+    }
+
+    #[test]
+    fn continuation_pressure_not_detected_for_act_phase() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "bash".into(),
+            arguments: serde_json::json!({"command": "cargo test"}),
+        }];
+        assert!(!should_inject_continuation_pressure(
+            6,
+            &config,
+            &conversation,
+            &tool_calls,
+            Some(OodaPhase::Act),
+            Some(DriftKind::OrientationChurn),
+        ));
     }
 
     #[test]
