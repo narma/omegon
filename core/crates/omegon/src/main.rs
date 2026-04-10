@@ -3485,6 +3485,14 @@ async fn execute_remote_slash_command(
             }
         }
         CanonicalSlashCommand::AuthLogout(provider) => {
+            if provider.trim().is_empty() {
+                return SlashCommandResponse {
+                    accepted: false,
+                    output: Some(
+                        "Provider required for logout. Use: anthropic, openai, openai-codex, openrouter, ollama-cloud".to_string(),
+                    ),
+                };
+            }
             let message = match auth::logout_provider(&provider) {
                 Ok(()) => format!("✓ Logged out from {}", provider),
                 Err(e) => format!("❌ Logout failed: {}", e),
@@ -3972,7 +3980,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_slash_logout_defaults_to_anthropic() {
+    fn remote_slash_logout_requires_provider() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let agent = rt.block_on(setup::AgentSetup::new(Path::new("."), None, None)).unwrap();
         let (events_tx, _) = broadcast::channel(16);
@@ -3999,8 +4007,43 @@ mod tests {
             "",
         ));
 
+        assert!(!response.accepted);
+        assert!(response
+            .output
+            .unwrap()
+            .contains("interactive-only or unavailable"));
+    }
+
+    #[test]
+    fn remote_slash_logout_accepts_openai_codex_provider() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let agent = rt.block_on(setup::AgentSetup::new(Path::new("."), None, None)).unwrap();
+        let (events_tx, _) = broadcast::channel(16);
+        let shared_settings = std::sync::Arc::new(std::sync::Mutex::new(settings::Settings::new(
+            "anthropic:claude-sonnet-4-6",
+        )));
+        let bridge = std::sync::Arc::new(tokio::sync::RwLock::new(
+            Box::new(crate::bridge::NullBridge) as Box<dyn LlmBridge>
+        ));
+        let login_prompt_tx = std::sync::Arc::new(tokio::sync::Mutex::new(None));
+        let cli = Cli::try_parse_from(vec!["omegon"]).unwrap();
+
+        let (mut agent, mut runtime_state) = split_interactive_agent(agent);
+
+        let response = rt.block_on(execute_remote_slash_command(
+            &mut runtime_state,
+            &mut agent,
+            &events_tx,
+            &shared_settings,
+            &bridge,
+            &login_prompt_tx,
+            &cli,
+            "logout",
+            "openai-codex",
+        ));
+
         assert!(response.accepted);
-        assert!(response.output.unwrap().contains("anthropic"));
+        assert!(response.output.unwrap().contains("openai-codex"));
     }
 
     #[test]

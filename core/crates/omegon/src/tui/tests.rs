@@ -1488,11 +1488,17 @@ fn slash_login_provider_dispatches_to_runtime() {
 }
 
 #[test]
-fn slash_logout_without_provider_dispatches_to_runtime() {
+fn slash_logout_without_provider_shows_provider_usage() {
     let mut app = test_app();
     let tx = test_tx();
     let result = app.handle_slash_command("/logout", &tx);
-    assert!(matches!(result, SlashResult::Handled));
+    match result {
+        SlashResult::Display(text) => {
+            assert!(text.contains("Usage: /logout <provider>"), "got: {text}");
+            assert!(text.contains("openai-codex"), "got: {text}");
+        }
+        other => panic!("expected Display result, got {:?}", std::mem::discriminant(&other)),
+    }
 }
 
 #[test]

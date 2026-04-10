@@ -315,9 +315,9 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
             _ => None,
         },
         "login" if !args.is_empty() => Some(CanonicalSlashCommand::AuthLogin(args.to_string())),
-        "logout" => Some(CanonicalSlashCommand::AuthLogout(
-            if args.is_empty() { "anthropic" } else { args }.to_string(),
-        )),
+        "logout" if !args.is_empty() => {
+            Some(CanonicalSlashCommand::AuthLogout(args.to_string()))
+        }
         _ => None,
     }
 }
@@ -2880,9 +2880,20 @@ impl App {
         (
             "login",
             "log in to a provider or service",
-            &["anthropic", "openai", "openrouter", "github"],
+            &[
+                "anthropic",
+                "openai",
+                "openai-codex",
+                "openrouter",
+                "ollama-cloud",
+                "github",
+            ],
         ),
-        ("logout", "log out of provider", &["anthropic", "openai"]),
+        (
+            "logout",
+            "log out of provider",
+            &["anthropic", "openai", "openai-codex", "openrouter", "ollama-cloud"],
+        ),
         (
             "auth",
             "authentication management",
@@ -3825,7 +3836,9 @@ impl App {
                     });
                     SlashResult::Handled
                 } else {
-                    SlashResult::Display("Usage: /logout [provider]".into())
+                    SlashResult::Display(
+                        "Usage: /logout <provider>\n\nProviders: anthropic, openai, openai-codex, openrouter, ollama-cloud".into(),
+                    )
                 }
             }
 

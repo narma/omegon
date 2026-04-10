@@ -220,7 +220,8 @@ impl Editor {
     }
 
     fn set_projected_cursor(&mut self, projected_idx: usize) {
-        self.textarea.move_cursor(ratatui_textarea::CursorMove::Head);
+        let text = self.textarea.lines().join("\n");
+        self.raw_set_textarea_text(&text);
         for _ in 0..projected_idx {
             self.textarea
                 .move_cursor(ratatui_textarea::CursorMove::Forward);
@@ -276,7 +277,7 @@ impl Editor {
         self.projection()
             .token_spans
             .into_iter()
-            .find(|span| projected_idx > span.start && projected_idx <= span.end)
+            .find(|span| projected_idx >= span.start && projected_idx <= span.end)
     }
 
     fn token_span_containing_cursor(&self, projected_idx: usize) -> Option<TokenSpan> {
@@ -284,6 +285,13 @@ impl Editor {
             .token_spans
             .into_iter()
             .find(|span| projected_idx >= span.start && projected_idx < span.end)
+    }
+
+    fn token_span_for_edit_cursor(&self, projected_idx: usize) -> Option<TokenSpan> {
+        self.projection()
+            .token_spans
+            .into_iter()
+            .find(|span| projected_idx >= span.start && projected_idx <= span.end)
     }
 
     fn token_ord_before_model_idx(&self, model_idx: usize) -> usize {
@@ -323,22 +331,29 @@ impl Editor {
         }
     }
 
-    fn expand_collapsed_paste_at_cursor(&mut self) -> bool {
+    fn expand_collapsed_paste_at_cursor(&mut self) -> Option<usize> {
         let projected_idx = self.projected_cursor();
-        let Some(span) = self.token_span_containing_cursor(projected_idx) else {
-            return false;
+        let Some(span) = self.token_span_for_edit_cursor(projected_idx) else {
+            return None;
         };
+        let projection = self.projection();
+        let is_sole_token = span.start == 0 && span.end == projection.text.chars().count();
+        let should_expand = projected_idx < span.end || is_sole_token;
+        if !should_expand {
+            return None;
+        }
         let Some(InlineToken::CollapsedPaste { text }) = self.inline_tokens.get(span.token_ord).cloned() else {
-            return false;
+            return None;
         };
 
         let start = Self::char_to_byte_idx(&self.model_text, span.model_char_idx);
         let end = Self::char_to_byte_idx(&self.model_text, span.model_char_idx + 1);
         self.model_text.replace_range(start..end, &text);
         self.inline_tokens.remove(span.token_ord);
-        let cursor = span.start.min(self.projection().text.chars().count());
+        let expanded_projection_len = self.projection().text.chars().count();
+        let cursor = if is_sole_token { 0 } else { span.start.min(expanded_projection_len) };
         self.sync_textarea_from_model(cursor);
-        true
+        Some(cursor)
     }
 
     fn remove_token(&mut self, span: TokenSpan) {
@@ -741,8 +756,9 @@ impl Editor {
 
     /// Insert a character directly (for compat with old API).
     pub fn insert(&mut self, c: char) {
-        let _ = self.expand_collapsed_paste_at_cursor();
-        let projected_idx = self.projected_cursor();
+        let projected_idx = self
+            .expand_collapsed_paste_at_cursor()
+            .unwrap_or_else(|| self.projected_cursor());
         let model_idx = self.projected_cursor_to_model_insert_idx(projected_idx);
         let byte_idx = Self::char_to_byte_idx(&self.model_text, model_idx);
         self.model_text.insert(byte_idx, c);
@@ -778,13 +794,11 @@ impl Editor {
     pub fn move_left(&mut self) {
         self.textarea
             .move_cursor(ratatui_textarea::CursorMove::Back);
-        self.normalize_cursor_outside_token(false);
     }
 
     pub fn move_right(&mut self) {
         self.textarea
             .move_cursor(ratatui_textarea::CursorMove::Forward);
-        self.normalize_cursor_outside_token(true);
     }
 
     pub fn move_home(&mut self) {
@@ -928,7 +942,7 @@ impl Editor {
 
     pub fn delete_word_forward(&mut self) {
         let start = self.projected_cursor();
-        if let Some(span) = self.token_span_containing_cursor(start) {
+        if let Some(span) = self.token_span_for_edit_cursor(start) {
             self.delete_projected_range(span.start, span.end);
             return;
         }
