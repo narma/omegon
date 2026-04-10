@@ -466,6 +466,10 @@ impl IpcConnection {
                     .await;
                 }
 
+                // Legacy compatibility adapter. Promoted control families should
+                // arrive through typed IPC methods that translate directly into
+                // `ControlRequest`; this path exists for slash-only commands and
+                // older clients.
                 "run_slash_command" => {
                     let req = serde_json::from_value::<SlashCommandRequest>(payload)
                         .context("parse run_slash_command")?;

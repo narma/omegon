@@ -541,6 +541,9 @@ async fn handle_client_command(
             };
             let _ = snapshot_tx.send(message).await;
         }
+        // Legacy compatibility adapter. Promoted control families should use
+        // typed websocket commands that emit `ExecuteControl`; this path
+        // remains for slash-only commands and older dashboard clients.
         "slash_command" => {
             let name = cmd["name"].as_str().unwrap_or("").to_string();
             let args = cmd["args"].as_str().unwrap_or("").to_string();
