@@ -1164,6 +1164,7 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
             agent.dashboard_handles.clone(),
             events_tx.clone(),
             ipc_command_tx,
+            shared_settings.clone(),
             shared_cancel.clone(),
             ipc_cancel.clone(),
         );

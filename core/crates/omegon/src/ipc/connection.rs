@@ -43,6 +43,7 @@ pub struct ConnectionConfig {
     pub handles: DashboardHandles,
     pub events_tx: broadcast::Sender<AgentEvent>,
     pub command_tx: mpsc::Sender<TuiCommand>,
+    pub shared_settings: crate::settings::SharedSettings,
     pub shared_cancel: SharedCancel,
     /// Cleared to `false` when this connection closes.
     pub has_controller: Arc<AtomicBool>,
@@ -441,6 +442,26 @@ impl IpcConnection {
                             if model.is_empty() {
                                 false
                             } else {
+                                let current_model = cfg
+                                    .shared_settings
+                                    .lock()
+                                    .ok()
+                                    .map(|s| s.model.clone())
+                                    .unwrap_or_default();
+                                let classified = crate::control_actions::classify_ipc_set_model_request(
+                                    &current_model,
+                                    &model,
+                                );
+                                if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                                    send_error(
+                                        &out_tx,
+                                        req_id,
+                                        IpcErrorCode::InvalidPayload,
+                                        "caller role is insufficient for set_model",
+                                    )
+                                    .await;
+                                    continue;
+                                }
                                 cfg.command_tx
                                     .send(TuiCommand::SetModel {
                                         model,

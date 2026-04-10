@@ -100,6 +100,35 @@ pub fn classify_ipc_method(method: &str) -> ClassifiedAction {
     }
 }
 
+pub fn classify_ipc_set_model_request(current_model: &str, requested_model: &str) -> ClassifiedAction {
+    let requested = requested_model.trim();
+    if requested.is_empty() {
+        return ClassifiedAction {
+            ingress: ControlIngress::Ipc,
+            action: CanonicalAction::Unknown,
+            role: ControlRole::Admin,
+            remote_safe: false,
+        };
+    }
+
+    let current_provider = crate::providers::infer_provider_id(current_model);
+    let requested_provider = crate::providers::infer_provider_id(requested);
+    let explicit_provider_switch = requested.contains(':') && requested_provider != current_provider;
+
+    let (action, role, remote_safe) = if explicit_provider_switch {
+        (CanonicalAction::ProviderSwitch, ControlRole::Admin, false)
+    } else {
+        (CanonicalAction::ModelSetSameProvider, ControlRole::Edit, true)
+    };
+
+    ClassifiedAction {
+        ingress: ControlIngress::Ipc,
+        action,
+        role,
+        remote_safe,
+    }
+}
+
 pub fn classify_daemon_trigger(trigger_kind: &str) -> ClassifiedAction {
     let (action, role, remote_safe) = match trigger_kind {
         "prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit, true),
@@ -338,6 +367,25 @@ mod tests {
     #[test]
     fn classifies_ipc_set_model_as_admin_local_only() {
         let action = classify_ipc_method("set_model");
+        assert_eq!(action.action, CanonicalAction::ProviderSwitch);
+        assert_eq!(action.role, ControlRole::Admin);
+        assert!(!action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_set_model_request_same_provider_as_edit() {
+        let action = classify_ipc_set_model_request("anthropic:claude-sonnet-4-6", "claude-opus-4-6");
+        assert_eq!(action.action, CanonicalAction::ModelSetSameProvider);
+        assert_eq!(action.role, ControlRole::Edit);
+        assert!(action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_set_model_request_explicit_provider_switch_as_admin() {
+        let action = classify_ipc_set_model_request(
+            "anthropic:claude-sonnet-4-6",
+            "openai:gpt-5.4",
+        );
         assert_eq!(action.action, CanonicalAction::ProviderSwitch);
         assert_eq!(action.role, ControlRole::Admin);
         assert!(!action.remote_safe);
