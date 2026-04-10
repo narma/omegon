@@ -1843,7 +1843,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_client_command_rejects_vault_status_for_read_role() {
+    async fn handle_client_command_enqueues_vault_status_for_read_role() {
         let (events_tx, _) = tokio::sync::broadcast::channel(4);
         let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(4);
         let (snapshot_tx, mut snapshot_rx) = tokio::sync::mpsc::channel(4);
@@ -1854,11 +1854,31 @@ mod tests {
             "caller_role": "read"
         });
 
-        handle_client_command(&cmd, &command_tx, &state, &snapshot_tx).await;
-        assert!(command_rx.try_recv().is_err(), "should not enqueue command");
+        let state_for_handler = state.clone();
+        let handler = tokio::spawn(async move {
+            handle_client_command(&cmd, &command_tx, &state_for_handler, &snapshot_tx).await;
+        });
+
+        match command_rx.recv().await.expect("command") {
+            WebCommand::ExecuteControl { request, respond_to } => {
+                assert!(matches!(request, crate::control_runtime::ControlRequest::VaultStatus));
+                respond_to
+                    .expect("respond_to")
+                    .send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some("Vault sealed".into()),
+                    })
+                    .unwrap();
+            }
+            other => panic!("wrong command: {other:?}"),
+        }
+
+        handler.await.unwrap();
         let msg = snapshot_rx.recv().await.expect("snapshot message");
-        assert_eq!(msg["type"], "system_message");
-        assert!(msg["message"].as_str().unwrap().contains("caller role is insufficient"));
+        assert_eq!(msg["type"], "control_result");
+        assert_eq!(msg["name"], "vault_status");
+        assert_eq!(msg["accepted"], true);
+        assert_eq!(msg["output"], "Vault sealed");
     }
 
     #[test]
