@@ -467,7 +467,6 @@ handling:
 - `user_prompt`
 - `slash_command`
 - `cancel`
-- `cancel_cleave_child`
 - `request_snapshot`
 
 ### Classification: should stay transport-native
@@ -491,10 +490,6 @@ These should **remain transport-native** unless Omegon explicitly chooses an
 These commands represent real control intent and are not merely transport
 mechanics:
 
-- `cancel_cleave_child`
-  - preferred target: `ControlRequest::CleaveCancelChild`
-  - rationale: this is a canonical control mutation in the cleave/delegate
-    family, not a transport concern
 - `slash_command`
   - rationale: compatibility tunnel only
   - expected lifecycle: shrink over time as remaining slash families are
@@ -506,8 +501,7 @@ The WebSocket surface is now largely canonicalized. Remaining bespoke commands
 are either:
 
 1. **correctly transport-native** (`user_prompt`, `cancel`, `request_snapshot`)
-2. **explicit migration debt** (`slash_command`, and `cancel_cleave_child` if it
-   has not yet been fully normalized)
+2. **explicit migration debt** (`slash_command`)
 
 That means Auspex attach/manage readiness is no longer blocked on WebSocket
 control-surface shape. Remaining work is cleanup and convergence, not missing

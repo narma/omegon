@@ -1472,25 +1472,33 @@ async fn handle_client_command(
         }
         "cancel_cleave_child" => {
             if let Some(label) = cmd["label"].as_str() {
+                let classified = crate::control_actions::classify_web_method("cleave_cancel_child");
+                if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                    let _ = snapshot_tx
+                        .send(serde_json::json!({
+                            "type": "system_message",
+                            "role": "system",
+                            "message": "caller role is insufficient for cancel_cleave_child",
+                        }))
+                        .await;
+                    return;
+                }
                 let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
                 let accepted = command_tx
-                    .send(WebCommand::CancelCleaveChild {
-                        label: label.to_string(),
+                    .send(WebCommand::ExecuteControl {
+                        request: crate::control_runtime::ControlRequest::CleaveCancelChild {
+                            label: label.to_string(),
+                        },
                         respond_to: Some(reply_tx),
                     })
                     .await
                     .is_ok();
                 let message = if accepted {
                     match reply_rx.await {
-                        Ok(response) => slash_command_result_message(
-                            "cleave",
-                            &format!("cancel {label}"),
-                            response,
-                        ),
-                        Err(_) => slash_command_result_message(
-                            "cleave",
-                            &format!("cancel {label}"),
-                            omegon_traits::SlashCommandResponse {
+                        Ok(response) => control_result_message("cancel_cleave_child", response),
+                        Err(_) => control_result_message(
+                            "cancel_cleave_child",
+                            omegon_traits::ControlOutputResponse {
                                 accepted: false,
                                 output: Some(
                                     "cleave child cancel executor dropped response before completion"
@@ -1500,10 +1508,9 @@ async fn handle_client_command(
                         ),
                     }
                 } else {
-                    slash_command_result_message(
-                        "cleave",
-                        &format!("cancel {label}"),
-                        omegon_traits::SlashCommandResponse {
+                    control_result_message(
+                        "cancel_cleave_child",
+                        omegon_traits::ControlOutputResponse {
                             accepted: false,
                             output: Some("failed to enqueue cleave child cancel".to_string()),
                         },
@@ -1834,7 +1841,8 @@ mod tests {
 
         let cmd = serde_json::json!({
             "type": "cancel_cleave_child",
-            "label": "alpha"
+            "label": "alpha",
+            "caller_role": "edit"
         });
 
         let state_for_handler = state.clone();
@@ -1843,11 +1851,16 @@ mod tests {
         });
 
         match command_rx.recv().await.expect("command") {
-            WebCommand::CancelCleaveChild { label, respond_to } => {
-                assert_eq!(label, "alpha");
+            WebCommand::ExecuteControl { request, respond_to } => {
+                match request {
+                    crate::control_runtime::ControlRequest::CleaveCancelChild { label } => {
+                        assert_eq!(label, "alpha");
+                    }
+                    other => panic!("wrong request: {other:?}"),
+                }
                 respond_to
                     .expect("respond_to")
-                    .send(omegon_traits::SlashCommandResponse {
+                    .send(omegon_traits::ControlOutputResponse {
                         accepted: true,
                         output: Some("Cancelling cleave child 'alpha'...".into()),
                     })
@@ -1858,9 +1871,8 @@ mod tests {
 
         handler.await.unwrap();
         let msg = snapshot_rx.recv().await.expect("snapshot message");
-        assert_eq!(msg["type"], "slash_command_result");
-        assert_eq!(msg["name"], "cleave");
-        assert_eq!(msg["args"], "cancel alpha");
+        assert_eq!(msg["type"], "control_result");
+        assert_eq!(msg["name"], "cancel_cleave_child");
         assert_eq!(msg["accepted"], true);
         assert_eq!(msg["output"], "Cancelling cleave child 'alpha'...");
     }
