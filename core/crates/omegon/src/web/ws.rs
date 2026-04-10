@@ -450,6 +450,70 @@ async fn handle_client_command(
                 let _ = snapshot_tx.send(message).await;
             }
         }
+        "switch_dispatcher" => {
+            let request_id = cmd["request_id"].as_str().unwrap_or("").trim();
+            let profile = cmd["profile"].as_str().unwrap_or("").trim();
+            let model = cmd["model"].as_str().map(|s| s.trim()).filter(|s| !s.is_empty());
+            let classified = crate::control_actions::classify_web_method("switch_dispatcher");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for switch_dispatcher",
+                    }))
+                    .await;
+                return;
+            }
+            if request_id.is_empty() || profile.is_empty() {
+                let _ = snapshot_tx
+                    .send(control_result_message(
+                        "switch_dispatcher",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some("request_id and profile are required".to_string()),
+                        },
+                    ))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::SwitchDispatcher {
+                        request_id: request_id.to_string(),
+                        profile: profile.to_string(),
+                        model: model.map(|s| s.to_string()),
+                    },
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("switch_dispatcher", response),
+                    Err(_) => control_result_message(
+                        "switch_dispatcher",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "switch_dispatcher executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "switch_dispatcher",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue switch_dispatcher".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
         "set_thinking" => {
             if let Some(level_raw) = cmd["level"].as_str()
                 && let Some(level) = crate::settings::ThinkingLevel::parse(level_raw)
@@ -1686,6 +1750,80 @@ fn serialize_agent_event(event: &AgentEvent) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn handle_client_command_enqueues_switch_dispatcher_and_reports_result() {
+        let (events_tx, _) = tokio::sync::broadcast::channel(4);
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(4);
+        let (snapshot_tx, mut snapshot_rx) = tokio::sync::mpsc::channel(4);
+        let state = WebState::new(crate::tui::dashboard::DashboardHandles::default(), events_tx);
+
+        let cmd = serde_json::json!({
+            "type": "switch_dispatcher",
+            "request_id": "req-123",
+            "profile": "victory",
+            "model": "anthropic:claude-sonnet-4-6",
+            "caller_role": "admin"
+        });
+
+        let state_for_handler = state.clone();
+        let handler = tokio::spawn(async move {
+            handle_client_command(&cmd, &command_tx, &state_for_handler, &snapshot_tx).await;
+        });
+
+        match command_rx.recv().await.expect("command") {
+            WebCommand::ExecuteControl { request, respond_to } => {
+                match request {
+                    crate::control_runtime::ControlRequest::SwitchDispatcher {
+                        request_id,
+                        profile,
+                        model,
+                    } => {
+                        assert_eq!(request_id, "req-123");
+                        assert_eq!(profile, "victory");
+                        assert_eq!(model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
+                    }
+                    other => panic!("wrong request: {other:?}"),
+                }
+                respond_to
+                    .expect("respond_to")
+                    .send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some("dispatcher switched".into()),
+                    })
+                    .unwrap();
+            }
+            other => panic!("wrong command: {other:?}"),
+        }
+
+        handler.await.unwrap();
+        let msg = snapshot_rx.recv().await.expect("snapshot message");
+        assert_eq!(msg["type"], "control_result");
+        assert_eq!(msg["name"], "switch_dispatcher");
+        assert_eq!(msg["accepted"], true);
+        assert_eq!(msg["output"], "dispatcher switched");
+    }
+
+    #[tokio::test]
+    async fn handle_client_command_rejects_switch_dispatcher_without_admin_role() {
+        let (events_tx, _) = tokio::sync::broadcast::channel(4);
+        let (command_tx, mut command_rx) = tokio::sync::mpsc::channel(4);
+        let (snapshot_tx, mut snapshot_rx) = tokio::sync::mpsc::channel(4);
+        let state = WebState::new(crate::tui::dashboard::DashboardHandles::default(), events_tx);
+
+        let cmd = serde_json::json!({
+            "type": "switch_dispatcher",
+            "request_id": "req-123",
+            "profile": "victory",
+            "caller_role": "edit"
+        });
+
+        handle_client_command(&cmd, &command_tx, &state, &snapshot_tx).await;
+        assert!(command_rx.try_recv().is_err(), "should not enqueue command");
+        let msg = snapshot_rx.recv().await.expect("snapshot message");
+        assert_eq!(msg["type"], "system_message");
+        assert_eq!(msg["message"], "caller role is insufficient for switch_dispatcher");
+    }
 
     #[tokio::test]
     async fn handle_client_command_enqueues_cleave_child_cancel_and_reports_result() {

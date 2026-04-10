@@ -420,6 +420,22 @@ mod tests {
     }
 
     #[test]
+    fn classifies_ipc_switch_dispatcher_as_admin_local_only() {
+        let action = classify_ipc_method("switch_dispatcher");
+        assert_eq!(action.action, CanonicalAction::DispatcherSwitch);
+        assert_eq!(action.role, ControlRole::Admin);
+        assert!(!action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_web_switch_dispatcher_as_admin_local_only() {
+        let action = classify_web_method("switch_dispatcher");
+        assert_eq!(action.action, CanonicalAction::DispatcherSwitch);
+        assert_eq!(action.role, ControlRole::Admin);
+        assert!(!action.remote_safe);
+    }
+
+    #[test]
     fn classifies_ipc_model_view_as_read() {
         let action = classify_ipc_method("model_view");
         assert_eq!(action.action, CanonicalAction::ModelView);

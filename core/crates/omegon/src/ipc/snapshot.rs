@@ -570,6 +570,9 @@ mod tests {
         assert_eq!(snap.instance.identity.profile, "primary-interactive");
         assert_eq!(snap.harness.runtime_profile, "primary-interactive");
         assert_eq!(snap.harness.autonomy_mode, "operator-driven");
+        assert_eq!(snap.harness.dispatcher.switch_state, "idle");
+        assert_eq!(snap.harness.dispatcher.active_profile.as_deref(), Some("victory"));
+        assert_eq!(snap.harness.dispatcher.active_model.as_deref(), Some("anthropic:claude-sonnet-4-6"));
         assert_eq!(
             snap.instance.control_plane.server_instance_id,
             "instance-123"

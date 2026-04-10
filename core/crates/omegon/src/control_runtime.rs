@@ -400,25 +400,54 @@ pub async fn switch_dispatcher_response(
     }
 
     let requested_model = model.map(str::trim).filter(|m| !m.is_empty());
-    let effective_model = if let Some(requested_model) = requested_model {
-        providers::resolve_execution_model_spec(requested_model)
-            .await
-            .unwrap_or_else(|| requested_model.to_string())
-    } else {
-        shared_settings
-            .lock()
-            .ok()
-            .map(|s| s.model.clone())
-            .unwrap_or_default()
+    let current_model = shared_settings
+        .lock()
+        .ok()
+        .map(|s| s.model.clone())
+        .unwrap_or_default();
+    let current_provider = crate::providers::infer_provider_id(&current_model);
+    let tier_model = match normalized_profile.as_str() {
+        "retribution" => {
+            if current_provider == "openai-codex" {
+                "gpt-5.4-mini".to_string()
+            } else if current_provider == "openai" {
+                "gpt-5-mini".to_string()
+            } else {
+                "claude-haiku-4-5-20251001".to_string()
+            }
+        }
+        "victory" => {
+            if current_provider == "openai-codex" {
+                "gpt-5.4".to_string()
+            } else if current_provider == "openai" {
+                "gpt-5".to_string()
+            } else {
+                "claude-sonnet-4-6".to_string()
+            }
+        }
+        "gloriana" => {
+            if current_provider == "openai" {
+                "gpt-5.4".to_string()
+            } else {
+                "claude-opus-4-6".to_string()
+            }
+        }
+        _ => current_model.clone(),
     };
+    let requested_model_spec = requested_model
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| {
+            if current_provider.is_empty() || current_provider == "anthropic" {
+                format!("anthropic:{tier_model}")
+            } else {
+                format!("{current_provider}:{tier_model}")
+            }
+        });
+    let effective_model = providers::resolve_execution_model_spec(&requested_model_spec)
+        .await
+        .unwrap_or_else(|| requested_model_spec.clone());
 
     if let Ok(mut s) = shared_settings.lock() {
-        s.capability_tier = match normalized_profile.as_str() {
-            "retribution" => settings::CapabilityTier::Retribution,
-            "victory" => settings::CapabilityTier::Victory,
-            "gloriana" => settings::CapabilityTier::Gloriana,
-            _ => settings::CapabilityTier::Victory,
-        };
         if !effective_model.is_empty() {
             s.set_model(&effective_model);
         }
@@ -438,6 +467,11 @@ pub async fn switch_dispatcher_response(
     }
 
     let mut status = crate::status::HarnessStatus::assemble();
+    status.update_routing(
+        &status.context_class.clone(),
+        &status.thinking_level.clone(),
+        &normalized_profile,
+    );
     status.update_runtime_posture(
         omegon_traits::OmegonRuntimeProfile::PrimaryInteractive,
         omegon_traits::OmegonAutonomyMode::OperatorDriven,
@@ -469,11 +503,11 @@ pub async fn switch_dispatcher_response(
 
     SlashCommandResponse {
         accepted: true,
-        output: Some(match requested_model {
-            Some(_) => format!(
+        output: Some(match requested_model_spec.as_str() {
+            s if requested_model.is_some() => format!(
                 "Dispatcher switched to {normalized_profile} (request {request_id}) using {effective_model}."
             ),
-            None => format!("Dispatcher switched to {normalized_profile} (request {request_id})."),
+            _ => format!("Dispatcher switched to {normalized_profile} (request {request_id})."),
         }),
     }
 }
