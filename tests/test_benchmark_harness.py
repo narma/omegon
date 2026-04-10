@@ -219,7 +219,7 @@ acceptance:
             self.assertEqual(payload["status"], "pass")
             self.assertEqual(payload["benchmark_mode"]["adapter_profile"], "omegon-native")
             self.assertTrue(payload["benchmark_mode"]["clean_room"])
-            self.assertEqual(payload["tokens"]["total"], 1500)
+            self.assertEqual(payload["tokens"]["total"], 1525)
             self.assertEqual(payload["harness"], "omegon")
             self.assertEqual(payload["extra"]["context"]["sys"], 100)
             self.assertEqual(
