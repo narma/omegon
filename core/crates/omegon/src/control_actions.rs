@@ -31,6 +31,13 @@ pub enum CanonicalAction {
     ProviderSwitch,
     DispatcherSwitch,
     ThinkingSet,
+    StatusView,
+    SessionStatsView,
+    TreeView,
+    NoteAdd,
+    NotesView,
+    NotesClear,
+    CheckinView,
     SessionNew,
     SessionList,
     TurnCancel,
@@ -44,7 +51,6 @@ pub enum CanonicalAction {
     SecretsSet,
     SecretsGet,
     SecretsDelete,
-    StatusView,
     PluginView,
     PluginInstall,
     PluginRemove,
@@ -282,6 +288,13 @@ pub fn classify_slash_command(name: &str, args: &str) -> ClassifiedAction {
             "delete" => (CanonicalAction::SecretsDelete, ControlRole::Edit, false),
             _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
+        "note" => (CanonicalAction::NoteAdd, ControlRole::Edit, true),
+        "notes" => match args.trim() {
+            "" => (CanonicalAction::NotesView, ControlRole::Edit, true),
+            "clear" => (CanonicalAction::NotesClear, ControlRole::Edit, true),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
+        },
+        "checkin" => (CanonicalAction::CheckinView, ControlRole::Edit, true),
         "status" | "stats" | "auspex" | "dash" => {
             (CanonicalAction::StatusView, ControlRole::Read, true)
         }

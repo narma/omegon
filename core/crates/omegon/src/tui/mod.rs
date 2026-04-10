@@ -305,6 +305,13 @@ pub(crate) enum CanonicalSlashCommand {
     ModelList,
     SetModel(String),
     SetThinking(crate::settings::ThinkingLevel),
+    StatusView,
+    SessionStatsView,
+    TreeView { args: String },
+    NoteAdd { text: String },
+    NotesView,
+    NotesClear,
+    CheckinView,
     ContextStatus,
     ContextCompact,
     ContextClear,
@@ -344,6 +351,15 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "model" if !args.is_empty() => Some(CanonicalSlashCommand::SetModel(args.to_string())),
         "think" => crate::settings::ThinkingLevel::parse(args)
             .map(CanonicalSlashCommand::SetThinking),
+        "status" if args.is_empty() => Some(CanonicalSlashCommand::StatusView),
+        "stats" if args.is_empty() => Some(CanonicalSlashCommand::SessionStatsView),
+        "tree" => Some(CanonicalSlashCommand::TreeView {
+            args: if args.is_empty() { "list".to_string() } else { args.to_string() },
+        }),
+        "note" if !args.is_empty() => Some(CanonicalSlashCommand::NoteAdd { text: args.to_string() }),
+        "notes" if args.is_empty() => Some(CanonicalSlashCommand::NotesView),
+        "notes" if args == "clear" => Some(CanonicalSlashCommand::NotesClear),
+        "checkin" if args.is_empty() => Some(CanonicalSlashCommand::CheckinView),
         "context" if !args.is_empty() => {
             let (sub, rest) = args.split_once(' ').unwrap_or((args, ""));
             match sub {
@@ -3283,50 +3299,31 @@ impl App {
             }
 
             "stats" => {
-                let s = self.settings();
-                let elapsed = self.session_start.elapsed();
-                let time = if elapsed.as_secs() >= 3600 {
-                    format!(
-                        "{}h{}m",
-                        elapsed.as_secs() / 3600,
-                        (elapsed.as_secs() % 3600) / 60
-                    )
-                } else if elapsed.as_secs() >= 60 {
-                    format!("{}m{}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+                if let Some(command) = canonical_slash_command("stats", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                {
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
                 } else {
-                    format!("{}s", elapsed.as_secs())
-                };
-                SlashResult::Display(format!(
-                    "Session:\n  Duration:    {time}\n  Turns:       {}\n  Tool calls:  {}\n  Compactions: {}\n\n\
-                     Context:\n  Usage:       {:.0}%\n  Window:      {} tokens\n  Model:       {}\n  Thinking:    {} {}\n\n\
-                     Features:\n  Memory:      {}\n  Cleave:      {}",
-                    self.turn,
-                    self.tool_calls,
-                    self.dashboard.compactions,
-                    self.footer_data.context_percent,
-                    s.context_window,
-                    s.model_short(),
-                    s.thinking.icon(),
-                    s.thinking.as_str(),
-                    if self.footer_data.harness.memory_available {
-                        "available"
-                    } else {
-                        "UNAVAILABLE"
-                    },
-                    if self.footer_data.harness.cleave_available {
-                        "available"
-                    } else {
-                        "UNAVAILABLE"
-                    },
-                ))
+                    SlashResult::Display("Usage: /stats".into())
+                }
             }
 
             "status" => {
-                let panel = crate::tui::bootstrap::render_bootstrap(
-                    &self.footer_data.harness,
-                    false, // no ANSI — SlashResult::Display renders via ratatui
-                );
-                SlashResult::Display(panel)
+                if let Some(command) = canonical_slash_command("status", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                {
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
+                } else {
+                    SlashResult::Display("Usage: /status".into())
+                }
             }
 
             "persona" => {
@@ -3808,13 +3805,17 @@ impl App {
             }
 
             "tree" => {
-                // Route to the design bus command
-                let sub = if args.is_empty() { "list" } else { args };
-                let _ = tx.try_send(TuiCommand::BusCommand {
-                    name: "design".to_string(),
-                    args: sub.to_string(),
-                });
-                SlashResult::Handled
+                if let Some(command) = canonical_slash_command("tree", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                {
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
+                } else {
+                    SlashResult::Display("Usage: /tree [list|... ]".into())
+                }
             }
 
             "milestone" => self.handle_milestone(args),
@@ -3901,133 +3902,48 @@ impl App {
             // /note <text> — append a deferred investigation note
             "note" => {
                 if args.is_empty() {
-                    // Show pending notes
                     return self.handle_slash_command("/notes", tx);
                 }
-                let notes_path = self.cwd().join(".omegon").join("notes.md");
-                if let Err(e) = std::fs::create_dir_all(notes_path.parent().unwrap()) {
-                    return SlashResult::Display(format!("❌ Can't create .omegon/: {e}"));
-                }
-                let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
-                let entry = format!("- [{timestamp}] {args}\n");
-                match std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&notes_path)
-                    .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
+                if let Some(command) = canonical_slash_command("note", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
                 {
-                    Ok(()) => SlashResult::Display(format!(
-                        "📌 Noted. ({} entries)",
-                        Self::count_notes(self.cwd())
-                    )),
-                    Err(e) => SlashResult::Display(format!("❌ Failed to save note: {e}")),
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
+                } else {
+                    SlashResult::Display("Usage: /note <text>".into())
                 }
             }
 
             // /notes [clear] — show or clear pending notes
             "notes" => {
-                let notes_path = self.cwd().join(".omegon").join("notes.md");
-                if args == "clear" {
-                    let _ = std::fs::remove_file(&notes_path);
-                    return SlashResult::Display("📌 Notes cleared.".into());
-                }
-                match std::fs::read_to_string(&notes_path) {
-                    Ok(content) if !content.trim().is_empty() => {
-                        let count = content.lines().filter(|l| l.starts_with("- [")).count();
-                        SlashResult::Display(format!(
-                            "📌 Pending notes ({count}):\n\n{content}\nClear with /notes clear"
-                        ))
-                    }
-                    _ => SlashResult::Display(
-                        "No pending notes. Use /note <text> to capture something for later.".into(),
-                    ),
+                if let Some(command) = canonical_slash_command("notes", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                {
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
+                } else {
+                    SlashResult::Display("Usage: /notes [clear]".into())
                 }
             }
 
             // /checkin — interactive triage of what needs attention
             "checkin" => {
-                let mut sections: Vec<String> = Vec::new();
-
-                // Git status (--no-optional-locks avoids contention with other git processes)
-                if let Ok(output) = std::process::Command::new("git")
-                    .args(["--no-optional-locks", "status", "--short"])
-                    .current_dir(&self.cwd())
-                    .stderr(std::process::Stdio::null())
-                    .output()
+                if let Some(command) = canonical_slash_command("checkin", args)
+                    && let Some(request) = crate::control_runtime::control_request_from_slash(&command)
                 {
-                    let status = String::from_utf8_lossy(&output.stdout);
-                    if !status.trim().is_empty() {
-                        let count = status.lines().count();
-                        sections.push(format!(
-                            "📂 Git: {count} uncommitted change{}",
-                            if count == 1 { "" } else { "s" }
-                        ));
-                    }
-                }
-
-                // Unpushed commits
-                if let Ok(output) = std::process::Command::new("git")
-                    .args(["--no-optional-locks", "log", "--oneline", "@{u}..", "--"])
-                    .current_dir(&self.cwd())
-                    .stderr(std::process::Stdio::null())
-                    .output()
-                {
-                    let unpushed = String::from_utf8_lossy(&output.stdout);
-                    if !unpushed.trim().is_empty() {
-                        let count = unpushed.lines().count();
-                        sections.push(format!(
-                            "⬆ {count} unpushed commit{}",
-                            if count == 1 { "" } else { "s" }
-                        ));
-                    }
-                }
-
-                // Pending notes
-                let note_count = Self::count_notes(&self.cwd());
-                if note_count > 0 {
-                    sections.push(format!(
-                        "📌 {note_count} pending note{}",
-                        if note_count == 1 { "" } else { "s" }
-                    ));
-                }
-
-                // OpenSpec changes in progress
-                let opsx_dir = self.cwd().join("openspec").join("changes");
-                if opsx_dir.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&opsx_dir) {
-                        let active: Vec<String> = entries
-                            .filter_map(|e| {
-                                let e = e.ok()?;
-                                if e.file_type().ok()?.is_dir() {
-                                    Some(e.file_name().to_string_lossy().to_string())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        if !active.is_empty() {
-                            sections.push(format!(
-                                "📋 {} OpenSpec change{}: {}",
-                                active.len(),
-                                if active.len() == 1 { "" } else { "s" },
-                                active.join(", ")
-                            ));
-                        }
-                    }
-                }
-
-                // Memory facts
-                if self.footer_data.total_facts > 0 {
-                    sections.push(format!(
-                        "🧠 {} facts ({} working)",
-                        self.footer_data.total_facts, self.footer_data.working_memory
-                    ));
-                }
-
-                if sections.is_empty() {
-                    SlashResult::Display("✓ All clear — nothing needs attention.".into())
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request,
+                        respond_to: None,
+                    });
+                    SlashResult::Handled
                 } else {
-                    SlashResult::Display(format!("🔍 Check-in:\n\n{}", sections.join("\n")))
+                    SlashResult::Display("Usage: /checkin".into())
                 }
             }
 

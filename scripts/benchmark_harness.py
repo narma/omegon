@@ -742,6 +742,10 @@ def build_result(
         },
         "extra": adapter.extra,
     }
+    for key in ("requested_model", "requested_provider", "resolved_provider", "provider"):
+        value = adapter.usage.get(key)
+        if value is not None:
+            payload[key] = value
     omegon_context = normalize_omegon_context(adapter.usage)
     if omegon_context is not None:
         payload["omegon_context"] = omegon_context
@@ -757,6 +761,9 @@ def build_result(
     if isinstance(adapter.usage.get("per_turn"), dict):
         payload.setdefault("telemetry", {})
         payload["telemetry"]["per_turn"] = adapter.usage.get("per_turn")
+    if isinstance(adapter.usage.get("turn_end_reasons"), dict):
+        payload.setdefault("telemetry", {})
+        payload["telemetry"]["turn_end_reasons"] = adapter.usage.get("turn_end_reasons")
     return payload
 
 

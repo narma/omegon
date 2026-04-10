@@ -33,6 +33,13 @@ pub enum ControlRequest {
         model: Option<String>,
     },
     SetThinking { level: crate::settings::ThinkingLevel },
+    StatusView,
+    SessionStatsView,
+    TreeView { args: String },
+    NoteAdd { text: String },
+    NotesView,
+    NotesClear,
+    CheckinView,
     ContextStatus,
     ContextCompact,
     ContextClear,
@@ -78,6 +85,17 @@ pub fn control_request_from_slash(
         crate::tui::CanonicalSlashCommand::SetThinking(level) => {
             ControlRequest::SetThinking { level: *level }
         }
+        crate::tui::CanonicalSlashCommand::StatusView => ControlRequest::StatusView,
+        crate::tui::CanonicalSlashCommand::SessionStatsView => ControlRequest::SessionStatsView,
+        crate::tui::CanonicalSlashCommand::TreeView { args } => {
+            ControlRequest::TreeView { args: args.clone() }
+        }
+        crate::tui::CanonicalSlashCommand::NoteAdd { text } => {
+            ControlRequest::NoteAdd { text: text.clone() }
+        }
+        crate::tui::CanonicalSlashCommand::NotesView => ControlRequest::NotesView,
+        crate::tui::CanonicalSlashCommand::NotesClear => ControlRequest::NotesClear,
+        crate::tui::CanonicalSlashCommand::CheckinView => ControlRequest::CheckinView,
         crate::tui::CanonicalSlashCommand::ContextStatus => ControlRequest::ContextStatus,
         crate::tui::CanonicalSlashCommand::ContextCompact => ControlRequest::ContextCompact,
         crate::tui::CanonicalSlashCommand::ContextClear => ControlRequest::ContextClear,
@@ -172,6 +190,15 @@ pub async fn execute_control(
         ControlRequest::SetThinking { level } => {
             set_thinking_response(ctx.shared_settings, level).await
         }
+        ControlRequest::StatusView => status_view_response(ctx.runtime_state, ctx.shared_settings).await,
+        ControlRequest::SessionStatsView => {
+            session_stats_view_response(ctx.runtime_state, ctx.shared_settings, ctx.agent).await
+        }
+        ControlRequest::TreeView { args } => tree_view_response(ctx.runtime_state, &args).await,
+        ControlRequest::NoteAdd { text } => note_add_response(ctx.agent, &text).await,
+        ControlRequest::NotesView => notes_view_response(ctx.agent).await,
+        ControlRequest::NotesClear => notes_clear_response(ctx.agent).await,
+        ControlRequest::CheckinView => checkin_view_response(ctx.agent, ctx.runtime_state).await,
         ControlRequest::ContextStatus => {
             context_status_response(ctx.runtime_state, ctx.shared_settings).await
         }
@@ -522,6 +549,237 @@ pub async fn set_thinking_response(
     SlashCommandResponse {
         accepted: true,
         output: Some(format!("Thinking → {} {}", level.icon(), level.as_str())),
+    }
+}
+
+pub async fn status_view_response(
+    runtime_state: &InteractiveAgentState,
+    shared_settings: &settings::SharedSettings,
+) -> SlashCommandResponse {
+    let mut status = crate::status::HarnessStatus::assemble();
+    let settings = shared_settings.lock().unwrap().clone();
+    status.update_routing(
+        settings.effective_requested_class().label(),
+        settings.thinking.as_str(),
+        &status.capability_tier.clone(),
+    );
+    let panel = crate::tui::bootstrap::render_bootstrap(&status, false);
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(panel),
+    }
+}
+
+pub async fn session_stats_view_response(
+    runtime_state: &InteractiveAgentState,
+    shared_settings: &settings::SharedSettings,
+    agent: &InteractiveAgentHost,
+) -> SlashCommandResponse {
+    let settings = shared_settings.lock().unwrap().clone();
+    let est = runtime_state.conversation.estimate_tokens();
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Session:\n  Turns:       {}\n  Tool calls:  {}\n\nContext:\n  Usage:       {:.0}%\n  Window:      {} tokens\n  Model:       {}\n  Thinking:    {} {}\n\nFeatures:\n  Memory:      {}\n  Cleave:      {}",
+            runtime_state.conversation.turn_count(),
+            0,
+            if settings.context_window > 0 {
+                (est as f64 / settings.context_window as f64) * 100.0
+            } else {
+                0.0
+            },
+            settings.context_window,
+            settings.model_short(),
+            settings.thinking.icon(),
+            settings.thinking.as_str(),
+            if crate::status::HarnessStatus::assemble().memory_available {
+                "available"
+            } else {
+                "UNAVAILABLE"
+            },
+            if crate::status::HarnessStatus::assemble().cleave_available {
+                "available"
+            } else {
+                "UNAVAILABLE"
+            },
+        )),
+    }
+}
+
+pub async fn tree_view_response(
+    runtime_state: &mut InteractiveAgentState,
+    args: &str,
+) -> SlashCommandResponse {
+    match runtime_state.bus.dispatch_command("design", args) {
+        omegon_traits::CommandResult::Display(msg) => SlashCommandResponse {
+            accepted: true,
+            output: Some(msg),
+        },
+        omegon_traits::CommandResult::Handled => SlashCommandResponse {
+            accepted: true,
+            output: Some("Design tree command handled.".into()),
+        },
+        omegon_traits::CommandResult::NotHandled => SlashCommandResponse {
+            accepted: false,
+            output: Some("Design tree command was not handled.".into()),
+        },
+    }
+}
+
+fn notes_path(agent: &InteractiveAgentHost) -> std::path::PathBuf {
+    agent.cwd.join(".omegon").join("notes.md")
+}
+
+fn count_notes_file(path: &std::path::Path) -> usize {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|content| content.lines().filter(|l| l.starts_with("- [")).count())
+        .unwrap_or(0)
+}
+
+pub async fn note_add_response(agent: &InteractiveAgentHost, text: &str) -> SlashCommandResponse {
+    let notes_path = notes_path(agent);
+    if let Some(parent) = notes_path.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("❌ Can't create .omegon/: {e}")),
+        };
+    }
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
+    let entry = format!("- [{timestamp}] {text}\n");
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&notes_path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()))
+    {
+        Ok(()) => SlashCommandResponse {
+            accepted: true,
+            output: Some(format!("📌 Noted. ({} entries)", count_notes_file(&notes_path))),
+        },
+        Err(e) => SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("❌ Failed to save note: {e}")),
+        },
+    }
+}
+
+pub async fn notes_view_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let notes_path = notes_path(agent);
+    match std::fs::read_to_string(&notes_path) {
+        Ok(content) if !content.trim().is_empty() => {
+            let count = content.lines().filter(|l| l.starts_with("- [")).count();
+            SlashCommandResponse {
+                accepted: true,
+                output: Some(format!(
+                    "📌 Pending notes ({count}):\n\n{content}\nClear with /notes clear"
+                )),
+            }
+        }
+        _ => SlashCommandResponse {
+            accepted: true,
+            output: Some(
+                "No pending notes. Use /note <text> to capture something for later.".into(),
+            ),
+        },
+    }
+}
+
+pub async fn notes_clear_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let notes_path = notes_path(agent);
+    let _ = std::fs::remove_file(&notes_path);
+    SlashCommandResponse {
+        accepted: true,
+        output: Some("📌 Notes cleared.".into()),
+    }
+}
+
+pub async fn checkin_view_response(
+    agent: &InteractiveAgentHost,
+    runtime_state: &InteractiveAgentState,
+) -> SlashCommandResponse {
+    let mut sections: Vec<String> = Vec::new();
+
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["--no-optional-locks", "status", "--short"])
+        .current_dir(&agent.cwd)
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        let status = String::from_utf8_lossy(&output.stdout);
+        if !status.trim().is_empty() {
+            let count = status.lines().count();
+            sections.push(format!(
+                "📂 Git: {count} uncommitted change{}",
+                if count == 1 { "" } else { "s" }
+            ));
+        }
+    }
+
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["--no-optional-locks", "log", "--oneline", "@{u}..", "--"])
+        .current_dir(&agent.cwd)
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        let unpushed = String::from_utf8_lossy(&output.stdout);
+        if !unpushed.trim().is_empty() {
+            let count = unpushed.lines().count();
+            sections.push(format!(
+                "⬆ {count} unpushed commit{}",
+                if count == 1 { "" } else { "s" }
+            ));
+        }
+    }
+
+    let note_count = count_notes_file(&notes_path(agent));
+    if note_count > 0 {
+        sections.push(format!(
+            "📌 {note_count} pending note{}",
+            if note_count == 1 { "" } else { "s" }
+        ));
+    }
+
+    let opsx_dir = agent.cwd.join("openspec").join("changes");
+    if opsx_dir.exists() && let Ok(entries) = std::fs::read_dir(&opsx_dir) {
+        let active: Vec<String> = entries
+            .filter_map(|e| {
+                let e = e.ok()?;
+                if e.file_type().ok()?.is_dir() {
+                    Some(e.file_name().to_string_lossy().to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if !active.is_empty() {
+            sections.push(format!(
+                "📋 {} OpenSpec change{}: {}",
+                active.len(),
+                if active.len() == 1 { "" } else { "s" },
+                active.join(", ")
+            ));
+        }
+    }
+
+    let facts = crate::status::HarnessStatus::assemble().memory.total_facts;
+    let working = crate::status::HarnessStatus::assemble().memory.working_facts;
+    if facts > 0 {
+        sections.push(format!("🧠 {facts} facts ({working} working)"));
+    }
+
+    if sections.is_empty() {
+        SlashCommandResponse {
+            accepted: true,
+            output: Some("✓ All clear — nothing needs attention.".into()),
+        }
+    } else {
+        SlashCommandResponse {
+            accepted: true,
+            output: Some(format!("🔍 Check-in:\n\n{}", sections.join("\n"))),
+        }
     }
 }
 
