@@ -643,6 +643,424 @@ async fn handle_client_command(
             };
             let _ = snapshot_tx.send(message).await;
         }
+        "secrets_view" => {
+            let classified = crate::control_actions::classify_web_method("secrets_view");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for secrets_view",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::SecretsView,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("secrets_view", response),
+                    Err(_) => control_result_message(
+                        "secrets_view",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "secrets_view executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "secrets_view",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue secrets_view".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
+        "secrets_set" => {
+            if let (Some(name), Some(value)) = (cmd["name"].as_str(), cmd["value"].as_str()) {
+                let classified = crate::control_actions::classify_web_method("secrets_set");
+                if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                    let _ = snapshot_tx
+                        .send(serde_json::json!({
+                            "type": "system_message",
+                            "role": "system",
+                            "message": "caller role is insufficient for secrets_set",
+                        }))
+                        .await;
+                    return;
+                }
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let accepted = command_tx
+                    .send(WebCommand::ExecuteControl {
+                        request: crate::control_runtime::ControlRequest::SecretsSet {
+                            name: name.to_string(),
+                            value: value.to_string(),
+                        },
+                        respond_to: Some(reply_tx),
+                    })
+                    .await
+                    .is_ok();
+                let message = if accepted {
+                    match reply_rx.await {
+                        Ok(response) => control_result_message("secrets_set", response),
+                        Err(_) => control_result_message(
+                            "secrets_set",
+                            omegon_traits::ControlOutputResponse {
+                                accepted: false,
+                                output: Some(
+                                    "secrets_set executor dropped response before completion"
+                                        .to_string(),
+                                ),
+                            },
+                        ),
+                    }
+                } else {
+                    control_result_message(
+                        "secrets_set",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some("failed to enqueue secrets_set".to_string()),
+                        },
+                    )
+                };
+                let _ = snapshot_tx.send(message).await;
+            }
+        }
+        "secrets_get" => {
+            if let Some(name) = cmd["name"].as_str() {
+                let classified = crate::control_actions::classify_web_method("secrets_get");
+                if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                    let _ = snapshot_tx
+                        .send(serde_json::json!({
+                            "type": "system_message",
+                            "role": "system",
+                            "message": "caller role is insufficient for secrets_get",
+                        }))
+                        .await;
+                    return;
+                }
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let accepted = command_tx
+                    .send(WebCommand::ExecuteControl {
+                        request: crate::control_runtime::ControlRequest::SecretsGet {
+                            name: name.to_string(),
+                        },
+                        respond_to: Some(reply_tx),
+                    })
+                    .await
+                    .is_ok();
+                let message = if accepted {
+                    match reply_rx.await {
+                        Ok(response) => control_result_message("secrets_get", response),
+                        Err(_) => control_result_message(
+                            "secrets_get",
+                            omegon_traits::ControlOutputResponse {
+                                accepted: false,
+                                output: Some(
+                                    "secrets_get executor dropped response before completion"
+                                        .to_string(),
+                                ),
+                            },
+                        ),
+                    }
+                } else {
+                    control_result_message(
+                        "secrets_get",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some("failed to enqueue secrets_get".to_string()),
+                        },
+                    )
+                };
+                let _ = snapshot_tx.send(message).await;
+            }
+        }
+        "secrets_delete" => {
+            if let Some(name) = cmd["name"].as_str() {
+                let classified = crate::control_actions::classify_web_method("secrets_delete");
+                if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                    let _ = snapshot_tx
+                        .send(serde_json::json!({
+                            "type": "system_message",
+                            "role": "system",
+                            "message": "caller role is insufficient for secrets_delete",
+                        }))
+                        .await;
+                    return;
+                }
+                let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+                let accepted = command_tx
+                    .send(WebCommand::ExecuteControl {
+                        request: crate::control_runtime::ControlRequest::SecretsDelete {
+                            name: name.to_string(),
+                        },
+                        respond_to: Some(reply_tx),
+                    })
+                    .await
+                    .is_ok();
+                let message = if accepted {
+                    match reply_rx.await {
+                        Ok(response) => control_result_message("secrets_delete", response),
+                        Err(_) => control_result_message(
+                            "secrets_delete",
+                            omegon_traits::ControlOutputResponse {
+                                accepted: false,
+                                output: Some(
+                                    "secrets_delete executor dropped response before completion"
+                                        .to_string(),
+                                ),
+                            },
+                        ),
+                    }
+                } else {
+                    control_result_message(
+                        "secrets_delete",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some("failed to enqueue secrets_delete".to_string()),
+                        },
+                    )
+                };
+                let _ = snapshot_tx.send(message).await;
+            }
+        }
+        "vault_status" => {
+            let classified = crate::control_actions::classify_web_method("vault_status");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for vault_status",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::VaultStatus,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("vault_status", response),
+                    Err(_) => control_result_message(
+                        "vault_status",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "vault_status executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "vault_status",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue vault_status".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
+        "vault_unseal" => {
+            let classified = crate::control_actions::classify_web_method("vault_unseal");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for vault_unseal",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::VaultUnseal,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("vault_unseal", response),
+                    Err(_) => control_result_message(
+                        "vault_unseal",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "vault_unseal executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "vault_unseal",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue vault_unseal".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
+        "vault_login" => {
+            let classified = crate::control_actions::classify_web_method("vault_login");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for vault_login",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::VaultLogin,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("vault_login", response),
+                    Err(_) => control_result_message(
+                        "vault_login",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "vault_login executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "vault_login",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue vault_login".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
+        "vault_configure" => {
+            let classified = crate::control_actions::classify_web_method("vault_configure");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for vault_configure",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::VaultConfigure,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("vault_configure", response),
+                    Err(_) => control_result_message(
+                        "vault_configure",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "vault_configure executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "vault_configure",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue vault_configure".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
+        "vault_init_policy" => {
+            let classified = crate::control_actions::classify_web_method("vault_init_policy");
+            if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": "caller role is insufficient for vault_init_policy",
+                    }))
+                    .await;
+                return;
+            }
+            let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+            let accepted = command_tx
+                .send(WebCommand::ExecuteControl {
+                    request: crate::control_runtime::ControlRequest::VaultInitPolicy,
+                    respond_to: Some(reply_tx),
+                })
+                .await
+                .is_ok();
+            let message = if accepted {
+                match reply_rx.await {
+                    Ok(response) => control_result_message("vault_init_policy", response),
+                    Err(_) => control_result_message(
+                        "vault_init_policy",
+                        omegon_traits::ControlOutputResponse {
+                            accepted: false,
+                            output: Some(
+                                "vault_init_policy executor dropped response before completion"
+                                    .to_string(),
+                            ),
+                        },
+                    ),
+                }
+            } else {
+                control_result_message(
+                    "vault_init_policy",
+                    omegon_traits::ControlOutputResponse {
+                        accepted: false,
+                        output: Some("failed to enqueue vault_init_policy".to_string()),
+                    },
+                )
+            };
+            let _ = snapshot_tx.send(message).await;
+        }
         "auth_status" => {
             let classified = crate::control_actions::classify_web_method("auth_status");
             if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {

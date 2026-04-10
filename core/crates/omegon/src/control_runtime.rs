@@ -46,6 +46,15 @@ pub enum ControlRequest {
     PluginInstall { uri: String },
     PluginRemove { name: String },
     PluginUpdate { name: Option<String> },
+    SecretsView,
+    SecretsSet { name: String, value: String },
+    SecretsGet { name: String },
+    SecretsDelete { name: String },
+    VaultStatus,
+    VaultUnseal,
+    VaultLogin,
+    VaultConfigure,
+    VaultInitPolicy,
 }
 
 pub fn control_request_from_slash(
@@ -98,6 +107,24 @@ pub fn control_request_from_slash(
         crate::tui::CanonicalSlashCommand::PluginUpdate(name) => ControlRequest::PluginUpdate {
             name: name.clone(),
         },
+        crate::tui::CanonicalSlashCommand::SecretsView => ControlRequest::SecretsView,
+        crate::tui::CanonicalSlashCommand::SecretsSet { name, value } => {
+            ControlRequest::SecretsSet {
+                name: name.clone(),
+                value: value.clone(),
+            }
+        }
+        crate::tui::CanonicalSlashCommand::SecretsGet(name) => ControlRequest::SecretsGet {
+            name: name.clone(),
+        },
+        crate::tui::CanonicalSlashCommand::SecretsDelete(name) => ControlRequest::SecretsDelete {
+            name: name.clone(),
+        },
+        crate::tui::CanonicalSlashCommand::VaultStatus => ControlRequest::VaultStatus,
+        crate::tui::CanonicalSlashCommand::VaultUnseal => ControlRequest::VaultUnseal,
+        crate::tui::CanonicalSlashCommand::VaultLogin => ControlRequest::VaultLogin,
+        crate::tui::CanonicalSlashCommand::VaultConfigure => ControlRequest::VaultConfigure,
+        crate::tui::CanonicalSlashCommand::VaultInitPolicy => ControlRequest::VaultInitPolicy,
     })
 }
 
@@ -157,6 +184,21 @@ pub async fn execute_control(
         ControlRequest::PluginInstall { uri } => plugin_install_response(&uri).await,
         ControlRequest::PluginRemove { name } => plugin_remove_response(&name).await,
         ControlRequest::PluginUpdate { name } => plugin_update_response(name.as_deref()).await,
+        ControlRequest::SecretsView => secrets_view_response(ctx.agent.secrets.as_ref()).await,
+        ControlRequest::SecretsSet { name, value } => {
+            secrets_set_response(ctx.agent.secrets.as_ref(), &name, &value).await
+        }
+        ControlRequest::SecretsGet { name } => {
+            secrets_get_response(ctx.agent.secrets.as_ref(), &name).await
+        }
+        ControlRequest::SecretsDelete { name } => {
+            secrets_delete_response(ctx.agent.secrets.as_ref(), &name).await
+        }
+        ControlRequest::VaultStatus => vault_status_response(ctx.agent).await,
+        ControlRequest::VaultUnseal => vault_unseal_response().await,
+        ControlRequest::VaultLogin => vault_login_response().await,
+        ControlRequest::VaultConfigure => vault_configure_response().await,
+        ControlRequest::VaultInitPolicy => vault_init_policy_response().await,
     }
 }
 
@@ -793,6 +835,208 @@ pub async fn plugin_update_response(name: Option<&str>) -> SlashCommandResponse 
             accepted: false,
             output: Some(format!("/plugin update failed: {err}")),
         },
+    }
+}
+
+pub async fn secrets_view_response(
+    secrets: &omegon_secrets::SecretsManager,
+) -> SlashCommandResponse {
+    let names = secrets.list_recipes();
+    let mut out = String::new();
+    if names.is_empty() {
+        out.push_str("No secrets stored.\n");
+    } else {
+        out.push_str(&format!("🔐 Secrets ({})\n\n", names.len()));
+        for (name, recipe) in &names {
+            out.push_str(&format!("  {name:<24} {recipe}\n"));
+        }
+        out.push('\n');
+    }
+    out.push_str("Common secrets:\n");
+    out.push_str("  /secrets set GITHUB_TOKEN cmd:gh auth token    always fresh from CLI\n");
+    out.push_str("  /secrets set NPM_TOKEN cmd:npm token get       always fresh from CLI\n");
+    out.push_str("  /secrets set AWS_SECRET env:AWS_SECRET_ACCESS_KEY  from environment\n\n");
+    out.push_str("API keys (no CLI available — store directly):\n");
+    out.push_str("  /secrets set OPENROUTER_KEY sk-or-...          free cloud AI\n");
+    out.push_str("  /secrets set ANTHROPIC_API_KEY sk-ant-...      Anthropic API\n\n");
+    out.push_str("Retrieve or remove:\n");
+    out.push_str("  /secrets get GITHUB_TOKEN\n");
+    out.push_str("  /secrets delete GITHUB_TOKEN");
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(out),
+    }
+}
+
+pub async fn secrets_set_response(
+    secrets: &omegon_secrets::SecretsManager,
+    name: &str,
+    value: &str,
+) -> SlashCommandResponse {
+    let result = if value.contains(':')
+        && ["env:", "cmd:", "vault:", "keyring:", "file:"]
+            .iter()
+            .any(|p| value.starts_with(p))
+    {
+        secrets.set_recipe(name, value)
+    } else {
+        secrets.set_keyring_secret(name, value)
+    };
+    match result {
+        Ok(()) => SlashCommandResponse {
+            accepted: true,
+            output: Some(format!(
+                "✓ Secret '{name}' stored (encrypted in OS keyring).\n  The agent will redact this value from all output."
+            )),
+        },
+        Err(e) => SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Error storing secret: {e}")),
+        },
+    }
+}
+
+pub async fn secrets_get_response(
+    secrets: &omegon_secrets::SecretsManager,
+    name: &str,
+) -> SlashCommandResponse {
+    match secrets.resolve(name) {
+        Some(val) => SlashCommandResponse {
+            accepted: true,
+            output: Some(format!("🔓 {name} = {val}")),
+        },
+        None => SlashCommandResponse {
+            accepted: false,
+            output: Some(format!(
+                "Secret '{name}' not found.\n  Use /secrets to see stored secrets."
+            )),
+        },
+    }
+}
+
+pub async fn secrets_delete_response(
+    secrets: &omegon_secrets::SecretsManager,
+    name: &str,
+) -> SlashCommandResponse {
+    match secrets.delete_recipe(name) {
+        Ok(()) => SlashCommandResponse {
+            accepted: true,
+            output: Some(format!("✓ Secret '{name}' deleted.")),
+        },
+        Err(e) => SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Error: {e}")),
+        },
+    }
+}
+
+pub async fn vault_status_response(agent: &crate::InteractiveAgentHost) -> SlashCommandResponse {
+    if let Some(status) = agent.secrets.vault_status().await {
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some(status),
+        };
+    }
+
+    let addr = std::env::var("VAULT_ADDR").unwrap_or_default();
+    if addr.is_empty() {
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some(
+                "Vault: not configured (VAULT_ADDR not set)\n\nUse `/vault configure` or set VAULT_ADDR"
+                    .to_string(),
+            ),
+        };
+    }
+
+    let config_dir = dirs::home_dir()
+        .unwrap_or_else(|| agent.cwd.clone())
+        .join(".omegon");
+    if let Some(health) = omegon_secrets::SecretsManager::vault_health_probe(&config_dir).await {
+        let icon = if health.sealed { "🔒" } else { "🔓" };
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some(format!(
+                "Vault {icon}\n  Address:  {addr}\n  Status:   {}\n  Initialized: {}\n  Standby:  {}",
+                if health.sealed { "sealed" } else { "unsealed" },
+                if health.initialized { "yes" } else { "no" },
+                if health.standby { "yes" } else { "no" },
+            )),
+        };
+    }
+
+    SlashCommandResponse {
+        accepted: false,
+        output: Some(format!("Vault ✗\n  Address:  {addr}\n  Status:   unreachable")),
+    }
+}
+
+pub async fn vault_unseal_response() -> SlashCommandResponse {
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(
+            "Vault Unseal:\n\n\
+             Masked unseal input is not yet implemented in the TUI.\n\
+             Use the vault CLI directly:\n\
+             \n  vault operator unseal\n\
+             \nThis will prompt for unseal keys without echoing them.\n\
+             Repeat until the threshold is met."
+                .to_string(),
+        ),
+    }
+}
+
+pub async fn vault_login_response() -> SlashCommandResponse {
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(
+            "Vault Login:\n\n\
+             Interactive login is not yet implemented in the TUI.\n\
+             Use the vault CLI:\n\
+             \n  vault login                         # token (interactive)\n\
+             \n  vault login -method=approle         # AppRole\n\
+               role_id=<role> secret_id=<secret>\n\
+             \nThe token will be stored in ~/.vault-token automatically."
+                .to_string(),
+        ),
+    }
+}
+
+pub async fn vault_configure_response() -> SlashCommandResponse {
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(
+            "Vault Configuration:\n\n\
+             Set VAULT_ADDR to your Vault server address:\n\
+             \n  export VAULT_ADDR=https://vault.example.com\n\
+             \nAuthenticate with:\n\
+             \n  vault login                  # interactive\n\
+             \n  vault login -method=approle  # AppRole\n\
+             \nOr create ~/.omegon/vault.json:\n\
+             \n  {\"addr\": \"https://vault.example.com\", \"auth\": \"token\", \"allowed_paths\": [\"secret/data/omegon/*\"], \"denied_paths\": []}"
+                .to_string(),
+        ),
+    }
+}
+
+pub async fn vault_init_policy_response() -> SlashCommandResponse {
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(
+            "# Omegon Agent Vault Policy\n\
+             # Apply with: vault policy write omegon-agent omegon-policy.hcl\n\n\
+             ```hcl\n\
+             # Read/write agent-scoped secrets\n\
+             path \"secret/data/omegon/*\" {\n  capabilities = [\"read\", \"create\", \"update\"]\n}\n\
+             path \"secret/metadata/omegon/*\" {\n  capabilities = [\"read\", \"list\"]\n}\n\n\
+             # Read-only access to shared infra secrets\n\
+             path \"secret/data/bootstrap/*\" {\n  capabilities = [\"read\"]\n}\n\n\
+             # Allow minting child tokens for cleave\n\
+             path \"auth/token/create\" {\n  capabilities = [\"create\", \"update\"]\n  allowed_parameters = {\n    \"policies\" = [\"omegon-child\"]\n    \"ttl\" = [\"30m\"]\n    \"num_uses\" = [\"100\"]\n  }\n}\n\
+             ```\n\n\
+             Save to a file and apply: `vault policy write omegon-agent <file>`"
+                .to_string(),
+        ),
     }
 }
 

@@ -323,6 +323,15 @@ pub(crate) enum CanonicalSlashCommand {
     PluginInstall(String),
     PluginRemove(String),
     PluginUpdate(Option<String>),
+    SecretsView,
+    SecretsSet { name: String, value: String },
+    SecretsGet(String),
+    SecretsDelete(String),
+    VaultStatus,
+    VaultUnseal,
+    VaultLogin,
+    VaultConfigure,
+    VaultInitPolicy,
 }
 
 pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<CanonicalSlashCommand> {
@@ -396,6 +405,31 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
                 None
             }
         }
+        "secrets" => {
+            let parts: Vec<&str> = args.splitn(3, ' ').collect();
+            match parts.first().copied().unwrap_or("") {
+                "" | "list" => Some(CanonicalSlashCommand::SecretsView),
+                "set" if parts.len() >= 3 => Some(CanonicalSlashCommand::SecretsSet {
+                    name: parts[1].trim().to_string(),
+                    value: parts[2].trim().to_string(),
+                }),
+                "get" if parts.len() >= 2 => {
+                    Some(CanonicalSlashCommand::SecretsGet(parts[1].trim().to_string()))
+                }
+                "delete" if parts.len() >= 2 => {
+                    Some(CanonicalSlashCommand::SecretsDelete(parts[1].trim().to_string()))
+                }
+                _ => None,
+            }
+        }
+        "vault" => match args {
+            "" | "status" => Some(CanonicalSlashCommand::VaultStatus),
+            "unseal" => Some(CanonicalSlashCommand::VaultUnseal),
+            "login" => Some(CanonicalSlashCommand::VaultLogin),
+            "configure" => Some(CanonicalSlashCommand::VaultConfigure),
+            "init-policy" => Some(CanonicalSlashCommand::VaultInitPolicy),
+            _ => None,
+        },
         _ => None,
     }
 }
@@ -1255,10 +1289,17 @@ impl App {
                     }
                     "github" => {
                         // GitHub uses dynamic resolution via gh CLI
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "secrets".to_string(),
-                            args: "set GITHUB_TOKEN cmd:gh auth token".to_string(),
-                        });
+                        if let Some(request) = crate::control_runtime::control_request_from_slash(
+                            &CanonicalSlashCommand::SecretsSet {
+                                name: "GITHUB_TOKEN".to_string(),
+                                value: "cmd:gh auth token".to_string(),
+                            },
+                        ) {
+                            let _ = tx.try_send(TuiCommand::ExecuteControl {
+                                request,
+                                respond_to: None,
+                            });
+                        }
                         Some(
                             "✓ GITHUB_TOKEN → cmd:gh auth token (always fresh from gh CLI)"
                                 .to_string(),
@@ -1293,10 +1334,17 @@ impl App {
                         Some(format!("🔒 Enter value for {value} (input is hidden):"))
                     } else {
                         // Dynamic recipe — set immediately
-                        let _ = tx.try_send(TuiCommand::BusCommand {
-                            name: "secrets".to_string(),
-                            args: format!("set {value} {suggested}"),
-                        });
+                        if let Some(request) = crate::control_runtime::control_request_from_slash(
+                            &CanonicalSlashCommand::SecretsSet {
+                                name: value.clone(),
+                                value: suggested.to_string(),
+                            },
+                        ) {
+                            let _ = tx.try_send(TuiCommand::ExecuteControl {
+                                request,
+                                respond_to: None,
+                            });
+                        }
                         Some(format!("✓ {value} → {suggested}"))
                     }
                 }
@@ -1408,11 +1456,10 @@ impl App {
     fn handle_secrets(&mut self, args: &str, tx: &mpsc::Sender<TuiCommand>) -> SlashResult {
         let parts: Vec<&str> = args.splitn(3, ' ').collect();
         match parts.first().copied().unwrap_or("") {
-            // /secrets set with no name → open selector
+            // /secrets set with no name/value → open selector
             "set" if parts.len() < 3 => {
                 let existing: Vec<String> = {
                     let _ = tx; // suppress unused warning in this branch
-                    // We can't access secrets manager here, so just open the selector
                     Vec::new()
                 };
                 let options: Vec<selector::SelectOption> = Self::SECRET_CATALOG
@@ -1439,13 +1486,27 @@ impl App {
                 self.selector_kind = Some(SelectorKind::SecretName);
                 SlashResult::Handled
             }
-            // Everything else → send to bus handler
             _ => {
-                let _ = tx.try_send(TuiCommand::BusCommand {
-                    name: "secrets".to_string(),
-                    args: args.to_string(),
-                });
-                SlashResult::Handled
+                if let Some(command) = canonical_slash_command("secrets", args) {
+                    if let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                    {
+                        let _ = tx.try_send(TuiCommand::ExecuteControl {
+                            request,
+                            respond_to: None,
+                        });
+                        SlashResult::Handled
+                    } else {
+                        SlashResult::Display(
+                            "Usage: /secrets [list|get <name>|set <name> <value>|delete <name>]"
+                                .into(),
+                        )
+                    }
+                } else {
+                    SlashResult::Display(
+                        "Usage: /secrets [list|get <name>|set <name> <value>|delete <name>]"
+                            .into(),
+                    )
+                }
             }
         }
     }
@@ -3739,90 +3800,27 @@ impl App {
             "secrets" => self.handle_secrets(args, tx),
 
             "vault" => {
-                match args {
-                    "" | "status" => {
-                        // Check Vault status via CLI
-                        let addr = std::env::var("VAULT_ADDR").unwrap_or_default();
-                        if addr.is_empty() {
-                            SlashResult::Display("Vault: not configured (VAULT_ADDR not set)\n\nUse `/vault configure` or set VAULT_ADDR".into())
-                        } else {
-                            match std::process::Command::new("vault").args(["status", "-format=json"]).output() {
-                                Ok(out) if out.status.success() => {
-                                    let body = String::from_utf8_lossy(&out.stdout);
-                                    let info = serde_json::from_str::<serde_json::Value>(&body).ok();
-                                    let sealed = info.as_ref().and_then(|v| v["sealed"].as_bool()).unwrap_or(true);
-                                    let version = info.as_ref().and_then(|v| v["version"].as_str()).unwrap_or("unknown");
-                                    let icon = if sealed { "🔒" } else { "🔓" };
-                                    SlashResult::Display(format!(
-                                        "Vault {icon}\n  Address:  {addr}\n  Status:   {}\n  Version:  {version}",
-                                        if sealed { "sealed" } else { "unsealed" },
-                                    ))
-                                }
-                                Ok(out) => {
-                                    let stderr = String::from_utf8_lossy(&out.stderr);
-                                    if stderr.contains("sealed") || stderr.contains("Sealed") {
-                                        SlashResult::Display(format!("Vault 🔒\n  Address:  {addr}\n  Status:   sealed\n\nUse `/vault unseal` to provide unseal keys"))
-                                    } else {
-                                        SlashResult::Display(format!("Vault ✗\n  Address:  {addr}\n  Status:   unreachable\n  Error:    {}", stderr.chars().take(200).collect::<String>()))
-                                    }
-                                }
-                                Err(_) => SlashResult::Display(format!("Vault ✗\n  Address:  {addr}\n  Status:   vault CLI not found")),
-                            }
-                        }
-                    }
-                    "unseal" => {
-                        // TODO: implement masked multi-key input mode
-                        // For now, direct operators to the vault CLI
+                if let Some(command) = canonical_slash_command("vault", args) {
+                    if let Some(request) = crate::control_runtime::control_request_from_slash(&command)
+                    {
+                        let _ = tx.try_send(TuiCommand::ExecuteControl {
+                            request,
+                            respond_to: None,
+                        });
+                        SlashResult::Handled
+                    } else {
                         SlashResult::Display(
-                            "Vault Unseal:\n\n\
-                             Masked unseal input is not yet implemented in the TUI.\n\
-                             Use the vault CLI directly:\n\
-                             \n  vault operator unseal\n\
-                             \nThis will prompt for unseal keys without echoing them.\n\
-                             Repeat until the threshold is met.".into()
+                            format!(
+                                "Unknown vault subcommand: {args}\nOptions: status, unseal, login, configure, init-policy"
+                            ),
                         )
                     }
-                    "login" => {
-                        // TODO: implement interactive token/AppRole credential entry
-                        SlashResult::Display(
-                            "Vault Login:\n\n\
-                             Interactive login is not yet implemented in the TUI.\n\
-                             Use the vault CLI:\n\
-                             \n  vault login                         # token (interactive)\n\
-                             \n  vault login -method=approle \\       # AppRole\n\
-                               role_id=<role> secret_id=<secret>\n\
-                             \nThe token will be stored in ~/.vault-token automatically.".into()
-                        )
-                    }
-                    "configure" => {
-                        SlashResult::Display(
-                            "Vault Configuration:\n\n\
-                             Set VAULT_ADDR to your Vault server address:\n\
-                             \n  export VAULT_ADDR=https://vault.example.com\n\
-                             \nAuthenticate with:\n\
-                             \n  vault login                  # interactive\n\
-                             \n  vault login -method=approle  # AppRole\n\
-                             \nOr create ~/.omegon/vault.json:\n\
-                             \n  {\"addr\": \"https://vault.example.com\", \"auth\": \"token\", \"allowed_paths\": [\"secret/data/omegon/*\"], \"denied_paths\": []}".into()
-                        )
-                    }
-                    "init-policy" => {
-                        SlashResult::Display(
-                            "# Omegon Agent Vault Policy\n\
-                             # Apply with: vault policy write omegon-agent omegon-policy.hcl\n\n\
-                             ```hcl\n\
-                             # Read/write agent-scoped secrets\n\
-                             path \"secret/data/omegon/*\" {\n  capabilities = [\"read\", \"create\", \"update\"]\n}\n\
-                             path \"secret/metadata/omegon/*\" {\n  capabilities = [\"read\", \"list\"]\n}\n\n\
-                             # Read-only access to shared infra secrets\n\
-                             path \"secret/data/bootstrap/*\" {\n  capabilities = [\"read\"]\n}\n\n\
-                             # Allow minting child tokens for cleave\n\
-                             path \"auth/token/create\" {\n  capabilities = [\"create\", \"update\"]\n  allowed_parameters = {\n    \"policies\" = [\"omegon-child\"]\n    \"ttl\" = [\"30m\"]\n    \"num_uses\" = [\"100\"]\n  }\n}\n\
-                             ```\n\n\
-                             Save to a file and apply: `vault policy write omegon-agent <file>`".into()
-                        )
-                    }
-                    _ => SlashResult::Display(format!("Unknown vault subcommand: {args}\nOptions: status, unseal, login, configure, init-policy")),
+                } else {
+                    SlashResult::Display(
+                        format!(
+                            "Unknown vault subcommand: {args}\nOptions: status, unseal, login, configure, init-policy"
+                        ),
+                    )
                 }
             }
 

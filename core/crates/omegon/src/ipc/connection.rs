@@ -361,7 +361,10 @@ impl IpcConnection {
                 "context_status" | "context_compact" | "context_clear" | "new_session"
                 | "auth_status" | "model_view" | "model_list" | "skills_view"
                 | "skills_install" | "plugin_view" | "plugin_install" | "plugin_remove"
-                | "plugin_update" | "set_model" | "set_thinking" | "list_sessions" => {
+                | "plugin_update" | "secrets_view" | "secrets_set" | "secrets_get"
+                | "secrets_delete" | "vault_status" | "vault_unseal" | "vault_login"
+                | "vault_configure" | "vault_init_policy" | "set_model" | "set_thinking"
+                | "list_sessions" => {
                     let req = serde_json::from_value::<ControlRequest>(payload.clone())
                         .unwrap_or_default();
                     let caller_role = parse_caller_role(req.caller_role.as_deref());
@@ -411,6 +414,42 @@ impl IpcConnection {
                                 .map(|s| s.to_string())
                                 .filter(|s| !s.is_empty()),
                         }),
+                        "secrets_view" => Some(crate::control_runtime::ControlRequest::SecretsView),
+                        "secrets_set" => {
+                            let name = payload.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            let value = payload.get("value").and_then(|v| v.as_str()).unwrap_or("");
+                            if name.is_empty() || value.is_empty() {
+                                None
+                            } else {
+                                Some(crate::control_runtime::ControlRequest::SecretsSet {
+                                    name: name.to_string(),
+                                    value: value.to_string(),
+                                })
+                            }
+                        }
+                        "secrets_get" => payload
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(|name| crate::control_runtime::ControlRequest::SecretsGet {
+                                name: name.to_string(),
+                            }),
+                        "secrets_delete" => payload
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty())
+                            .map(|name| crate::control_runtime::ControlRequest::SecretsDelete {
+                                name: name.to_string(),
+                            }),
+                        "vault_status" => Some(crate::control_runtime::ControlRequest::VaultStatus),
+                        "vault_unseal" => Some(crate::control_runtime::ControlRequest::VaultUnseal),
+                        "vault_login" => Some(crate::control_runtime::ControlRequest::VaultLogin),
+                        "vault_configure" => {
+                            Some(crate::control_runtime::ControlRequest::VaultConfigure)
+                        }
+                        "vault_init_policy" => {
+                            Some(crate::control_runtime::ControlRequest::VaultInitPolicy)
+                        }
                         "list_sessions" => Some(crate::control_runtime::ControlRequest::ListSessions),
                         "set_model" => {
                             let model = payload
