@@ -31,6 +31,9 @@ pub enum ControlRequest {
     ContextStatus,
     ContextCompact,
     ContextClear,
+    ContextRequest { kind: String, query: String },
+    ContextRequestJson { raw: String },
+    SetContextClass { class: crate::settings::ContextClass },
     NewSession,
     ListSessions,
     AuthStatus,
@@ -42,33 +45,42 @@ pub enum ControlRequest {
 pub fn control_request_from_slash(
     command: &crate::tui::CanonicalSlashCommand,
 ) -> Option<ControlRequest> {
-    match command {
-        crate::tui::CanonicalSlashCommand::ModelList => Some(ControlRequest::ModelList),
+    Some(match command {
+        crate::tui::CanonicalSlashCommand::ModelList => ControlRequest::ModelList,
         crate::tui::CanonicalSlashCommand::SetModel(requested_model) => {
-            Some(ControlRequest::SetModel {
+            ControlRequest::SetModel {
                 requested_model: requested_model.clone(),
-            })
+            }
         }
         crate::tui::CanonicalSlashCommand::SetThinking(level) => {
-            Some(ControlRequest::SetThinking { level: *level })
+            ControlRequest::SetThinking { level: *level }
         }
-        crate::tui::CanonicalSlashCommand::ContextStatus => Some(ControlRequest::ContextStatus),
-        crate::tui::CanonicalSlashCommand::ContextCompact => Some(ControlRequest::ContextCompact),
-        crate::tui::CanonicalSlashCommand::ContextClear => Some(ControlRequest::ContextClear),
-        crate::tui::CanonicalSlashCommand::NewSession => Some(ControlRequest::NewSession),
-        crate::tui::CanonicalSlashCommand::ListSessions => Some(ControlRequest::ListSessions),
-        crate::tui::CanonicalSlashCommand::AuthStatus => Some(ControlRequest::AuthStatus),
-        crate::tui::CanonicalSlashCommand::AuthUnlock => Some(ControlRequest::AuthUnlock),
-        crate::tui::CanonicalSlashCommand::AuthLogin(provider) => Some(ControlRequest::AuthLogin {
+        crate::tui::CanonicalSlashCommand::ContextStatus => ControlRequest::ContextStatus,
+        crate::tui::CanonicalSlashCommand::ContextCompact => ControlRequest::ContextCompact,
+        crate::tui::CanonicalSlashCommand::ContextClear => ControlRequest::ContextClear,
+        crate::tui::CanonicalSlashCommand::ContextRequest { kind, query } => {
+            ControlRequest::ContextRequest {
+                kind: kind.clone(),
+                query: query.clone(),
+            }
+        }
+        crate::tui::CanonicalSlashCommand::ContextRequestJson(raw) => {
+            ControlRequest::ContextRequestJson { raw: raw.clone() }
+        }
+        crate::tui::CanonicalSlashCommand::SetContextClass(class) => {
+            ControlRequest::SetContextClass { class: *class }
+        }
+        crate::tui::CanonicalSlashCommand::NewSession => ControlRequest::NewSession,
+        crate::tui::CanonicalSlashCommand::ListSessions => ControlRequest::ListSessions,
+        crate::tui::CanonicalSlashCommand::AuthStatus => ControlRequest::AuthStatus,
+        crate::tui::CanonicalSlashCommand::AuthUnlock => ControlRequest::AuthUnlock,
+        crate::tui::CanonicalSlashCommand::AuthLogin(provider) => ControlRequest::AuthLogin {
             provider: provider.clone(),
-        }),
-        crate::tui::CanonicalSlashCommand::AuthLogout(provider) => {
-            Some(ControlRequest::AuthLogout {
-                provider: provider.clone(),
-            })
-        }
-        _ => None,
-    }
+        },
+        crate::tui::CanonicalSlashCommand::AuthLogout(provider) => ControlRequest::AuthLogout {
+            provider: provider.clone(),
+        },
+    })
 }
 
 pub async fn execute_control(
@@ -93,6 +105,15 @@ pub async fn execute_control(
         }
         ControlRequest::ContextClear => {
             context_clear_response(ctx.runtime_state, ctx.agent, ctx.cli, ctx.events_tx).await
+        }
+        ControlRequest::ContextRequest { kind, query } => {
+            context_request_response(ctx.runtime_state, &kind, &query).await
+        }
+        ControlRequest::ContextRequestJson { raw } => {
+            context_request_json_response(ctx.runtime_state, &raw).await
+        }
+        ControlRequest::SetContextClass { class } => {
+            set_context_class_response(ctx.agent, ctx.shared_settings, class).await
         }
         ControlRequest::NewSession => {
             new_session_response(ctx.runtime_state, ctx.agent, ctx.cli, ctx.events_tx).await
@@ -377,6 +398,117 @@ pub async fn context_clear_response(
     SlashCommandResponse {
         accepted: true,
         output: Some("Context cleared. Starting fresh conversation.".to_string()),
+    }
+}
+
+pub async fn context_request_response(
+    runtime_state: &mut InteractiveAgentState,
+    kind: &str,
+    query: &str,
+) -> SlashCommandResponse {
+    let args = serde_json::json!({
+        "requests": [{
+            "kind": kind,
+            "query": query,
+            "reason": "Operator-requested direct context inspection from slash command"
+        }]
+    });
+    match runtime_state
+        .bus
+        .execute_tool(
+            crate::tool_registry::context::REQUEST_CONTEXT,
+            "slash-context-request",
+            args,
+            tokio_util::sync::CancellationToken::new(),
+        )
+        .await
+    {
+        Ok(result) => {
+            let text = result
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            SlashCommandResponse {
+                accepted: true,
+                output: Some(text),
+            }
+        }
+        Err(e) => SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Context request failed: {e}")),
+        },
+    }
+}
+
+pub async fn context_request_json_response(
+    runtime_state: &mut InteractiveAgentState,
+    raw: &str,
+) -> SlashCommandResponse {
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(args) if args.get("requests").and_then(|v| v.as_array()).is_some() => {
+            match runtime_state
+                .bus
+                .execute_tool(
+                    crate::tool_registry::context::REQUEST_CONTEXT,
+                    "slash-context-request",
+                    args,
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+            {
+                Ok(result) => {
+                    let text = result
+                        .content
+                        .iter()
+                        .filter_map(|c| match c {
+                            omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+                    SlashCommandResponse {
+                        accepted: true,
+                        output: Some(text),
+                    }
+                }
+                Err(e) => SlashCommandResponse {
+                    accepted: false,
+                    output: Some(format!("Context request failed: {e}")),
+                },
+            }
+        }
+        _ => SlashCommandResponse {
+            accepted: false,
+            output: Some(
+                "Usage: /context request <kind> <query> or /context request {\"requests\":[...]}"
+                    .to_string(),
+            ),
+        },
+    }
+}
+
+pub async fn set_context_class_response(
+    agent: &mut InteractiveAgentHost,
+    shared_settings: &settings::SharedSettings,
+    class: crate::settings::ContextClass,
+) -> SlashCommandResponse {
+    if let Ok(mut s) = shared_settings.lock() {
+        s.set_requested_context_class(class);
+        let mut profile = settings::Profile::load(&agent.cwd);
+        profile.capture_from(&s);
+        let _ = profile.save(&agent.cwd);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Context policy → {} (model capacity unchanged)",
+            class.label()
+        )),
     }
 }
 

@@ -3434,26 +3434,35 @@ impl App {
                             SlashResult::Display("Clearing context…".into())
                         }
                         Some(CanonicalSlashCommand::ContextRequest { kind, query }) => {
-                            let _ = tx.try_send(TuiCommand::BusCommand {
-                                name: "context_request".to_string(),
-                                args: format!("{kind} {query}"),
-                            });
-                            SlashResult::Display(format!(
+                            let display = format!(
                                 "Requesting mediated context pack for {kind}: {query}"
-                            ))
+                            );
+                            let _ = tx.try_send(TuiCommand::ExecuteControl {
+                                request: crate::control_runtime::ControlRequest::ContextRequest {
+                                    kind,
+                                    query,
+                                },
+                                respond_to: None,
+                            });
+                            SlashResult::Display(display)
                         }
                         Some(CanonicalSlashCommand::ContextRequestJson(raw)) => {
-                            let _ = tx.try_send(TuiCommand::BusCommand {
-                                name: "context_request".to_string(),
-                                args: raw,
+                            let _ = tx.try_send(TuiCommand::ExecuteControl {
+                                request: crate::control_runtime::ControlRequest::ContextRequestJson {
+                                    raw,
+                                },
+                                respond_to: None,
                             });
                             SlashResult::Display(
                                 "Requesting mediated context pack from JSON payload".into(),
                             )
                         }
                         Some(CanonicalSlashCommand::SetContextClass(class)) => {
-                            self.update_settings(|s| {
-                                s.set_requested_context_class(class);
+                            let _ = tx.try_send(TuiCommand::ExecuteControl {
+                                request: crate::control_runtime::ControlRequest::SetContextClass {
+                                    class,
+                                },
+                                respond_to: None,
                             });
                             SlashResult::Display(format!("Context Policy → {}", class.label()))
                         }

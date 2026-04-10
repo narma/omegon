@@ -3220,97 +3220,61 @@ async fn execute_remote_slash_command(
                 .await
         }
         CanonicalSlashCommand::ContextRequest { kind, query } => {
-            let args = serde_json::json!({
-                "requests": [{
-                    "kind": kind,
-                    "query": query,
-                    "reason": "Operator-requested direct context inspection from slash command"
-                }]
-            });
-            match runtime_state
-                .bus
-                .execute_tool(
-                    crate::tool_registry::context::REQUEST_CONTEXT,
-                    "slash-context-request",
-                    args,
-                    tokio_util::sync::CancellationToken::new(),
-                )
-                .await
-            {
-                Ok(result) => {
-                    let text = result
-                        .content
-                        .iter()
-                        .filter_map(|c| match c {
-                            omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n\n");
-                    SlashCommandResponse {
-                        accepted: true,
-                        output: Some(text),
-                    }
-                }
-                Err(e) => SlashCommandResponse {
-                    accepted: false,
-                    output: Some(format!("Context request failed: {e}")),
+            let mut ctx = control_runtime::ControlContext {
+                runtime_state,
+                agent,
+                shared_settings,
+                bridge,
+                login_prompt_tx,
+                events_tx,
+                cli: &CliRuntimeView {
+                    no_session: cli.no_session,
+                    model: &cli.model,
                 },
-            }
+            };
+            control_runtime::execute_control(
+                &mut ctx,
+                control_runtime::ControlRequest::ContextRequest { kind, query },
+            )
+            .await
         }
         CanonicalSlashCommand::ContextRequestJson(raw) => {
-            match serde_json::from_str::<serde_json::Value>(&raw) {
-                Ok(args) if args.get("requests").and_then(|v| v.as_array()).is_some() => {
-                    match runtime_state
-                        .bus
-                        .execute_tool(
-                            crate::tool_registry::context::REQUEST_CONTEXT,
-                            "slash-context-request",
-                            args,
-                            tokio_util::sync::CancellationToken::new(),
-                        )
-                        .await
-                    {
-                        Ok(result) => {
-                            let text = result
-                                .content
-                                .iter()
-                                .filter_map(|c| match c {
-                                    omegon_traits::ContentBlock::Text { text } => Some(text.as_str()),
-                                    _ => None,
-                                })
-                                .collect::<Vec<_>>()
-                                .join("\n\n");
-                            SlashCommandResponse {
-                                accepted: true,
-                                output: Some(text),
-                            }
-                        }
-                        Err(e) => SlashCommandResponse {
-                            accepted: false,
-                            output: Some(format!("Context request failed: {e}")),
-                        },
-                    }
-                }
-                _ => SlashCommandResponse {
-                    accepted: false,
-                    output: Some(
-                        "Usage: /context request <kind> <query> or /context request {\"requests\":[...]}".to_string(),
-                    ),
+            let mut ctx = control_runtime::ControlContext {
+                runtime_state,
+                agent,
+                shared_settings,
+                bridge,
+                login_prompt_tx,
+                events_tx,
+                cli: &CliRuntimeView {
+                    no_session: cli.no_session,
+                    model: &cli.model,
                 },
-            }
+            };
+            control_runtime::execute_control(
+                &mut ctx,
+                control_runtime::ControlRequest::ContextRequestJson { raw },
+            )
+            .await
         }
         CanonicalSlashCommand::SetContextClass(class) => {
-            if let Ok(mut s) = shared_settings.lock() {
-                s.set_requested_context_class(class);
-                let mut profile = settings::Profile::load(&agent.cwd);
-                profile.capture_from(&s);
-                let _ = profile.save(&agent.cwd);
-            }
-            SlashCommandResponse {
-                accepted: true,
-                output: Some(format!("Context policy → {} (model capacity unchanged)", class.label())),
-            }
+            let mut ctx = control_runtime::ControlContext {
+                runtime_state,
+                agent,
+                shared_settings,
+                bridge,
+                login_prompt_tx,
+                events_tx,
+                cli: &CliRuntimeView {
+                    no_session: cli.no_session,
+                    model: &cli.model,
+                },
+            };
+            control_runtime::execute_control(
+                &mut ctx,
+                control_runtime::ControlRequest::SetContextClass { class },
+            )
+            .await
         }
         CanonicalSlashCommand::NewSession => {
             let mut ctx = control_runtime::ControlContext {
