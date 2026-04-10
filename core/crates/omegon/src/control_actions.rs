@@ -56,6 +56,7 @@ pub struct ClassifiedAction {
     pub ingress: ControlIngress,
     pub action: CanonicalAction,
     pub role: ControlRole,
+    pub remote_safe: bool,
 }
 
 pub fn is_role_sufficient(actual: ControlRole, required: ControlRole) -> bool {
@@ -71,121 +72,126 @@ fn role_rank(role: ControlRole) -> u8 {
 }
 
 pub fn classify_ipc_method(method: &str) -> ClassifiedAction {
-    let (action, role) = match method {
+    let (action, role, remote_safe) = match method {
         "get_state" | "get_graph" | "subscribe" | "unsubscribe" => {
-            (CanonicalAction::StatusView, ControlRole::Read)
+            (CanonicalAction::StatusView, ControlRole::Read, true)
         }
-        "submit_prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit),
-        "cancel" => (CanonicalAction::TurnCancel, ControlRole::Edit),
-        "run_slash_command" => (CanonicalAction::Unknown, ControlRole::Edit),
-        "shutdown" => (CanonicalAction::RuntimeShutdown, ControlRole::Admin),
-        _ => (CanonicalAction::Unknown, ControlRole::Admin),
+        "submit_prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit, true),
+        "cancel" => (CanonicalAction::TurnCancel, ControlRole::Edit, true),
+        "run_slash_command" => (CanonicalAction::Unknown, ControlRole::Edit, false),
+        "shutdown" => (CanonicalAction::RuntimeShutdown, ControlRole::Admin, true),
+        _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
     };
     ClassifiedAction {
         ingress: ControlIngress::Ipc,
         action,
         role,
+        remote_safe,
     }
 }
 
 pub fn classify_daemon_trigger(trigger_kind: &str) -> ClassifiedAction {
-    let (action, role) = match trigger_kind {
-        "prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit),
-        "cancel" => (CanonicalAction::TurnCancel, ControlRole::Edit),
-        "new-session" => (CanonicalAction::SessionNew, ControlRole::Edit),
-        "shutdown" => (CanonicalAction::RuntimeShutdown, ControlRole::Admin),
-        "slash-command" => (CanonicalAction::Unknown, ControlRole::Edit),
-        "cancel-cleave-child" => (CanonicalAction::Unknown, ControlRole::Edit),
-        _ => (CanonicalAction::Unknown, ControlRole::Admin),
+    let (action, role, remote_safe) = match trigger_kind {
+        "prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit, true),
+        "cancel" => (CanonicalAction::TurnCancel, ControlRole::Edit, true),
+        "new-session" => (CanonicalAction::SessionNew, ControlRole::Edit, true),
+        "shutdown" => (CanonicalAction::RuntimeShutdown, ControlRole::Admin, true),
+        "slash-command" => (CanonicalAction::Unknown, ControlRole::Edit, false),
+        "cancel-cleave-child" => (CanonicalAction::Unknown, ControlRole::Edit, true),
+        _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
     };
     ClassifiedAction {
         ingress: ControlIngress::WebDaemon,
         action,
         role,
+        remote_safe,
     }
 }
 
 pub fn classify_slash_command(name: &str, args: &str) -> ClassifiedAction {
     let classified = match name {
         "skills" => match args.trim() {
-            "" | "list" => (CanonicalAction::SkillsView, ControlRole::Read),
-            "install" => (CanonicalAction::SkillsInstall, ControlRole::Edit),
-            _ => (CanonicalAction::Unknown, ControlRole::Admin),
+            "" | "list" => (CanonicalAction::SkillsView, ControlRole::Read, true),
+            "install" => (CanonicalAction::SkillsInstall, ControlRole::Edit, false),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
         "model" => {
             let trimmed = args.trim();
             if trimmed.is_empty() {
-                (CanonicalAction::ModelView, ControlRole::Read)
+                (CanonicalAction::ModelView, ControlRole::Read, true)
             } else if trimmed == "list" {
-                (CanonicalAction::ModelList, ControlRole::Read)
+                (CanonicalAction::ModelList, ControlRole::Read, true)
             } else {
                 let requested_provider = trimmed.split(':').next().unwrap_or("");
                 let current_provider = infer_provider_from_args_or_default(trimmed);
                 if requested_provider == current_provider {
-                    (CanonicalAction::ModelSetSameProvider, ControlRole::Edit)
+                    (CanonicalAction::ModelSetSameProvider, ControlRole::Edit, true)
                 } else {
-                    (CanonicalAction::ProviderSwitch, ControlRole::Admin)
+                    (CanonicalAction::ProviderSwitch, ControlRole::Admin, false)
                 }
             }
         }
-        "think" => (CanonicalAction::ThinkingSet, ControlRole::Edit),
+        "think" => (CanonicalAction::ThinkingSet, ControlRole::Edit, true),
         "context" => match canonical_slash_command("context", args) {
             Some(crate::tui::CanonicalSlashCommand::ContextStatus) | None if args.trim().is_empty() => {
-                (CanonicalAction::ContextView, ControlRole::Read)
+                (CanonicalAction::ContextView, ControlRole::Read, true)
             }
             Some(crate::tui::CanonicalSlashCommand::ContextStatus) => {
-                (CanonicalAction::ContextView, ControlRole::Read)
+                (CanonicalAction::ContextView, ControlRole::Read, true)
             }
             Some(crate::tui::CanonicalSlashCommand::ContextCompact) => {
-                (CanonicalAction::ContextCompact, ControlRole::Edit)
+                (CanonicalAction::ContextCompact, ControlRole::Edit, true)
             }
             Some(crate::tui::CanonicalSlashCommand::ContextClear) => {
-                (CanonicalAction::ContextClear, ControlRole::Edit)
+                (CanonicalAction::ContextClear, ControlRole::Edit, true)
             }
             Some(crate::tui::CanonicalSlashCommand::ContextRequest { .. })
             | Some(crate::tui::CanonicalSlashCommand::ContextRequestJson(_)) => {
-                (CanonicalAction::ContextRequest, ControlRole::Edit)
+                (CanonicalAction::ContextRequest, ControlRole::Edit, true)
             }
             Some(crate::tui::CanonicalSlashCommand::SetContextClass(_)) => {
-                (CanonicalAction::ContextSetClass, ControlRole::Edit)
+                (CanonicalAction::ContextSetClass, ControlRole::Edit, true)
             }
-            _ => (CanonicalAction::Unknown, ControlRole::Admin),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
-        "new" => (CanonicalAction::SessionNew, ControlRole::Edit),
-        "sessions" => (CanonicalAction::SessionList, ControlRole::Read),
+        "new" => (CanonicalAction::SessionNew, ControlRole::Edit, true),
+        "sessions" => (CanonicalAction::SessionList, ControlRole::Read, false),
         "auth" => match canonical_slash_command("auth", args) {
             Some(crate::tui::CanonicalSlashCommand::AuthStatus) => {
-                (CanonicalAction::AuthStatus, ControlRole::Read)
+                (CanonicalAction::AuthStatus, ControlRole::Read, true)
             }
             Some(crate::tui::CanonicalSlashCommand::AuthUnlock) => {
-                (CanonicalAction::AuthUnlock, ControlRole::Admin)
+                (CanonicalAction::AuthUnlock, ControlRole::Admin, false)
             }
-            _ => (CanonicalAction::Unknown, ControlRole::Admin),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
-        "login" => (CanonicalAction::AuthLogin, ControlRole::Admin),
-        "logout" => (CanonicalAction::AuthLogout, ControlRole::Admin),
+        "login" => (CanonicalAction::AuthLogin, ControlRole::Admin, false),
+        "logout" => (CanonicalAction::AuthLogout, ControlRole::Admin, false),
         "secrets" => match args.trim().split_whitespace().next().unwrap_or("") {
-            "" | "list" => (CanonicalAction::SecretsView, ControlRole::Edit),
-            "set" => (CanonicalAction::SecretsSet, ControlRole::Edit),
-            "get" => (CanonicalAction::SecretsGet, ControlRole::Edit),
-            "delete" => (CanonicalAction::SecretsDelete, ControlRole::Edit),
-            _ => (CanonicalAction::Unknown, ControlRole::Admin),
+            "" | "list" => (CanonicalAction::SecretsView, ControlRole::Edit, false),
+            "set" => (CanonicalAction::SecretsSet, ControlRole::Edit, false),
+            "get" => (CanonicalAction::SecretsGet, ControlRole::Edit, false),
+            "delete" => (CanonicalAction::SecretsDelete, ControlRole::Edit, false),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
-        "status" | "stats" | "auspex" | "dash" => (CanonicalAction::StatusView, ControlRole::Read),
+        "status" | "stats" | "auspex" | "dash" => {
+            (CanonicalAction::StatusView, ControlRole::Read, true)
+        }
         "plugin" => match args.trim().split_whitespace().next().unwrap_or("") {
-            "" | "list" => (CanonicalAction::PluginView, ControlRole::Read),
-            "install" => (CanonicalAction::PluginInstall, ControlRole::Edit),
-            "remove" => (CanonicalAction::PluginRemove, ControlRole::Edit),
-            "update" => (CanonicalAction::PluginUpdate, ControlRole::Edit),
-            _ => (CanonicalAction::Unknown, ControlRole::Admin),
+            "" | "list" => (CanonicalAction::PluginView, ControlRole::Read, true),
+            "install" => (CanonicalAction::PluginInstall, ControlRole::Edit, false),
+            "remove" => (CanonicalAction::PluginRemove, ControlRole::Edit, false),
+            "update" => (CanonicalAction::PluginUpdate, ControlRole::Edit, false),
+            _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
         },
-        _ => (CanonicalAction::Unknown, ControlRole::Admin),
+        _ => (CanonicalAction::Unknown, ControlRole::Admin, false),
     };
 
     ClassifiedAction {
         ingress: ControlIngress::Slash,
         action: classified.0,
         role: classified.1,
+        remote_safe: classified.2,
     }
 }
 
@@ -229,6 +235,23 @@ mod tests {
         let action = classify_slash_command("skills", "install");
         assert_eq!(action.action, CanonicalAction::SkillsInstall);
         assert_eq!(action.role, ControlRole::Edit);
+        assert!(!action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_remote_context_view_as_remote_safe() {
+        let action = classify_remote_slash_command("context", "");
+        assert_eq!(action.action, CanonicalAction::ContextView);
+        assert_eq!(action.role, ControlRole::Read);
+        assert!(action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_remote_skills_install_as_local_only() {
+        let action = classify_remote_slash_command("skills", "install");
+        assert_eq!(action.action, CanonicalAction::SkillsInstall);
+        assert_eq!(action.role, ControlRole::Edit);
+        assert!(!action.remote_safe);
     }
 
     #[test]

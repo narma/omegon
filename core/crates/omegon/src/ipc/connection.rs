@@ -363,6 +363,16 @@ impl IpcConnection {
                     let caller_role = parse_caller_role(req.caller_role.as_deref());
                     let classified =
                         crate::control_actions::classify_remote_slash_command(&req.name, &req.args);
+                    if !classified.remote_safe {
+                        send_error(
+                            &out_tx,
+                            req_id,
+                            IpcErrorCode::InvalidPayload,
+                            "run_slash_command targets a local-only action",
+                        )
+                        .await;
+                        continue;
+                    }
                     if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
                         send_error(
                             &out_tx,

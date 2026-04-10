@@ -174,6 +174,20 @@ async fn handle_client_command(
                 _ => crate::control_actions::ControlRole::Admin,
             };
             let classified = crate::control_actions::classify_remote_slash_command(&name, &args);
+            if !classified.remote_safe {
+                let _ = snapshot_tx
+                    .send(serde_json::json!({
+                        "type": "system_message",
+                        "role": "system",
+                        "message": format!(
+                            "/{} {} is local-only and cannot be executed remotely",
+                            name,
+                            args
+                        ).trim().to_string(),
+                    }))
+                    .await;
+                return;
+            }
             if !crate::control_actions::is_role_sufficient(caller_role, classified.role) {
                 let _ = snapshot_tx
                     .send(serde_json::json!({
