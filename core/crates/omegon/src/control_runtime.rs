@@ -39,6 +39,38 @@ pub enum ControlRequest {
     AuthLogout { provider: String },
 }
 
+pub fn control_request_from_slash(
+    command: &crate::tui::CanonicalSlashCommand,
+) -> Option<ControlRequest> {
+    match command {
+        crate::tui::CanonicalSlashCommand::ModelList => Some(ControlRequest::ModelList),
+        crate::tui::CanonicalSlashCommand::SetModel(requested_model) => {
+            Some(ControlRequest::SetModel {
+                requested_model: requested_model.clone(),
+            })
+        }
+        crate::tui::CanonicalSlashCommand::SetThinking(level) => {
+            Some(ControlRequest::SetThinking { level: *level })
+        }
+        crate::tui::CanonicalSlashCommand::ContextStatus => Some(ControlRequest::ContextStatus),
+        crate::tui::CanonicalSlashCommand::ContextCompact => Some(ControlRequest::ContextCompact),
+        crate::tui::CanonicalSlashCommand::ContextClear => Some(ControlRequest::ContextClear),
+        crate::tui::CanonicalSlashCommand::NewSession => Some(ControlRequest::NewSession),
+        crate::tui::CanonicalSlashCommand::ListSessions => Some(ControlRequest::ListSessions),
+        crate::tui::CanonicalSlashCommand::AuthStatus => Some(ControlRequest::AuthStatus),
+        crate::tui::CanonicalSlashCommand::AuthUnlock => Some(ControlRequest::AuthUnlock),
+        crate::tui::CanonicalSlashCommand::AuthLogin(provider) => Some(ControlRequest::AuthLogin {
+            provider: provider.clone(),
+        }),
+        crate::tui::CanonicalSlashCommand::AuthLogout(provider) => {
+            Some(ControlRequest::AuthLogout {
+                provider: provider.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
 pub async fn execute_control(
     ctx: &mut ControlContext<'_>,
     request: ControlRequest,

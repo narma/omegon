@@ -3097,6 +3097,22 @@ async fn execute_remote_slash_command(
         };
     };
 
+    if let Some(control_request) = control_runtime::control_request_from_slash(&command) {
+        let mut ctx = control_runtime::ControlContext {
+            runtime_state,
+            agent,
+            shared_settings,
+            bridge,
+            login_prompt_tx,
+            events_tx,
+            cli: &CliRuntimeView {
+                no_session: cli.no_session,
+                model: &cli.model,
+            },
+        };
+        return control_runtime::execute_control(&mut ctx, control_request).await;
+    }
+
     match command {
         CanonicalSlashCommand::ModelList => {
             let mut ctx = control_runtime::ControlContext {
@@ -3172,90 +3188,36 @@ async fn execute_remote_slash_command(
             .await
         }
         CanonicalSlashCommand::ContextCompact => {
-            let bridge_guard = bridge.read().await;
-            let stream_options = {
-                let s = shared_settings.lock().unwrap();
-                crate::bridge::StreamOptions {
-                    model: Some(s.model.clone()),
-                    reasoning: Some(s.thinking.as_str().to_string()),
-                    extended_context: false,
-                    ..Default::default()
-                }
+            let mut ctx = control_runtime::ControlContext {
+                runtime_state,
+                agent,
+                shared_settings,
+                bridge,
+                login_prompt_tx,
+                events_tx,
+                cli: &CliRuntimeView {
+                    no_session: cli.no_session,
+                    model: &cli.model,
+                },
             };
-            if let Some((payload, _)) = runtime_state.conversation.build_compaction_payload() {
-                match r#loop::compact_via_llm(bridge_guard.as_ref(), &payload, &stream_options).await
-                {
-                    Ok(summary) => {
-                        runtime_state.conversation.apply_compaction(summary);
-                        let est = runtime_state.conversation.estimate_tokens();
-                        let settings = shared_settings.lock().unwrap();
-                        if let Ok::<
-                            std::sync::MutexGuard<'_, crate::features::context::SharedContextMetrics>,
-                            _,
-                        >(mut metrics) = agent.context_metrics.lock()
-                        {
-                            metrics.update(
-                                est,
-                                settings.context_window,
-                                &settings.effective_requested_class().label(),
-                                settings.thinking.as_str(),
-                            );
-                        }
-                        let _ = events_tx.send(AgentEvent::ContextUpdated {
-                            tokens: est as u64,
-                            context_window: settings.context_window as u64,
-                            context_class: settings.effective_requested_class().label().to_string(),
-                            thinking_level: settings.thinking.as_str().to_string(),
-                        });
-                        SlashCommandResponse {
-                            accepted: true,
-                            output: Some(format!("Context compressed. Now using {est} tokens.")),
-                        }
-                    }
-                    Err(e) => SlashCommandResponse {
-                        accepted: false,
-                        output: Some(format!("Compression failed: {e}")),
-                    },
-                }
-            } else {
-                SlashCommandResponse {
-                    accepted: true,
-                    output: Some(
-                        "Nothing to compress yet — compaction only summarizes older turns after the decay window."
-                            .to_string(),
-                    ),
-                }
-            }
+            control_runtime::execute_control(&mut ctx, control_runtime::ControlRequest::ContextCompact)
+                .await
         }
         CanonicalSlashCommand::ContextClear => {
-            if !cli.no_session {
-                let _ = session::save_session(
-                    &runtime_state.conversation,
-                    &agent.cwd,
-                    Some(agent.session_id.as_str()),
-                );
-            }
-            runtime_state.conversation = crate::conversation::ConversationState::new();
-            agent.session_id = crate::session::allocate_session_id();
-            agent.resume_info = None;
-            let context_window = if let Ok(mut metrics) = agent.context_metrics.lock() {
-                let context_window = metrics.context_window;
-                metrics.update(0, context_window, "Squad", "off");
-                context_window
-            } else {
-                200_000
+            let mut ctx = control_runtime::ControlContext {
+                runtime_state,
+                agent,
+                shared_settings,
+                bridge,
+                login_prompt_tx,
+                events_tx,
+                cli: &CliRuntimeView {
+                    no_session: cli.no_session,
+                    model: &cli.model,
+                },
             };
-            let _ = events_tx.send(AgentEvent::ContextUpdated {
-                tokens: 0,
-                context_window: context_window as u64,
-                context_class: "Squad".to_string(),
-                thinking_level: "off".to_string(),
-            });
-            let _ = events_tx.send(AgentEvent::SessionReset);
-            SlashCommandResponse {
-                accepted: true,
-                output: Some("Context cleared. Starting fresh conversation.".to_string()),
-            }
+            control_runtime::execute_control(&mut ctx, control_runtime::ControlRequest::ContextClear)
+                .await
         }
         CanonicalSlashCommand::ContextRequest { kind, query } => {
             let args = serde_json::json!({
