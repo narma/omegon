@@ -358,8 +358,9 @@ impl IpcConnection {
                 }
 
                 "context_status" | "context_compact" | "context_clear" | "new_session"
-                | "auth_status" => {
-                    let req = serde_json::from_value::<ControlRequest>(payload)
+                | "auth_status" | "model_view" | "model_list" | "set_model"
+                | "set_thinking" | "list_sessions" => {
+                    let req = serde_json::from_value::<ControlRequest>(payload.clone())
                         .unwrap_or_default();
                     let caller_role = parse_caller_role(req.caller_role.as_deref());
                     let required = crate::control_actions::classify_ipc_method(&method).role;
@@ -410,6 +411,62 @@ impl IpcConnection {
                             })
                             .await
                             .is_ok(),
+                        "model_view" => cfg
+                            .command_tx
+                            .send(TuiCommand::ModelView {
+                                respond_to: Some(reply_tx),
+                            })
+                            .await
+                            .is_ok(),
+                        "model_list" => cfg
+                            .command_tx
+                            .send(TuiCommand::ModelList {
+                                respond_to: Some(reply_tx),
+                            })
+                            .await
+                            .is_ok(),
+                        "list_sessions" => cfg
+                            .command_tx
+                            .send(TuiCommand::ListSessions {
+                                respond_to: Some(reply_tx),
+                            })
+                            .await
+                            .is_ok(),
+                        "set_model" => {
+                            let model = payload
+                                .get("model")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            if model.is_empty() {
+                                false
+                            } else {
+                                cfg.command_tx
+                                    .send(TuiCommand::SetModel {
+                                        model,
+                                        respond_to: Some(reply_tx),
+                                    })
+                                    .await
+                                    .is_ok()
+                            }
+                        }
+                        "set_thinking" => {
+                            let level_raw = payload
+                                .get("level")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if let Some(level) = crate::settings::ThinkingLevel::parse(level_raw) {
+                                cfg.command_tx
+                                    .send(TuiCommand::SetThinking {
+                                        level,
+                                        respond_to: Some(reply_tx),
+                                    })
+                                    .await
+                                    .is_ok()
+                            } else {
+                                false
+                            }
+                        }
                         _ => false,
                     };
                     let response = if accepted {

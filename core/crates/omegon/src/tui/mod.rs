@@ -75,8 +75,24 @@ pub enum TuiCommand {
     SubmitPrompt(PromptSubmission),
     /// User wants to quit (double Ctrl+C, or /exit).
     Quit,
+    /// Show current model/provider posture.
+    ModelView {
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
+    },
+    /// Show available models.
+    ModelList {
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
+    },
     /// Switch the model for the next turn.
-    SetModel(String),
+    SetModel {
+        model: String,
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
+    },
+    /// Set the thinking level.
+    SetThinking {
+        level: crate::settings::ThinkingLevel,
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
+    },
     /// Execute canonical slash semantics from a non-TUI caller.
     RunSlashCommand {
         name: String,
@@ -100,7 +116,9 @@ pub enum TuiCommand {
         respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
     },
     /// List saved sessions.
-    ListSessions,
+    ListSessions {
+        respond_to: Option<tokio::sync::oneshot::Sender<omegon_traits::ControlOutputResponse>>,
+    },
     /// Start the local browser surface server used by Auspex compatibility flows.
     StartWebDashboard,
     /// Discard the current session and start fresh (saves current first).
@@ -1128,12 +1146,18 @@ impl App {
 
         match kind {
             SelectorKind::Model => {
-                let _ = tx.try_send(TuiCommand::SetModel(value.clone()));
+                let _ = tx.try_send(TuiCommand::SetModel {
+                    model: value.clone(),
+                    respond_to: None,
+                });
                 Some(format!("Switching model → {value}"))
             }
             SelectorKind::ThinkingLevel => {
                 if let Some(level) = crate::settings::ThinkingLevel::parse(&value) {
-                    self.update_settings(|s| s.thinking = level);
+                    let _ = tx.try_send(TuiCommand::SetThinking {
+                        level,
+                        respond_to: None,
+                    });
                     Some(format!("Thinking → {} {}", level.icon(), level.as_str()))
                 } else {
                     Some(format!("Unknown level: {value}"))
@@ -3052,43 +3076,19 @@ impl App {
 
             "model" => {
                 if args.is_empty() {
-                    let s = self.settings();
-                    let provider = s.provider().to_string();
-                    let connected = if s.provider_connected { "Yes" } else { "No" };
-                    SlashResult::Display(format!(
-                        "Model\n  Current Model:   {}\n  Provider:        {}\n  Connected:       {}\n  Context Window:  {} tokens\n  Context Class:   {}\n  Thinking Level:  {}\n\nActions\n  /model list                Show available models\n  /model <provider:model>    Switch model\n  /think <level>             Change reasoning depth\n  /context                   Show context posture",
-                        s.model,
-                        provider,
-                        connected,
-                        s.context_window,
-                        s.context_class.label(),
-                        {
-                            let raw = s.thinking.as_str();
-                            let mut chars = raw.chars();
-                            match chars.next() {
-                                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
-                                None => String::new(),
-                            }
-                        }
-                    ))
+                    let _ = tx.try_send(TuiCommand::ModelView { respond_to: None });
+                    SlashResult::Handled
                 } else {
                     match canonical_slash_command("model", args) {
                         Some(CanonicalSlashCommand::ModelList) => {
-                            let catalog = self::model_catalog::ModelCatalog::discover();
-                            let mut output = String::from("Available Models\n");
-                            for (provider_name, models) in &catalog.providers {
-                                output.push_str(&format!("\n{}\n", provider_name));
-                                for model in models {
-                                    output.push_str(&format!(
-                                        "  {} ({})\n",
-                                        model.name, model.id
-                                    ));
-                                }
-                            }
-                            SlashResult::Display(output)
+                            let _ = tx.try_send(TuiCommand::ModelList { respond_to: None });
+                            SlashResult::Handled
                         }
                         Some(CanonicalSlashCommand::SetModel(model)) => {
-                            let _ = tx.try_send(TuiCommand::SetModel(model.clone()));
+                            let _ = tx.try_send(TuiCommand::SetModel {
+                                model: model.clone(),
+                                respond_to: None,
+                            });
                             SlashResult::Display(format!("Switching Model → {model}"))
                         }
                         _ => SlashResult::Display("Usage: /model [list|<provider:model>]".into()),
@@ -3104,7 +3104,10 @@ impl App {
                 } else if let Some(CanonicalSlashCommand::SetThinking(level)) =
                     canonical_slash_command("think", args)
                 {
-                    self.update_settings(|s| s.thinking = level);
+                    let _ = tx.try_send(TuiCommand::SetThinking {
+                        level,
+                        respond_to: None,
+                    });
                     SlashResult::Display(format!("Thinking → {} {}", level.icon(), level.as_str()))
                 } else {
                     SlashResult::Display(format!(
@@ -3453,7 +3456,7 @@ impl App {
             }
 
             "sessions" => {
-                let _ = tx.try_send(TuiCommand::ListSessions);
+                let _ = tx.try_send(TuiCommand::ListSessions { respond_to: None });
                 SlashResult::Handled
             }
 

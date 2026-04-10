@@ -1209,7 +1209,59 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
         match cmd {
             tui::TuiCommand::Quit => break,
 
-            tui::TuiCommand::SetModel(model) => {
+            tui::TuiCommand::ModelView { respond_to } => {
+                let s = shared_settings.lock().unwrap().clone();
+                let provider = s.provider().to_string();
+                let connected = if s.provider_connected { "Yes" } else { "No" };
+                let thinking = {
+                    let raw = s.thinking.as_str();
+                    let mut chars = raw.chars();
+                    match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => String::new(),
+                    }
+                };
+                let message = format!(
+                    "Model\n  Current Model:   {}\n  Provider:        {}\n  Connected:       {}\n  Context Window:  {} tokens\n  Context Class:   {}\n  Thinking Level:  {}\n\nActions\n  /model list                Show available models\n  /model <provider:model>    Switch model\n  /think <level>             Change reasoning depth\n  /context                   Show context posture",
+                    s.model,
+                    provider,
+                    connected,
+                    s.context_window,
+                    s.context_class.label(),
+                    thinking,
+                );
+                let _ = events_tx.send(AgentEvent::SystemNotification {
+                    message: message.clone(),
+                });
+                if let Some(respond_to) = respond_to {
+                    let _ = respond_to.send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some(message),
+                    });
+                }
+            }
+
+            tui::TuiCommand::ModelList { respond_to } => {
+                let catalog = crate::tui::model_catalog::ModelCatalog::discover();
+                let mut output = String::from("Available Models\n");
+                for (provider_name, models) in &catalog.providers {
+                    output.push_str(&format!("\n{}\n", provider_name));
+                    for model in models {
+                        output.push_str(&format!("  {} ({})\n", model.name, model.id));
+                    }
+                }
+                let _ = events_tx.send(AgentEvent::SystemNotification {
+                    message: output.clone(),
+                });
+                if let Some(respond_to) = respond_to {
+                    let _ = respond_to.send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some(output),
+                    });
+                }
+            }
+
+            tui::TuiCommand::SetModel { model, respond_to } => {
                 tracing::info!(model = %model, "model switched via /model command");
 
                 let requested_model = model.clone();
@@ -1238,15 +1290,18 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                     let _ = profile.save(&agent.cwd);
                 }
 
+                let mut response_messages = Vec::new();
                 if effective_model != requested_model {
                     let provider_label = crate::auth::provider_by_id(&new_provider)
                         .map(|p| p.display_name)
                         .unwrap_or(new_provider.as_str());
+                    let message = format!(
+                        "Requested {requested_model}; using executable route {effective_model} via {provider_label}."
+                    );
                     let _ = events_tx.send(AgentEvent::SystemNotification {
-                        message: format!(
-                            "Requested {requested_model}; using executable route {effective_model} via {provider_label}."
-                        ),
+                        message: message.clone(),
                     });
+                    response_messages.push(message);
                 }
 
                 // If provider changed, re-detect and hot-swap the bridge
@@ -1271,11 +1326,13 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                             .map(|p| p.display_name)
                             .unwrap_or(provider.as_str());
                         tracing::info!("bridge hot-swapped for provider {}", provider);
+                        let message = format!(
+                            "Provider switched to {provider_label} ({effective_model})."
+                        );
                         let _ = events_tx.send(AgentEvent::SystemNotification {
-                            message: format!(
-                                "Provider switched to {provider_label} ({effective_model})."
-                            ),
+                            message: message.clone(),
                         });
+                        response_messages.push(message);
                     } else {
                         if let Ok(mut s) = shared_settings.lock() {
                             s.provider_connected = false;
@@ -1283,20 +1340,50 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                         let provider_label = crate::auth::provider_by_id(&provider)
                             .map(|p| p.display_name)
                             .unwrap_or(provider.as_str());
+                        let message = format!(
+                            "⚠ No credentials for {provider_label}. Use /login to authenticate."
+                        );
                         let _ = events_tx.send(AgentEvent::SystemNotification {
-                            message: format!(
-                                "⚠ No credentials for {provider_label}. Use /login to authenticate."
-                            ),
+                            message: message.clone(),
                         });
+                        response_messages.push(message);
                     }
                 } else if old_model != effective_model {
                     let provider_label = crate::auth::provider_by_id(&new_provider)
                         .map(|p| p.display_name)
                         .unwrap_or(new_provider.as_str());
+                    let message = format!("Model switched to {effective_model} via {provider_label}.");
                     let _ = events_tx.send(AgentEvent::SystemNotification {
-                        message: format!(
-                            "Model switched to {effective_model} via {provider_label}."
-                        ),
+                        message: message.clone(),
+                    });
+                    response_messages.push(message);
+                }
+
+                if let Some(respond_to) = respond_to {
+                    let output = if response_messages.is_empty() {
+                        Some(format!("Model unchanged: {effective_model}"))
+                    } else {
+                        Some(response_messages.join("\n"))
+                    };
+                    let _ = respond_to.send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output,
+                    });
+                }
+            }
+
+            tui::TuiCommand::SetThinking { level, respond_to } => {
+                if let Ok(mut s) = shared_settings.lock() {
+                    s.thinking = level;
+                }
+                let message = format!("Thinking → {} {}", level.icon(), level.as_str());
+                let _ = events_tx.send(AgentEvent::SystemNotification {
+                    message: message.clone(),
+                });
+                if let Some(respond_to) = respond_to {
+                    let _ = respond_to.send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some(message),
                     });
                 }
             }
@@ -1538,13 +1625,19 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                 }
             }
 
-            tui::TuiCommand::ListSessions => {
+            tui::TuiCommand::ListSessions { respond_to } => {
                 let text = list_sessions_message(&agent.cwd);
                 let _ = events_tx.send(AgentEvent::SystemNotification {
                     message: text.clone(),
                 });
                 let _ = events_tx.send(AgentEvent::AgentEnd);
                 tracing::info!("{text}");
+                if let Some(respond_to) = respond_to {
+                    let _ = respond_to.send(omegon_traits::ControlOutputResponse {
+                        accepted: true,
+                        output: Some(text),
+                    });
+                }
             }
 
             tui::TuiCommand::NewSession { respond_to } => {

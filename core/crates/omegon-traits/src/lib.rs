@@ -161,8 +161,18 @@ pub enum IpcCapability {
     ContextClear,
     /// `new_session` is available.
     SessionNew,
+    /// `list_sessions` is available.
+    SessionList,
     /// `auth_status` is available.
     AuthStatus,
+    /// `model_view` is available.
+    ModelView,
+    /// `model_list` is available.
+    ModelList,
+    /// `set_model` is available.
+    ModelSet,
+    /// `set_thinking` is available.
+    ThinkingSet,
     /// `run_slash_command` is available.
     SlashCommands,
     /// `shutdown` is available.
@@ -181,7 +191,12 @@ impl IpcCapability {
             Self::ContextCompact => "context.compact",
             Self::ContextClear => "context.clear",
             Self::SessionNew => "session.new",
+            Self::SessionList => "session.list",
             Self::AuthStatus => "auth.status",
+            Self::ModelView => "model.view",
+            Self::ModelList => "model.list",
+            Self::ModelSet => "model.set",
+            Self::ThinkingSet => "thinking.set",
             Self::SlashCommands => "slash_commands",
             Self::Shutdown => "shutdown",
         }
@@ -199,7 +214,12 @@ impl IpcCapability {
             Self::ContextCompact.as_str(),
             Self::ContextClear.as_str(),
             Self::SessionNew.as_str(),
+            Self::SessionList.as_str(),
             Self::AuthStatus.as_str(),
+            Self::ModelView.as_str(),
+            Self::ModelList.as_str(),
+            Self::ModelSet.as_str(),
+            Self::ThinkingSet.as_str(),
             Self::SlashCommands.as_str(),
             Self::Shutdown.as_str(),
         ]
@@ -1563,7 +1583,12 @@ mod tests {
         assert!(set.contains(&"context.compact"));
         assert!(set.contains(&"context.clear"));
         assert!(set.contains(&"session.new"));
+        assert!(set.contains(&"session.list"));
         assert!(set.contains(&"auth.status"));
+        assert!(set.contains(&"model.view"));
+        assert!(set.contains(&"model.list"));
+        assert!(set.contains(&"model.set"));
+        assert!(set.contains(&"thinking.set"));
         assert!(set.contains(&"slash_commands"));
         assert!(set.contains(&"shutdown"));
     }

@@ -80,7 +80,12 @@ pub fn classify_ipc_method(method: &str) -> ClassifiedAction {
         "context_compact" => (CanonicalAction::ContextCompact, ControlRole::Edit, true),
         "context_clear" => (CanonicalAction::ContextClear, ControlRole::Edit, true),
         "new_session" => (CanonicalAction::SessionNew, ControlRole::Edit, true),
+        "list_sessions" => (CanonicalAction::SessionList, ControlRole::Read, false),
         "auth_status" => (CanonicalAction::AuthStatus, ControlRole::Read, true),
+        "model_view" => (CanonicalAction::ModelView, ControlRole::Read, true),
+        "model_list" => (CanonicalAction::ModelList, ControlRole::Read, true),
+        "set_model" => (CanonicalAction::ProviderSwitch, ControlRole::Admin, false),
+        "set_thinking" => (CanonicalAction::ThinkingSet, ControlRole::Edit, true),
         "submit_prompt" => (CanonicalAction::PromptSubmit, ControlRole::Edit, true),
         "cancel" => (CanonicalAction::TurnCancel, ControlRole::Edit, true),
         "run_slash_command" => (CanonicalAction::Unknown, ControlRole::Edit, false),
@@ -296,6 +301,46 @@ mod tests {
         let action = classify_slash_command("login", "anthropic");
         assert_eq!(action.action, CanonicalAction::AuthLogin);
         assert_eq!(action.role, ControlRole::Admin);
+    }
+
+    #[test]
+    fn classifies_ipc_model_view_as_read() {
+        let action = classify_ipc_method("model_view");
+        assert_eq!(action.action, CanonicalAction::ModelView);
+        assert_eq!(action.role, ControlRole::Read);
+        assert!(action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_model_list_as_read() {
+        let action = classify_ipc_method("model_list");
+        assert_eq!(action.action, CanonicalAction::ModelList);
+        assert_eq!(action.role, ControlRole::Read);
+        assert!(action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_set_thinking_as_edit() {
+        let action = classify_ipc_method("set_thinking");
+        assert_eq!(action.action, CanonicalAction::ThinkingSet);
+        assert_eq!(action.role, ControlRole::Edit);
+        assert!(action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_list_sessions_as_local_only_read() {
+        let action = classify_ipc_method("list_sessions");
+        assert_eq!(action.action, CanonicalAction::SessionList);
+        assert_eq!(action.role, ControlRole::Read);
+        assert!(!action.remote_safe);
+    }
+
+    #[test]
+    fn classifies_ipc_set_model_as_admin_local_only() {
+        let action = classify_ipc_method("set_model");
+        assert_eq!(action.action, CanonicalAction::ProviderSwitch);
+        assert_eq!(action.role, ControlRole::Admin);
+        assert!(!action.remote_safe);
     }
 
     #[test]
