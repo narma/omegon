@@ -2719,7 +2719,7 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
         secrets: Some(agent.secrets.clone()),
         force_compact: None,
         allow_commit_nudge: false,
-        enforce_first_turn_execution_bias: usage_json.is_some(),
+        enforce_first_turn_execution_bias: true,
     };
 
     // ─── LLM provider (native Rust clients only) ─────────────────────

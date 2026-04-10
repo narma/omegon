@@ -100,6 +100,10 @@ fn is_orientation_tool(name: &str) -> bool {
     matches!(name, "memory_recall" | "context_status" | "request_context")
 }
 
+fn is_repo_inspection_tool(name: &str) -> bool {
+    matches!(name, "read" | "codebase_search" | "view")
+}
+
 fn is_first_turn_orientation_churn(
     turn: u32,
     config: &LoopConfig,
@@ -112,6 +116,20 @@ fn is_first_turn_orientation_churn(
         && tool_calls.iter().all(|call| is_orientation_tool(&call.name))
         && conversation.intent.files_read.is_empty()
         && conversation.intent.files_modified.is_empty()
+}
+
+fn should_inject_execution_pressure(
+    turn: u32,
+    config: &LoopConfig,
+    conversation: &ConversationState,
+    tool_calls: &[ToolCall],
+) -> bool {
+    config.enforce_first_turn_execution_bias
+        && turn >= 3
+        && !tool_calls.is_empty()
+        && conversation.intent.files_modified.is_empty()
+        && !conversation.intent.files_read.is_empty()
+        && tool_calls.iter().all(|call| is_repo_inspection_tool(&call.name))
 }
 
 pub(crate) fn compute_context_composition(
@@ -634,7 +652,13 @@ pub async fn run(
         if is_first_turn_orientation_churn(turn, config, conversation, tool_calls) {
             tracing::info!("First-turn orientation churn detected — injecting execution-bias nudge");
             conversation.push_user(
-                "[System: This is an execution-biased headless run. Stop spending turns on orientation tools unless they are strictly required to unblock execution. On the next turn, take a concrete repo-inspection or implementation step: read the most relevant file, search the codebase for the target symbol/path, or make the smallest justified change.]"
+                "[System: This run is execution-biased. Stop spending turns on orientation tools unless they are strictly required to unblock execution. On the next turn, take a concrete repo-inspection or implementation step: read the most relevant file, search the codebase for the target symbol/path, or make the smallest justified change.]"
+                    .to_string(),
+            );
+        } else if should_inject_execution_pressure(turn, config, conversation, tool_calls) {
+            tracing::info!("Execution stall detected after repo inspection — injecting execution-pressure nudge");
+            conversation.push_user(
+                "[System: You have enough local evidence to stop searching and start acting. Do not spend another turn on broad inspection only. Pick the smallest justified code change now, make it, then validate with the narrowest relevant test or check.]"
                     .to_string(),
             );
         }
@@ -2332,6 +2356,70 @@ mod tests {
             arguments: Value::Null,
         }];
         assert!(!is_first_turn_orientation_churn(1, &config, &conversation, &tool_calls));
+    }
+
+    #[test]
+    fn execution_pressure_detected_after_repeated_repo_inspection_without_edits() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![
+            ToolCall {
+                id: "1".into(),
+                name: "read".into(),
+                arguments: Value::Null,
+            },
+            ToolCall {
+                id: "2".into(),
+                name: "codebase_search".into(),
+                arguments: Value::Null,
+            },
+        ];
+        assert!(should_inject_execution_pressure(4, &config, &conversation, &tool_calls));
+    }
+
+    #[test]
+    fn execution_pressure_not_detected_before_repo_contact() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let conversation = ConversationState::new();
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "codebase_search".into(),
+            arguments: Value::Null,
+        }];
+        assert!(!should_inject_execution_pressure(4, &config, &conversation, &tool_calls));
+    }
+
+    #[test]
+    fn execution_pressure_not_detected_after_editing_starts() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        conversation
+            .intent
+            .files_modified
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "read".into(),
+            arguments: Value::Null,
+        }];
+        assert!(!should_inject_execution_pressure(4, &config, &conversation, &tool_calls));
     }
 
     // ── Stuck detector edge cases ──────────────────────────────────────
