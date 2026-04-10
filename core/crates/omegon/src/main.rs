@@ -2532,6 +2532,7 @@ async fn run_smoke_command(cli: &Cli) -> anyhow::Result<()> {
 struct BenchmarkUsageSummary {
     model: Option<String>,
     provider: Option<String>,
+    turn_count: u32,
     input_tokens: u64,
     output_tokens: u64,
     cache_tokens: u64,
@@ -2543,6 +2544,14 @@ struct BenchmarkUsageSummary {
 }
 
 impl BenchmarkUsageSummary {
+    fn avg_u64(total: u64, turns: u32) -> u64 {
+        if turns == 0 { 0 } else { total / turns as u64 }
+    }
+
+    fn avg_usize(total: usize, turns: u32) -> usize {
+        if turns == 0 { 0 } else { total / turns as usize }
+    }
+
     fn observe_turn(
         &mut self,
         model: Option<String>,
@@ -2558,6 +2567,7 @@ impl BenchmarkUsageSummary {
     ) {
         self.model = model;
         self.provider = provider;
+        self.turn_count = self.turn_count.saturating_add(1);
         self.input_tokens = self.input_tokens.saturating_add(actual_input_tokens);
         self.output_tokens = self.output_tokens.saturating_add(actual_output_tokens);
         self.cache_tokens = self.cache_tokens.saturating_add(cache_read_tokens);
@@ -2584,7 +2594,27 @@ fn write_benchmark_usage_json(path: &Path, summary: &BenchmarkUsageSummary) -> a
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, serde_json::to_vec_pretty(summary)?)?;
+    let payload = serde_json::json!({
+        "model": summary.model,
+        "provider": summary.provider,
+        "turn_count": summary.turn_count,
+        "input_tokens": summary.input_tokens,
+        "output_tokens": summary.output_tokens,
+        "cache_tokens": summary.cache_tokens,
+        "cache_write_tokens": summary.cache_write_tokens,
+        "estimated_tokens": summary.estimated_tokens,
+        "context_window": summary.context_window,
+        "context_composition": summary.context_composition,
+        "provider_telemetry": summary.provider_telemetry,
+        "per_turn": {
+            "avg_input_tokens": BenchmarkUsageSummary::avg_u64(summary.input_tokens, summary.turn_count),
+            "avg_output_tokens": BenchmarkUsageSummary::avg_u64(summary.output_tokens, summary.turn_count),
+            "avg_cache_tokens": BenchmarkUsageSummary::avg_u64(summary.cache_tokens, summary.turn_count),
+            "avg_cache_write_tokens": BenchmarkUsageSummary::avg_u64(summary.cache_write_tokens, summary.turn_count),
+            "avg_estimated_tokens": BenchmarkUsageSummary::avg_usize(summary.estimated_tokens, summary.turn_count),
+        }
+    });
+    std::fs::write(path, serde_json::to_vec_pretty(&payload)?)?;
     Ok(())
 }
 
@@ -3950,6 +3980,7 @@ mod tests {
             None,
         );
 
+        assert_eq!(summary.turn_count, 2);
         assert_eq!(summary.input_tokens, 200);
         assert_eq!(summary.output_tokens, 54);
         assert_eq!(summary.cache_tokens, 10);
@@ -4088,6 +4119,7 @@ mod tests {
         let summary = BenchmarkUsageSummary {
             model: Some("anthropic:claude-sonnet-4-6".into()),
             provider: Some("anthropic".into()),
+            turn_count: 3,
             input_tokens: 123,
             output_tokens: 45,
             cache_tokens: 6,
@@ -4107,9 +4139,15 @@ mod tests {
         };
 
         write_benchmark_usage_json(&path, &summary).unwrap();
-        let written: BenchmarkUsageSummary =
+        let written: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(written, summary);
+        assert_eq!(written["turn_count"], 3);
+        assert_eq!(written["input_tokens"], 123);
+        assert_eq!(written["cache_write_tokens"], 2);
+        assert_eq!(written["per_turn"]["avg_input_tokens"], 41);
+        assert_eq!(written["per_turn"]["avg_cache_tokens"], 2);
+        assert_eq!(written["per_turn"]["avg_cache_write_tokens"], 0);
+        assert_eq!(written["per_turn"]["avg_estimated_tokens"], 107);
     }
 
     fn anthropic_subscription_automation_warning_only_for_headless_anthropic_oauth() {

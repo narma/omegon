@@ -119,7 +119,7 @@ acceptance: [echo ok]
                 "done\n"
                 "if [ -n \"$usage_json\" ]; then\n"
                 "  cat > \"$usage_json\" <<'JSON'\n"
-                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "estimated_tokens": 1700, "context_window": 200000, "context_composition": {"system_tokens": 100, "tool_schema_tokens": 50, "conversation_tokens": 400, "memory_tokens": 25, "tool_history_tokens": 75, "thinking_tokens": 10, "free_tokens": 199340}, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
+                '{"input_tokens": 1200, "output_tokens": 300, "cache_tokens": 0, "cache_write_tokens": 25, "estimated_tokens": 1700, "context_window": 200000, "turn_count": 4, "per_turn": {"avg_input_tokens": 300, "avg_output_tokens": 75, "avg_cache_tokens": 0, "avg_cache_write_tokens": 6, "avg_estimated_tokens": 425}, "context_composition": {"system_tokens": 100, "tool_schema_tokens": 50, "conversation_tokens": 400, "memory_tokens": 25, "tool_history_tokens": 75, "thinking_tokens": 10, "free_tokens": 199340}, "extra": {"context": {"sys": 100, "tools": 50}}}\n'
                 "JSON\n"
                 "fi\n"
                 "echo fake omegon run\n"
@@ -171,6 +171,9 @@ acceptance:
             )
             self.assertEqual(payload["telemetry"]["estimated_tokens"], 1700)
             self.assertEqual(payload["telemetry"]["context_window"], 200000)
+            self.assertEqual(payload["telemetry"]["turn_count"], 4)
+            self.assertEqual(payload["telemetry"]["per_turn"]["avg_input_tokens"], 300)
+            self.assertEqual(payload["telemetry"]["per_turn"]["avg_cache_write_tokens"], 6)
 
     def test_slim_omegon_results_are_labeled_om(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

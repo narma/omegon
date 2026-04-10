@@ -697,6 +697,12 @@ def build_result(
     if adapter.usage.get("context_window") is not None:
         payload.setdefault("telemetry", {})
         payload["telemetry"]["context_window"] = adapter.usage.get("context_window")
+    if adapter.usage.get("turn_count") is not None:
+        payload.setdefault("telemetry", {})
+        payload["telemetry"]["turn_count"] = adapter.usage.get("turn_count")
+    if isinstance(adapter.usage.get("per_turn"), dict):
+        payload.setdefault("telemetry", {})
+        payload["telemetry"]["per_turn"] = adapter.usage.get("per_turn")
     return payload
 
 
