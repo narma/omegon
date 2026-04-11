@@ -36,6 +36,7 @@ pub enum ControlRequest {
     StatusView,
     WorkspaceStatusView,
     WorkspaceListView,
+    WorkspaceNew { label: String },
     WorkspaceAdopt,
     WorkspaceKindView,
     WorkspaceKindSet { kind: crate::workspace::types::WorkspaceKind },
@@ -96,6 +97,9 @@ pub fn control_request_from_slash(
             ControlRequest::WorkspaceStatusView
         }
         crate::tui::CanonicalSlashCommand::WorkspaceListView => ControlRequest::WorkspaceListView,
+        crate::tui::CanonicalSlashCommand::WorkspaceNew(label) => {
+            ControlRequest::WorkspaceNew { label: label.clone() }
+        }
         crate::tui::CanonicalSlashCommand::WorkspaceAdopt => ControlRequest::WorkspaceAdopt,
         crate::tui::CanonicalSlashCommand::WorkspaceKindView => {
             ControlRequest::WorkspaceKindView
@@ -213,6 +217,7 @@ pub async fn execute_control(
         ControlRequest::StatusView => status_view_response(ctx.runtime_state, ctx.shared_settings).await,
         ControlRequest::WorkspaceStatusView => workspace_status_view_response(ctx.agent).await,
         ControlRequest::WorkspaceListView => workspace_list_view_response(ctx.agent).await,
+        ControlRequest::WorkspaceNew { label } => workspace_new_response(ctx.agent, &label).await,
         ControlRequest::WorkspaceAdopt => workspace_adopt_response(ctx.agent).await,
         ControlRequest::WorkspaceKindView => workspace_kind_view_response(ctx.agent).await,
         ControlRequest::WorkspaceKindSet { kind } => workspace_kind_set_response(ctx.agent, kind).await,
@@ -731,6 +736,120 @@ pub async fn workspace_adopt_response(agent: &InteractiveAgentHost) -> SlashComm
         output: Some(format!(
             "Adopted stale workspace lease for {} ({}).",
             lease.workspace_id, lease.label
+        )),
+    }
+}
+
+pub async fn workspace_new_response(
+    agent: &InteractiveAgentHost,
+    label: &str,
+) -> SlashCommandResponse {
+    let project_root = crate::setup::find_project_root(&agent.cwd);
+    let parent = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace creation requires existing local workspace metadata.".into()),
+            }
+        }
+    };
+    let sanitized = label
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_lowercase();
+    if sanitized.is_empty() {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some("Workspace label must contain at least one alphanumeric character.".into()),
+        };
+    }
+    let workspace_path = project_root
+        .parent()
+        .unwrap_or(project_root.as_path())
+        .join(format!("{}-{}", project_root.file_name().and_then(|n| n.to_str()).unwrap_or("workspace"), sanitized));
+    let branch = format!("workspace/{}", sanitized);
+    let info = match omegon_git::worktree::create_smart(&project_root, &workspace_path, &sanitized, &branch) {
+        Ok(info) => info,
+        Err(err) => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some(format!("Failed to create sibling workspace: {err}")),
+            }
+        }
+    };
+    let backend_kind = match info.backend {
+        "jj" => crate::workspace::types::WorkspaceBackendKind::JjCheckout,
+        _ => crate::workspace::types::WorkspaceBackendKind::GitWorktree,
+    };
+    let now = crate::workspace::runtime::current_timestamp();
+    let new_workspace_id = crate::workspace::runtime::workspace_id_from_path(&workspace_path);
+    let new_lease = crate::workspace::types::WorkspaceLease {
+        project_id: parent.project_id.clone(),
+        workspace_id: new_workspace_id.clone(),
+        label: sanitized.clone(),
+        path: workspace_path.display().to_string(),
+        backend_kind,
+        vcs_ref: Some(crate::workspace::types::WorkspaceVcsRef {
+            vcs: if info.backend == "jj" { "jj".into() } else { "git".into() },
+            branch: Some(info.branch.clone()),
+            revision: None,
+            remote: Some("origin".into()),
+        }),
+        branch: info.branch.clone(),
+        role: crate::workspace::types::WorkspaceRole::Feature,
+        workspace_kind: parent.workspace_kind,
+        mutability: crate::workspace::types::Mutability::Mutable,
+        owner_session_id: None,
+        owner_agent_id: None,
+        created_at: now.clone(),
+        last_heartbeat: now.clone(),
+        parent_workspace_id: Some(parent.workspace_id.clone()),
+        source: "operator".into(),
+    };
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&workspace_path, &new_lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Created workspace but failed to write lease metadata: {err}")),
+        };
+    }
+    let mut registry = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+        .unwrap_or(crate::workspace::types::WorkspaceRegistry {
+            project_id: parent.project_id.clone(),
+            repo_root: project_root.display().to_string(),
+            workspaces: vec![],
+        });
+    registry.workspaces.retain(|ws| ws.workspace_id != new_workspace_id);
+    registry.workspaces.push(crate::workspace::types::WorkspaceSummary {
+        workspace_id: new_lease.workspace_id.clone(),
+        label: new_lease.label.clone(),
+        path: new_lease.path.clone(),
+        backend_kind: new_lease.backend_kind,
+        vcs_ref: new_lease.vcs_ref.clone(),
+        branch: new_lease.branch.clone(),
+        role: new_lease.role,
+        workspace_kind: new_lease.workspace_kind,
+        mutability: new_lease.mutability,
+        owner_session_id: new_lease.owner_session_id.clone(),
+        last_heartbeat: new_lease.last_heartbeat.clone(),
+        stale: false,
+    });
+    let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    let _ = crate::workspace::runtime::write_workspace_registry(&workspace_path, &registry);
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Created sibling workspace '{}' at {} using {}.",
+            sanitized,
+            workspace_path.display(),
+            backend_kind.as_str()
         )),
     }
 }

@@ -308,6 +308,7 @@ pub(crate) enum CanonicalSlashCommand {
     StatusView,
     WorkspaceStatusView,
     WorkspaceListView,
+    WorkspaceNew(String),
     WorkspaceAdopt,
     WorkspaceKindView,
     WorkspaceKindSet(crate::workspace::types::WorkspaceKind),
@@ -364,6 +365,9 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "workspace" if args == "adopt" => Some(CanonicalSlashCommand::WorkspaceAdopt),
         "workspace" if args == "kind" => Some(CanonicalSlashCommand::WorkspaceKindView),
         "workspace" if args == "kind clear" => Some(CanonicalSlashCommand::WorkspaceKindClear),
+        "workspace" if let Some(label) = args.strip_prefix("new ").map(str::trim).filter(|label| !label.is_empty()) => {
+            Some(CanonicalSlashCommand::WorkspaceNew(label.to_string()))
+        }
         "workspace" => args
             .strip_prefix("kind set ")
             .and_then(crate::workspace::types::WorkspaceKind::parse)
@@ -3350,6 +3354,11 @@ impl App {
                         }
                         CanonicalSlashCommand::WorkspaceListView => {
                             crate::control_runtime::ControlRequest::WorkspaceListView
+                        }
+                        CanonicalSlashCommand::WorkspaceNew(label) => {
+                            crate::control_runtime::ControlRequest::WorkspaceNew {
+                                label: label.clone(),
+                            }
                         }
                         CanonicalSlashCommand::WorkspaceAdopt => {
                             crate::control_runtime::ControlRequest::WorkspaceAdopt
