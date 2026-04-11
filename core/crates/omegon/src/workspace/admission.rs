@@ -101,6 +101,9 @@ mod tests {
             owner_agent_id: Some("agent-1".into()),
             created_at: "2026-04-11T00:00:00Z".into(),
             last_heartbeat: "2026-04-11T00:00:10Z".into(),
+            archived: false,
+            archived_at: None,
+            archive_reason: None,
             parent_workspace_id: None,
             source: "operator".into(),
         }

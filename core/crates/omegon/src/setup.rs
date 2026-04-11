@@ -775,6 +775,16 @@ impl AgentSetup {
                 .map(|lease| lease.created_at.clone())
                 .unwrap_or_else(crate::workspace::runtime::current_timestamp),
             last_heartbeat: crate::workspace::runtime::current_timestamp(),
+            archived: existing_workspace_lease
+                .as_ref()
+                .map(|lease| lease.archived)
+                .unwrap_or(false),
+            archived_at: existing_workspace_lease
+                .as_ref()
+                .and_then(|lease| lease.archived_at.clone()),
+            archive_reason: existing_workspace_lease
+                .as_ref()
+                .and_then(|lease| lease.archive_reason.clone()),
             parent_workspace_id: existing_workspace_lease
                 .as_ref()
                 .and_then(|lease| lease.parent_workspace_id.clone()),
@@ -793,6 +803,9 @@ impl AgentSetup {
             mutability: workspace_lease.mutability,
             owner_session_id: workspace_lease.owner_session_id.clone(),
             last_heartbeat: workspace_lease.last_heartbeat.clone(),
+            archived: workspace_lease.archived,
+            archived_at: workspace_lease.archived_at.clone(),
+            archive_reason: workspace_lease.archive_reason.clone(),
             stale: false,
         };
         let mut workspace_registry = crate::workspace::runtime::read_workspace_registry(&cwd)

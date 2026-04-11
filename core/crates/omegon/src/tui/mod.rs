@@ -311,6 +311,7 @@ pub(crate) enum CanonicalSlashCommand {
     WorkspaceNew(String),
     WorkspaceAdopt,
     WorkspaceRelease,
+    WorkspaceArchive,
     WorkspaceBindMilestone(String),
     WorkspaceBindNode(String),
     WorkspaceBindClear,
@@ -371,6 +372,7 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "workspace" if args == "list" => Some(CanonicalSlashCommand::WorkspaceListView),
         "workspace" if args == "adopt" => Some(CanonicalSlashCommand::WorkspaceAdopt),
         "workspace" if args == "release" => Some(CanonicalSlashCommand::WorkspaceRelease),
+        "workspace" if args == "archive" => Some(CanonicalSlashCommand::WorkspaceArchive),
         "workspace" if args == "bind clear" => Some(CanonicalSlashCommand::WorkspaceBindClear),
         "workspace" if args == "role" => Some(CanonicalSlashCommand::WorkspaceRoleView),
         "workspace" if args == "role clear" => Some(CanonicalSlashCommand::WorkspaceRoleClear),
@@ -3387,6 +3389,9 @@ impl App {
                         }
                         CanonicalSlashCommand::WorkspaceRelease => {
                             crate::control_runtime::ControlRequest::WorkspaceRelease
+                        }
+                        CanonicalSlashCommand::WorkspaceArchive => {
+                            crate::control_runtime::ControlRequest::WorkspaceArchive
                         }
                         CanonicalSlashCommand::WorkspaceBindMilestone(milestone_id) => {
                             crate::control_runtime::ControlRequest::WorkspaceBindMilestone {

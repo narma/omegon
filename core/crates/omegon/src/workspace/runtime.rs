@@ -152,6 +152,9 @@ mod tests {
                 mutability: Mutability::Mutable,
                 owner_session_id: Some("s1".into()),
                 last_heartbeat: current_timestamp(),
+                archived: false,
+                archived_at: None,
+                archive_reason: None,
                 stale: false,
             }],
         };

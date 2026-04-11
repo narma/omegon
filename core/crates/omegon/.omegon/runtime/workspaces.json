@@ -22,8 +22,11 @@
       "role": "primary",
       "workspace_kind": "mixed",
       "mutability": "mutable",
-      "owner_session_id": "2026-04-11T10-46-46_eb504f17",
-      "last_heartbeat": "2026-04-11T10:46:47.076125+00:00",
+      "owner_session_id": "2026-04-11T10-56-03_c9e1e9f7",
+      "last_heartbeat": "2026-04-11T10:56:03.541796+00:00",
+      "archived": false,
+      "archived_at": null,
+      "archive_reason": null,
       "stale": false
     }
   ]

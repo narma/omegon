@@ -39,6 +39,7 @@ pub enum ControlRequest {
     WorkspaceNew { label: String },
     WorkspaceAdopt,
     WorkspaceRelease,
+    WorkspaceArchive,
     WorkspaceBindMilestone { milestone_id: String },
     WorkspaceBindNode { design_node_id: String },
     WorkspaceBindClear,
@@ -109,6 +110,7 @@ pub fn control_request_from_slash(
         }
         crate::tui::CanonicalSlashCommand::WorkspaceAdopt => ControlRequest::WorkspaceAdopt,
         crate::tui::CanonicalSlashCommand::WorkspaceRelease => ControlRequest::WorkspaceRelease,
+        crate::tui::CanonicalSlashCommand::WorkspaceArchive => ControlRequest::WorkspaceArchive,
         crate::tui::CanonicalSlashCommand::WorkspaceBindMilestone(milestone_id) => {
             ControlRequest::WorkspaceBindMilestone {
                 milestone_id: milestone_id.clone(),
@@ -244,6 +246,7 @@ pub async fn execute_control(
         ControlRequest::WorkspaceNew { label } => workspace_new_response(ctx.agent, &label).await,
         ControlRequest::WorkspaceAdopt => workspace_adopt_response(ctx.agent).await,
         ControlRequest::WorkspaceRelease => workspace_release_response(ctx.agent).await,
+        ControlRequest::WorkspaceArchive => workspace_archive_response(ctx.agent).await,
         ControlRequest::WorkspaceBindMilestone { milestone_id } => {
             workspace_bind_milestone_response(ctx.agent, &milestone_id).await
         }
@@ -900,6 +903,9 @@ where
                 workspace.workspace_kind = lease.workspace_kind;
                 workspace.owner_session_id = lease.owner_session_id.clone();
                 workspace.last_heartbeat = lease.last_heartbeat.clone();
+                workspace.archived = lease.archived;
+                workspace.archived_at = lease.archived_at.clone();
+                workspace.archive_reason = lease.archive_reason.clone();
             }
         }
         crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry)
@@ -938,6 +944,44 @@ pub async fn workspace_release_response(agent: &InteractiveAgentHost) -> SlashCo
             accepted: true,
             output: Some(format!(
                 "Released workspace {} ({}). It remains registered but is no longer owned.",
+                lease.workspace_id, lease.label
+            )),
+        },
+        Err(message) => SlashCommandResponse {
+            accepted: false,
+            output: Some(message),
+        },
+    }
+}
+
+pub async fn workspace_archive_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace archive requires existing local workspace metadata.".into()),
+            }
+        }
+    };
+    if lease.owner_session_id.is_some() {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some("Workspace must be released before it can be archived.".into()),
+        };
+    }
+    match rewrite_current_workspace(agent, |lease| {
+        lease.archived = true;
+        lease.archived_at = Some(crate::workspace::runtime::current_timestamp());
+        lease.archive_reason = Some("operator".into());
+    }) {
+        Ok(lease) => SlashCommandResponse {
+            accepted: true,
+            output: Some(format!(
+                "Archived workspace {} ({}). It remains on disk but is retired from active use.",
                 lease.workspace_id, lease.label
             )),
         },
@@ -1078,6 +1122,9 @@ pub async fn workspace_new_response(
         owner_agent_id: None,
         created_at: now.clone(),
         last_heartbeat: now.clone(),
+        archived: false,
+        archived_at: None,
+        archive_reason: None,
         parent_workspace_id: Some(parent.workspace_id.clone()),
         source: "operator".into(),
     };
@@ -1109,6 +1156,9 @@ pub async fn workspace_new_response(
         mutability: new_lease.mutability,
         owner_session_id: new_lease.owner_session_id.clone(),
         last_heartbeat: new_lease.last_heartbeat.clone(),
+        archived: new_lease.archived,
+        archived_at: new_lease.archived_at.clone(),
+        archive_reason: new_lease.archive_reason.clone(),
         stale: false,
     });
     let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
@@ -1150,8 +1200,13 @@ pub async fn workspace_list_view_response(agent: &InteractiveAgentHost) -> Slash
         let owner = workspace.owner_session_id.as_deref().unwrap_or("(none)");
         let milestone = workspace.bindings.milestone_id.as_deref().unwrap_or("(none)");
         let node = workspace.bindings.design_node_id.as_deref().unwrap_or("(none)");
+        let archive = if workspace.archived {
+            format!("archived at {} ({})", workspace.archived_at.as_deref().unwrap_or("unknown"), workspace.archive_reason.as_deref().unwrap_or("no reason"))
+        } else {
+            "active".to_string()
+        };
         lines.push(format!(
-            "- {} ({})\n    path: {}\n    backend: {}\n    branch: {}\n    role/kind: {:?} / {:?}\n    milestone/node: {} / {}\n    mutability: {:?}\n    owner: {}\n    stale: {}",
+            "- {} ({})\n    path: {}\n    backend: {}\n    branch: {}\n    role/kind: {:?} / {:?}\n    milestone/node: {} / {}\n    mutability: {:?}\n    owner: {}\n    archive: {}\n    stale: {}",
             workspace.workspace_id,
             workspace.label,
             workspace.path,
@@ -1163,6 +1218,7 @@ pub async fn workspace_list_view_response(agent: &InteractiveAgentHost) -> Slash
             node,
             workspace.mutability,
             owner,
+            archive,
             workspace.stale,
         ));
     }

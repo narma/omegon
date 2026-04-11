@@ -166,6 +166,9 @@ pub struct WorkspaceLease {
     pub owner_agent_id: Option<String>,
     pub created_at: String,
     pub last_heartbeat: String,
+    pub archived: bool,
+    pub archived_at: Option<String>,
+    pub archive_reason: Option<String>,
     pub parent_workspace_id: Option<String>,
     pub source: String,
 }
@@ -184,6 +187,9 @@ pub struct WorkspaceSummary {
     pub mutability: Mutability,
     pub owner_session_id: Option<String>,
     pub last_heartbeat: String,
+    pub archived: bool,
+    pub archived_at: Option<String>,
+    pub archive_reason: Option<String>,
     pub stale: bool,
 }
 
@@ -240,6 +246,9 @@ mod tests {
             owner_agent_id: Some("agent-1".into()),
             created_at: "2026-04-11T00:00:00Z".into(),
             last_heartbeat: "2026-04-11T00:00:10Z".into(),
+            archived: false,
+            archived_at: None,
+            archive_reason: None,
             parent_workspace_id: Some("parent".into()),
             source: "operator".into(),
         };
@@ -275,6 +284,9 @@ mod tests {
                 mutability: Mutability::Mutable,
                 owner_session_id: None,
                 last_heartbeat: "2026-04-11T00:00:10Z".into(),
+                archived: false,
+                archived_at: None,
+                archive_reason: None,
                 stale: false,
             }],
         };
