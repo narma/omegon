@@ -310,6 +310,9 @@ pub(crate) enum CanonicalSlashCommand {
     WorkspaceListView,
     WorkspaceNew(String),
     WorkspaceAdopt,
+    WorkspaceRoleView,
+    WorkspaceRoleSet(crate::workspace::types::WorkspaceRole),
+    WorkspaceRoleClear,
     WorkspaceKindView,
     WorkspaceKindSet(crate::workspace::types::WorkspaceKind),
     WorkspaceKindClear,
@@ -363,11 +366,18 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "workspace" if args == "status" => Some(CanonicalSlashCommand::WorkspaceStatusView),
         "workspace" if args == "list" => Some(CanonicalSlashCommand::WorkspaceListView),
         "workspace" if args == "adopt" => Some(CanonicalSlashCommand::WorkspaceAdopt),
+        "workspace" if args == "role" => Some(CanonicalSlashCommand::WorkspaceRoleView),
+        "workspace" if args == "role clear" => Some(CanonicalSlashCommand::WorkspaceRoleClear),
         "workspace" if args == "kind" => Some(CanonicalSlashCommand::WorkspaceKindView),
         "workspace" if args == "kind clear" => Some(CanonicalSlashCommand::WorkspaceKindClear),
         "workspace" => {
             if let Some(label) = args.strip_prefix("new ").map(str::trim).filter(|label| !label.is_empty()) {
                 Some(CanonicalSlashCommand::WorkspaceNew(label.to_string()))
+            } else if let Some(role) = args
+                .strip_prefix("role set ")
+                .and_then(crate::workspace::types::WorkspaceRole::parse)
+            {
+                Some(CanonicalSlashCommand::WorkspaceRoleSet(role))
             } else {
                 args.strip_prefix("kind set ")
                     .and_then(crate::workspace::types::WorkspaceKind::parse)
@@ -3364,6 +3374,15 @@ impl App {
                         }
                         CanonicalSlashCommand::WorkspaceAdopt => {
                             crate::control_runtime::ControlRequest::WorkspaceAdopt
+                        }
+                        CanonicalSlashCommand::WorkspaceRoleView => {
+                            crate::control_runtime::ControlRequest::WorkspaceRoleView
+                        }
+                        CanonicalSlashCommand::WorkspaceRoleSet(role) => {
+                            crate::control_runtime::ControlRequest::WorkspaceRoleSet { role }
+                        }
+                        CanonicalSlashCommand::WorkspaceRoleClear => {
+                            crate::control_runtime::ControlRequest::WorkspaceRoleClear
                         }
                         CanonicalSlashCommand::WorkspaceKindView => {
                             crate::control_runtime::ControlRequest::WorkspaceKindView

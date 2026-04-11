@@ -1359,6 +1359,42 @@ fn slash_workspace_new_enqueues_execute_control() {
 }
 
 #[test]
+fn slash_workspace_role_set_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace role set release", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceRoleSet {
+                role: crate::workspace::types::WorkspaceRole::Release,
+            },
+            ..
+        } => {}
+        other => panic!("expected workspace role set request, got {other:?}"),
+    }
+}
+
+#[test]
+fn slash_workspace_role_clear_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace role clear", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceRoleClear,
+            ..
+        } => {}
+        other => panic!("expected workspace role clear request, got {other:?}"),
+    }
+}
+
+#[test]
 fn slash_workspace_kind_set_enqueues_execute_control() {
     let mut app = test_app();
     let (tx, mut rx) = test_tx_with_rx();

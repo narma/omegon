@@ -12,6 +12,33 @@ pub enum WorkspaceRole {
     ReadOnly,
 }
 
+impl WorkspaceRole {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "primary" => Some(Self::Primary),
+            "feature" => Some(Self::Feature),
+            "cleave-child" => Some(Self::CleaveChild),
+            "benchmark" => Some(Self::Benchmark),
+            "release" => Some(Self::Release),
+            "exploratory" => Some(Self::Exploratory),
+            "read-only" => Some(Self::ReadOnly),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Feature => "feature",
+            Self::CleaveChild => "cleave-child",
+            Self::Benchmark => "benchmark",
+            Self::Release => "release",
+            Self::Exploratory => "exploratory",
+            Self::ReadOnly => "read-only",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WorkspaceKind {

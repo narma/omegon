@@ -38,6 +38,9 @@ pub enum ControlRequest {
     WorkspaceListView,
     WorkspaceNew { label: String },
     WorkspaceAdopt,
+    WorkspaceRoleView,
+    WorkspaceRoleSet { role: crate::workspace::types::WorkspaceRole },
+    WorkspaceRoleClear,
     WorkspaceKindView,
     WorkspaceKindSet { kind: crate::workspace::types::WorkspaceKind },
     WorkspaceKindClear,
@@ -101,6 +104,11 @@ pub fn control_request_from_slash(
             ControlRequest::WorkspaceNew { label: label.clone() }
         }
         crate::tui::CanonicalSlashCommand::WorkspaceAdopt => ControlRequest::WorkspaceAdopt,
+        crate::tui::CanonicalSlashCommand::WorkspaceRoleView => ControlRequest::WorkspaceRoleView,
+        crate::tui::CanonicalSlashCommand::WorkspaceRoleSet(role) => {
+            ControlRequest::WorkspaceRoleSet { role: *role }
+        }
+        crate::tui::CanonicalSlashCommand::WorkspaceRoleClear => ControlRequest::WorkspaceRoleClear,
         crate::tui::CanonicalSlashCommand::WorkspaceKindView => {
             ControlRequest::WorkspaceKindView
         }
@@ -219,6 +227,9 @@ pub async fn execute_control(
         ControlRequest::WorkspaceListView => workspace_list_view_response(ctx.agent).await,
         ControlRequest::WorkspaceNew { label } => workspace_new_response(ctx.agent, &label).await,
         ControlRequest::WorkspaceAdopt => workspace_adopt_response(ctx.agent).await,
+        ControlRequest::WorkspaceRoleView => workspace_role_view_response(ctx.agent).await,
+        ControlRequest::WorkspaceRoleSet { role } => workspace_role_set_response(ctx.agent, role).await,
+        ControlRequest::WorkspaceRoleClear => workspace_role_clear_response(ctx.agent).await,
         ControlRequest::WorkspaceKindView => workspace_kind_view_response(ctx.agent).await,
         ControlRequest::WorkspaceKindSet { kind } => workspace_kind_set_response(ctx.agent, kind).await,
         ControlRequest::WorkspaceKindClear => workspace_kind_clear_response(ctx.agent).await,
@@ -639,6 +650,102 @@ pub async fn workspace_status_view_response(agent: &InteractiveAgentHost) -> Sla
     SlashCommandResponse {
         accepted: true,
         output: Some(text),
+    }
+}
+
+pub async fn workspace_role_view_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let lease = crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten();
+    let Some(lease) = lease else {
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some("Workspace role: no lease metadata yet.".into()),
+        };
+    };
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Workspace Role\n  Current:      {}",
+            lease.role.as_str(),
+        )),
+    }
+}
+
+pub async fn workspace_role_set_response(
+    agent: &InteractiveAgentHost,
+    role: crate::workspace::types::WorkspaceRole,
+) -> SlashCommandResponse {
+    let mut lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace role cannot be set before workspace metadata exists.".into()),
+            }
+        }
+    };
+    lease.role = role;
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&agent.cwd, &lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Failed to update workspace lease: {err}")),
+        };
+    }
+    if let Some(mut registry) = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        for workspace in &mut registry.workspaces {
+            if workspace.path == lease.path {
+                workspace.role = role;
+            }
+        }
+        let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!("Workspace role set to {}.", role.as_str())),
+    }
+}
+
+pub async fn workspace_role_clear_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let mut lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace role cannot be cleared before workspace metadata exists.".into()),
+            }
+        }
+    };
+    lease.role = crate::workspace::types::WorkspaceRole::Primary;
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&agent.cwd, &lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Failed to update workspace lease: {err}")),
+        };
+    }
+    if let Some(mut registry) = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        for workspace in &mut registry.workspaces {
+            if workspace.path == lease.path {
+                workspace.role = crate::workspace::types::WorkspaceRole::Primary;
+            }
+        }
+        let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some("Workspace role reset to primary.".into()),
     }
 }
 
