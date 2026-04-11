@@ -583,12 +583,7 @@ pub async fn switch_dispatcher_response(
                 settings.effective_requested_class().label().to_string(),
                 settings.thinking.as_str().to_string(),
                 profile.posture.effective.display_name().to_string(),
-                format!(
-                    "anonymous / {} / {} / {}",
-                    profile.posture.effective.display_name(),
-                    profile.resources.thinking.as_str(),
-                    profile.resources.requested_context_class.short()
-                ),
+                profile.summary(),
             )
         } else {
             (
@@ -665,12 +660,7 @@ pub async fn status_view_response(
     let mut status = crate::status::HarnessStatus::assemble();
     let settings = shared_settings.lock().unwrap().clone();
     let operating_profile = settings.operating_profile();
-    let operating_profile_label = format!(
-        "anonymous / {} / {} / {}",
-        operating_profile.posture.effective.display_name(),
-        operating_profile.resources.thinking.as_str(),
-        operating_profile.resources.requested_context_class.short()
-    );
+    let operating_profile_label = operating_profile.summary();
     status.update_routing(
         settings.effective_requested_class().label(),
         settings.thinking.as_str(),

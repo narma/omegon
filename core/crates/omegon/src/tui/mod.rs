@@ -754,6 +754,15 @@ fn editor_height_for(editor: &Editor, main_area: Rect) -> u16 {
 }
 
 impl App {
+    fn current_persona_state(&self) -> crate::settings::PersonaState {
+        let persona_id = self
+            .plugin_registry
+            .as_ref()
+            .and_then(|r| r.active_persona().map(|p| p.id.clone()));
+        let mind_id = persona_id.as_ref().map(|id| format!("persona:{id}"));
+        crate::settings::PersonaState::from_ids(persona_id, mind_id)
+    }
+
     /// Snapshot current model/provider state into a SegmentMeta.
     fn current_meta(&self) -> segments::SegmentMeta {
         segments::SegmentMeta {
@@ -4681,6 +4690,13 @@ impl App {
                     }
 
                     // Update footer data and store current status as previous
+                    let operating_profile_summary = self
+                        .settings()
+                        .operating_profile()
+                        .with_persona(self.current_persona_state())
+                        .summary();
+                    let mut status = status;
+                    status.operating_profile = operating_profile_summary;
                     self.footer_data.update_harness(status.clone());
                     self.previous_harness_status = Some(status);
 

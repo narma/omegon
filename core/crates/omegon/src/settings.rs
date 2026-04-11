@@ -175,6 +175,12 @@ pub struct PersonaState {
     pub mind_id: Option<String>,
 }
 
+impl PersonaState {
+    pub fn from_ids(persona_id: Option<String>, mind_id: Option<String>) -> Self {
+        Self { persona_id, mind_id }
+    }
+}
+
 /// Composed runtime operating profile.
 ///
 /// This is the bridge between the conceptual stack and implementation. The
@@ -187,6 +193,28 @@ pub struct OperatingProfile {
     pub persona: PersonaState,
     pub posture: BehavioralPosture,
     pub resources: ResourceEnvelope,
+}
+
+impl OperatingProfile {
+    pub fn with_persona(mut self, persona: PersonaState) -> Self {
+        self.persona = persona;
+        self
+    }
+
+    pub fn summary(&self) -> String {
+        let persona = self
+            .persona
+            .persona_id
+            .as_deref()
+            .unwrap_or("anonymous");
+        format!(
+            "{} / {} / {} / {}",
+            persona,
+            self.posture.effective.display_name(),
+            self.resources.thinking.as_str(),
+            self.resources.requested_context_class.short()
+        )
+    }
 }
 
 /// Runtime settings that can change mid-session.
@@ -1087,6 +1115,29 @@ mod tests {
         assert_eq!(profile.identity, RuntimeIdentity::default());
         assert_eq!(profile.authorization, AuthorizationContext::default());
         assert_eq!(profile.persona, PersonaState::default());
+        assert_eq!(profile.summary(), "anonymous / Fabricator / low / Maniple");
+    }
+
+    #[test]
+    fn operating_profile_persona_overlay_is_descriptive_only() {
+        let profile = Settings::default().operating_profile().with_persona(
+            PersonaState::from_ids(
+                Some("dev.styrene.omegon.systems-engineer".into()),
+                Some("persona:dev.styrene.omegon.systems-engineer".into()),
+            ),
+        );
+        assert_eq!(
+            profile.persona.persona_id.as_deref(),
+            Some("dev.styrene.omegon.systems-engineer")
+        );
+        assert_eq!(
+            profile.persona.mind_id.as_deref(),
+            Some("persona:dev.styrene.omegon.systems-engineer")
+        );
+        assert_eq!(
+            profile.summary(),
+            "dev.styrene.omegon.systems-engineer / Architect / medium / Clan"
+        );
     }
 
     #[test]
