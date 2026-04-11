@@ -1294,6 +1294,7 @@ impl InstrumentPanel {
             let (ind_ch, ind_color) = match child.status.as_str() {
                 "running" => ("▶ ", Color::Rgb(232, 186, 104)),
                 "completed" => ("✓ ", Color::Rgb(42, 180, 200)),
+                "merged_after_failure" => ("↺ ", Color::Rgb(214, 170, 40)),
                 "failed" => ("✗ ", Color::Rgb(224, 72, 72)),
                 "upstream_exhausted" => ("⚡ ", Color::Rgb(214, 170, 40)),
                 _ => ("○ ", Color::Rgb(40, 56, 72)), // pending / unknown
@@ -1305,7 +1306,8 @@ impl InstrumentPanel {
             let label_color = match child.status.as_str() {
                 "running" => Color::Rgb(232, 186, 104),
                 "completed" => Color::Rgb(42, 180, 200),
-                "failed" | "upstream_exhausted" => Color::Rgb(224, 72, 72),
+                "merged_after_failure" | "upstream_exhausted" => Color::Rgb(214, 170, 40),
+                "failed" => Color::Rgb(224, 72, 72),
                 _ => Color::Rgb(48, 68, 84),
             };
             let display_label: String = child.label.chars().take(label_w).collect();

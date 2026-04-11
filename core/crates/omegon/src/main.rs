@@ -760,7 +760,17 @@ pub(crate) fn format_cleave_merge_result(
     outcome: &cleave::orchestrator::MergeOutcome,
 ) -> String {
     match outcome {
-        cleave::orchestrator::MergeOutcome::Success => format!("  ✓ {label} merged"),
+        cleave::orchestrator::MergeOutcome::Success => {
+            if let Some(child) = child {
+                if child.error.as_deref() == Some("merged after salvaging work from a failed child") {
+                    format!("  ↺ {label} salvaged and merged after failure")
+                } else {
+                    format!("  ✓ {label} merged")
+                }
+            } else {
+                format!("  ✓ {label} merged")
+            }
+        }
         cleave::orchestrator::MergeOutcome::NoChanges => {
             if let Some(child) = child {
                 match child.status {

@@ -637,6 +637,14 @@ pub async fn run_cleave(
             Ok(worktree::MergeResult::Success) => {
                 if is_salvage {
                     tracing::info!(child = %child.label, "merged salvaged work from failed child");
+                    child.status = ChildStatus::Completed;
+                    child.error = Some("merged after salvaging work from a failed child".into());
+                    config.progress_sink.emit(&ProgressEvent::ChildStatus {
+                        child: child.label.clone(),
+                        status: ChildProgressStatus::MergedAfterFailure,
+                        duration_secs: child.duration_secs,
+                        error: None,
+                    });
                 } else {
                     tracing::info!(child = %child.label, "merged successfully");
                 }

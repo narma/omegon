@@ -41,8 +41,8 @@ pub enum TutorialMode {
 
 /// Determine the appropriate tutorial mode based on current auth state.
 ///
-/// Checks env vars directly — does not depend on startup probe results,
-/// which may not be set yet. Called at `/tutorial` invocation time.
+/// Uses canonical provider resolution and auth policy helpers rather than raw
+/// environment-variable checks. Called at `/tutorial` invocation time.
 pub fn tutorial_gate() -> TutorialMode {
     let has_openai_api_key = resolve_api_key_sync("openai").is_some_and(|(_, oauth)| !oauth);
     let has_openrouter = resolve_api_key_sync("openrouter").is_some();

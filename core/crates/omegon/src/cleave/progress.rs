@@ -95,6 +95,9 @@ pub enum ProgressEvent {
 pub enum ChildProgressStatus {
     Completed,
     Failed,
+    /// Work was ultimately merged, but only after salvaging a child that had
+    /// already been marked failed (timeout, cancellation, non-zero exit).
+    MergedAfterFailure,
     /// Provider upstream exhausted — orchestrator may retry with a fallback provider.
     UpstreamExhausted,
 }

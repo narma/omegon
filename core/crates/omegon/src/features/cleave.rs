@@ -294,7 +294,7 @@ pub enum ChildSupervisionMode {
 #[derive(Clone)]
 pub struct ChildProgress {
     pub label: String,
-    pub status: String, // "pending", "running", "completed", "failed", "upstream_exhausted"
+    pub status: String, // "pending", "running", "completed", "failed", "merged_after_failure", "upstream_exhausted"
     pub duration_secs: Option<f64>,
     /// Current supervision continuity for this child runtime.
     pub supervision_mode: Option<ChildSupervisionMode>,
@@ -333,12 +333,12 @@ fn recompute_progress_counts(progress: &mut CleaveProgress) {
     progress.completed = progress
         .children
         .iter()
-        .filter(|child| child.status == "completed")
+        .filter(|child| matches!(child.status.as_str(), "completed" | "merged_after_failure"))
         .count();
     progress.failed = progress
         .children
         .iter()
-        .filter(|child| child.status == "failed")
+        .filter(|child| matches!(child.status.as_str(), "failed" | "upstream_exhausted"))
         .count();
 }
 
@@ -409,6 +409,7 @@ fn apply_progress_event(shared: &Arc<Mutex<CleaveProgress>>, event: &ProgressEve
             let status_text = match status {
                 ChildProgressStatus::Completed => "completed",
                 ChildProgressStatus::Failed => "failed",
+                ChildProgressStatus::MergedAfterFailure => "merged_after_failure",
                 ChildProgressStatus::UpstreamExhausted => "upstream_exhausted",
             };
             if let Some(existing) = progress.children.iter_mut().find(|c| c.label == *child) {
@@ -802,12 +803,18 @@ impl CleaveFeature {
                 .state
                 .children
                 .iter()
-                .filter(|c| c.status == ChildStatus::Failed)
+                .filter(|c| c.status == ChildStatus::Failed || c.status == ChildStatus::UpstreamExhausted)
                 .count();
             for (i, child) in result.state.children.iter().enumerate() {
                 if let Some(p) = prog.children.get_mut(i) {
                     p.status = match child.status {
-                        ChildStatus::Completed => "completed".into(),
+                        ChildStatus::Completed => {
+                            if child.error.as_deref() == Some("merged after salvaging work from a failed child") {
+                                "merged_after_failure".into()
+                            } else {
+                                "completed".into()
+                            }
+                        }
                         ChildStatus::Failed => "failed".into(),
                         ChildStatus::UpstreamExhausted => "upstream_exhausted".into(),
                         ChildStatus::Running => "running".into(),
@@ -861,7 +868,13 @@ impl CleaveFeature {
 
         for child in &result.state.children {
             let icon = match child.status {
-                ChildStatus::Completed => "✓",
+                ChildStatus::Completed => {
+                    if child.error.as_deref() == Some("merged after salvaging work from a failed child") {
+                        "↺"
+                    } else {
+                        "✓"
+                    }
+                }
                 ChildStatus::Failed => "✗",
                 ChildStatus::UpstreamExhausted => "⚡",
                 ChildStatus::Running => "⏳",
@@ -880,7 +893,9 @@ impl CleaveFeature {
                 "  {} **{}**{}{}\n",
                 icon, child.label, dur, model_note
             ));
-            if child.status == ChildStatus::UpstreamExhausted {
+            if child.error.as_deref() == Some("merged after salvaging work from a failed child") {
+                report.push_str("    ↺ Worktree changes were salvaged and merged after the child hit a terminal execution failure.\n");
+            } else if child.status == ChildStatus::UpstreamExhausted {
                 report.push_str("    ⚡ Provider upstream exhausted — check inventory for available fallbacks.\n");
             }
             if let Some(err) = &child.error {
@@ -898,7 +913,18 @@ impl CleaveFeature {
         for (label, outcome) in &result.merge_results {
             match outcome {
                 cleave::orchestrator::MergeOutcome::Success => {
-                    report.push_str(&format!("  ✓ {} merged\n", label));
+                    let child = result.state.children.iter().find(|child| child.label == *label);
+                    if child
+                        .and_then(|child| child.error.as_deref())
+                        == Some("merged after salvaging work from a failed child")
+                    {
+                        report.push_str(&format!(
+                            "  ↺ {} salvaged and merged after failure\n",
+                            label
+                        ));
+                    } else {
+                        report.push_str(&format!("  ✓ {} merged\n", label));
+                    }
                 }
                 cleave::orchestrator::MergeOutcome::NoChanges => {
                     report.push_str(&format!("  ○ {} completed (no changes)\n", label));

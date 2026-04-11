@@ -104,39 +104,54 @@ pub fn automation_safe_model() -> Option<String> {
     None
 }
 
+/// Resolve provider credentials from explicit env values and an optional persisted credential.
+/// Precedence is authoritative and testable: non-OAuth env vars > OAuth env vars > valid auth.json.
+fn resolve_api_key_from_sources(
+    env_values: &[(&str, Option<String>)],
+    persisted: Option<crate::auth::OAuthCredentials>,
+) -> Option<(String, bool)> {
+    for (key, value) in env_values.iter().filter(|(key, _)| !key.contains("OAUTH")) {
+        if let Some(val) = value
+            && !val.is_empty()
+        {
+            tracing::debug!(source = *key, "API key resolved from env source list");
+            return Some((val.clone(), false));
+        }
+    }
+
+    for (key, value) in env_values.iter().filter(|(key, _)| key.contains("OAUTH")) {
+        if let Some(val) = value
+            && !val.is_empty()
+        {
+            tracing::debug!(source = *key, "OAuth token resolved from env source list");
+            return Some((val.clone(), true));
+        }
+    }
+
+    match persisted {
+        Some(creds) if creds.cred_type == "oauth" && !creds.is_expired() => {
+            Some((creds.access, true))
+        }
+        Some(creds) if creds.cred_type == "oauth" => None,
+        Some(creds) => Some((creds.access, false)),
+        None => None,
+    }
+}
+
 /// Resolve API key synchronously — env vars and unexpired auth.json tokens.
 /// Returns (key, is_oauth).
 pub fn resolve_api_key_sync(provider: &str) -> Option<(String, bool)> {
     // Use canonical provider map for env vars and auth.json key
     let env_keys = crate::auth::provider_env_vars(provider);
     let auth_key = crate::auth::auth_json_key(provider);
-
-    // Env vars (not OAuth)
-    for key in env_keys
+    let env_values: Vec<(&str, Option<String>)> = env_keys
         .iter()
         .copied()
-        .filter(|key| !key.contains("OAUTH"))
-    {
-        if let Ok(val) = std::env::var(key)
-            && !val.is_empty()
-        {
-            tracing::debug!(provider, source = key, "API key resolved from env");
-            return Some((val, false));
-        }
-    }
-
-    // OAuth token env vars
-    for key in env_keys.iter().copied().filter(|key| key.contains("OAUTH")) {
-        if let Ok(val) = std::env::var(key)
-            && !val.is_empty()
-        {
-            tracing::debug!(provider, source = key, "OAuth token resolved from env");
-            return Some((val, true));
-        }
-    }
+        .map(|key| (key, std::env::var(key).ok().filter(|v| !v.is_empty())))
+        .collect();
 
     // auth.json — using canonical key
-    match crate::auth::read_credentials(auth_key) {
+    let persisted = match crate::auth::read_credentials(auth_key) {
         Some(creds) if creds.cred_type == "oauth" && !creds.is_expired() => {
             tracing::debug!(
                 provider,
@@ -144,7 +159,7 @@ pub fn resolve_api_key_sync(provider: &str) -> Option<(String, bool)> {
                 expires = creds.expires,
                 "OAuth token from auth.json (valid)"
             );
-            return Some((creds.access, true));
+            Some(creds)
         }
         Some(creds) if creds.cred_type == "oauth" => {
             tracing::debug!(
@@ -153,17 +168,19 @@ pub fn resolve_api_key_sync(provider: &str) -> Option<(String, bool)> {
                 expires = creds.expires,
                 "OAuth token from auth.json (EXPIRED — needs refresh)"
             );
+            Some(creds)
         }
         Some(creds) => {
             tracing::debug!(provider, auth_key, cred_type = %creds.cred_type, "credential from auth.json");
-            return Some((creds.access, false));
+            Some(creds)
         }
         None => {
             tracing::debug!(provider, auth_key, "no credentials in auth.json");
+            None
         }
-    }
+    };
 
-    None
+    resolve_api_key_from_sources(&env_values, persisted)
 }
 
 /// Resolve API key from env vars or ~/.config/omegon/auth.json (legacy, no refresh).
@@ -3076,6 +3093,51 @@ mod tests {
         let result = crate::auth::resolve_with_refresh("anthropic").await;
         // Result depends on env — just verify no panic
         let _ = result;
+    }
+
+    #[test]
+    fn resolve_api_key_from_sources_prefers_api_key_env_over_oauth_and_persisted() {
+        let persisted = crate::auth::OAuthCredentials {
+            cred_type: "oauth".into(),
+            access: "persisted-oauth".into(),
+            refresh: "refresh".into(),
+            expires: u64::MAX,
+        };
+        let resolved = resolve_api_key_from_sources(
+            &[
+                ("ANTHROPIC_OAUTH_TOKEN", Some("oauth-env".into())),
+                ("ANTHROPIC_API_KEY", Some("api-env".into())),
+            ],
+            Some(persisted),
+        );
+        assert_eq!(resolved, Some(("api-env".into(), false)));
+    }
+
+    #[test]
+    fn resolve_api_key_from_sources_prefers_oauth_env_over_persisted() {
+        let persisted = crate::auth::OAuthCredentials {
+            cred_type: "oauth".into(),
+            access: "persisted-oauth".into(),
+            refresh: "refresh".into(),
+            expires: u64::MAX,
+        };
+        let resolved = resolve_api_key_from_sources(
+            &[("CHATGPT_OAUTH_TOKEN", Some("oauth-env".into()))],
+            Some(persisted),
+        );
+        assert_eq!(resolved, Some(("oauth-env".into(), true)));
+    }
+
+    #[test]
+    fn resolve_api_key_from_sources_ignores_expired_persisted_oauth_without_env() {
+        let persisted = crate::auth::OAuthCredentials {
+            cred_type: "oauth".into(),
+            access: "persisted-oauth".into(),
+            refresh: "refresh".into(),
+            expires: 0,
+        };
+        let resolved = resolve_api_key_from_sources(&[], Some(persisted));
+        assert_eq!(resolved, None);
     }
 
     #[test]
