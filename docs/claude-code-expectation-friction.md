@@ -1,6 +1,6 @@
 ---
 title: Claude Code expectation friction in Omegon
-status: draft
+status: implemented
 tags: [ux, claude-code, friction, omegon]
 ---
 
