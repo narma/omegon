@@ -1,15 +1,23 @@
 {
   "project_id": "Users::cwilson::workspace::black-meridian::omegon",
   "workspace_id": "Users::cwilson::workspace::black-meridian::omegon::core::crates::omegon",
+  "label": "primary",
   "path": "/Users/cwilson/workspace/black-meridian/omegon/core/crates/omegon",
+  "backend_kind": "local-dir",
+  "vcs_ref": {
+    "vcs": "git",
+    "branch": "main",
+    "revision": null,
+    "remote": "origin"
+  },
   "branch": "main",
   "role": "primary",
   "workspace_kind": "mixed",
   "mutability": "mutable",
-  "owner_session_id": "2026-04-11T03-09-13_ff46e387",
+  "owner_session_id": "2026-04-11T03-55-16_e47d327f",
   "owner_agent_id": "omegon-local",
-  "created_at": "2026-04-11T03:09:13.569087+00:00",
-  "last_heartbeat": "2026-04-11T03:29:07.103991+00:00",
+  "created_at": "2026-04-11T03:55:16.986759+00:00",
+  "last_heartbeat": "2026-04-11T03:55:17.073616+00:00",
   "parent_workspace_id": null,
   "source": "operator"
 }

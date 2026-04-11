@@ -36,6 +36,7 @@ pub enum ControlRequest {
     StatusView,
     WorkspaceStatusView,
     WorkspaceListView,
+    WorkspaceAdopt,
     WorkspaceKindView,
     WorkspaceKindSet { kind: crate::workspace::types::WorkspaceKind },
     WorkspaceKindClear,
@@ -95,6 +96,7 @@ pub fn control_request_from_slash(
             ControlRequest::WorkspaceStatusView
         }
         crate::tui::CanonicalSlashCommand::WorkspaceListView => ControlRequest::WorkspaceListView,
+        crate::tui::CanonicalSlashCommand::WorkspaceAdopt => ControlRequest::WorkspaceAdopt,
         crate::tui::CanonicalSlashCommand::WorkspaceKindView => {
             ControlRequest::WorkspaceKindView
         }
@@ -211,6 +213,7 @@ pub async fn execute_control(
         ControlRequest::StatusView => status_view_response(ctx.runtime_state, ctx.shared_settings).await,
         ControlRequest::WorkspaceStatusView => workspace_status_view_response(ctx.agent).await,
         ControlRequest::WorkspaceListView => workspace_list_view_response(ctx.agent).await,
+        ControlRequest::WorkspaceAdopt => workspace_adopt_response(ctx.agent).await,
         ControlRequest::WorkspaceKindView => workspace_kind_view_response(ctx.agent).await,
         ControlRequest::WorkspaceKindSet { kind } => workspace_kind_set_response(ctx.agent, kind).await,
         ControlRequest::WorkspaceKindClear => workspace_kind_clear_response(ctx.agent).await,
@@ -657,6 +660,77 @@ pub async fn workspace_kind_view_response(agent: &InteractiveAgentHost) -> Slash
             declared.as_str(),
             inferred.as_str(),
             source,
+        )),
+    }
+}
+
+pub async fn workspace_adopt_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let mut lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace adopt requires existing local workspace metadata.".into()),
+            }
+        }
+    };
+    let heartbeat = crate::workspace::runtime::heartbeat_epoch_secs(&lease.last_heartbeat);
+    let now_epoch = chrono::Utc::now().timestamp();
+    let request = crate::workspace::types::WorkspaceAdmissionRequest {
+        requested_role: lease.role,
+        requested_kind: lease.workspace_kind,
+        requested_mutability: lease.mutability,
+        session_id: Some(agent.session_id.clone()),
+        action: crate::workspace::types::WorkspaceActionKind::SessionStart,
+    };
+    let outcome = crate::workspace::admission::classify_admission(
+        Some(&lease),
+        &request,
+        now_epoch,
+        heartbeat,
+    );
+    if !matches!(
+        outcome,
+        crate::workspace::types::AdmissionOutcome::ConflictStaleLeaseAdoptable { .. }
+    ) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!(
+                "Workspace adopt is only allowed for stale leases. Current admission state: {:?}",
+                outcome
+            )),
+        };
+    }
+    lease.owner_session_id = Some(agent.session_id.clone());
+    lease.owner_agent_id = Some("omegon-local".into());
+    lease.last_heartbeat = crate::workspace::runtime::current_timestamp();
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&agent.cwd, &lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Failed to adopt workspace lease: {err}")),
+        };
+    }
+    if let Some(mut registry) = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        for workspace in &mut registry.workspaces {
+            if workspace.workspace_id == lease.workspace_id {
+                workspace.owner_session_id = lease.owner_session_id.clone();
+                workspace.last_heartbeat = lease.last_heartbeat.clone();
+                workspace.stale = false;
+            }
+        }
+        let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Adopted stale workspace lease for {} ({}).",
+            lease.workspace_id, lease.label
         )),
     }
 }

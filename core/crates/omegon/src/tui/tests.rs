@@ -1323,6 +1323,23 @@ fn slash_workspace_list_enqueues_execute_control() {
 }
 
 #[test]
+fn slash_workspace_adopt_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace adopt", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceAdopt,
+            ..
+        } => {}
+        other => panic!("expected workspace adopt request, got {other:?}"),
+    }
+}
+
+#[test]
 fn slash_workspace_kind_set_enqueues_execute_control() {
     let mut app = test_app();
     let (tx, mut rx) = test_tx_with_rx();

@@ -308,6 +308,7 @@ pub(crate) enum CanonicalSlashCommand {
     StatusView,
     WorkspaceStatusView,
     WorkspaceListView,
+    WorkspaceAdopt,
     WorkspaceKindView,
     WorkspaceKindSet(crate::workspace::types::WorkspaceKind),
     WorkspaceKindClear,
@@ -360,6 +361,7 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "workspace" if args.is_empty() => Some(CanonicalSlashCommand::WorkspaceStatusView),
         "workspace" if args == "status" => Some(CanonicalSlashCommand::WorkspaceStatusView),
         "workspace" if args == "list" => Some(CanonicalSlashCommand::WorkspaceListView),
+        "workspace" if args == "adopt" => Some(CanonicalSlashCommand::WorkspaceAdopt),
         "workspace" if args == "kind" => Some(CanonicalSlashCommand::WorkspaceKindView),
         "workspace" if args == "kind clear" => Some(CanonicalSlashCommand::WorkspaceKindClear),
         "workspace" => args
@@ -3348,6 +3350,9 @@ impl App {
                         }
                         CanonicalSlashCommand::WorkspaceListView => {
                             crate::control_runtime::ControlRequest::WorkspaceListView
+                        }
+                        CanonicalSlashCommand::WorkspaceAdopt => {
+                            crate::control_runtime::ControlRequest::WorkspaceAdopt
                         }
                         CanonicalSlashCommand::WorkspaceKindView => {
                             crate::control_runtime::ControlRequest::WorkspaceKindView
