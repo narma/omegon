@@ -323,6 +323,12 @@ enum ProgressSignal {
     Completion,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvidenceSufficiency {
+    None,
+    Sufficient,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ControllerState {
     consecutive_tool_continuations: u32,
@@ -331,6 +337,7 @@ struct ControllerState {
     validation_thrash_streak: u32,
     closure_stall_streak: u32,
     constraint_discovery_streak: u32,
+    evidence_sufficient_streak: u32,
 }
 
 impl ControllerState {
@@ -343,6 +350,7 @@ impl ControllerState {
         turn_end_reason: TurnEndReason,
         drift_kind: Option<DriftKind>,
         progress_signal: ProgressSignal,
+        evidence_sufficiency: EvidenceSufficiency,
     ) {
         match progress_signal {
             ProgressSignal::Mutation | ProgressSignal::Commit | ProgressSignal::Completion => {
@@ -392,6 +400,12 @@ impl ControllerState {
         self.constraint_discovery_streak =
             if matches!(progress_signal, ProgressSignal::ConstraintDiscovery) {
                 self.constraint_discovery_streak.saturating_add(1)
+            } else {
+                0
+            };
+        self.evidence_sufficient_streak =
+            if matches!(evidence_sufficiency, EvidenceSufficiency::Sufficient) {
+                self.evidence_sufficient_streak.saturating_add(1)
             } else {
                 0
             };
@@ -504,6 +518,59 @@ fn classify_progress_signal(
     ProgressSignal::None
 }
 
+fn detect_evidence_sufficiency(
+    conversation: &ConversationState,
+    tool_calls: &[ToolCall],
+    results: &[ToolResultEntry],
+) -> EvidenceSufficiency {
+    if !conversation.intent.files_modified.is_empty() || conversation.intent.files_read.is_empty() {
+        return EvidenceSufficiency::None;
+    }
+
+    let targeted_validation = matches!(
+        classify_validation_scope(tool_calls, results),
+        ProgressSignal::TargetedValidation
+    );
+    let failed_mutation_on_known_target = tool_calls.iter().any(|call| {
+        is_mutation_tool_name(&call.name)
+            && call
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|path| {
+                    conversation
+                        .intent
+                        .files_read
+                        .iter()
+                        .any(|read| read == std::path::Path::new(path))
+                        && results
+                            .iter()
+                            .find(|result| result.call_id == call.id)
+                            .is_some_and(|result| result.is_error)
+                })
+    });
+    let targeted_read_batch = tool_calls.iter().any(|call| {
+        call.name == "read"
+            && call
+                .arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .is_some_and(|path| {
+                    conversation
+                        .intent
+                        .files_read
+                        .iter()
+                        .any(|read| read == std::path::Path::new(path))
+                })
+    });
+
+    if targeted_validation || failed_mutation_on_known_target || targeted_read_batch {
+        EvidenceSufficiency::Sufficient
+    } else {
+        EvidenceSufficiency::None
+    }
+}
+
 fn is_slim_execution_bias(config: &LoopConfig) -> bool {
     config
         .settings
@@ -527,7 +594,14 @@ fn continuation_pressure_tier(
         return None;
     }
 
-    let (tier1, tier2, tier3) = if is_slim_execution_bias(config) {
+    let evidence_sufficient = controller.evidence_sufficient_streak > 0;
+    let (tier1, tier2, tier3) = if evidence_sufficient {
+        if is_slim_execution_bias(config) {
+            (2, 3, 4)
+        } else {
+            (3, 4, 5)
+        }
+    } else if is_slim_execution_bias(config) {
         (4, 6, 8)
     } else {
         (6, 8, 10)
@@ -539,6 +613,10 @@ fn continuation_pressure_tier(
     let validation = controller.validation_thrash_streak;
     let failures = controller.repeated_action_failure_streak;
     let discoveries = controller.constraint_discovery_streak;
+
+    if evidence_sufficient && (continuation >= tier2 || orient >= tier1 || closure >= tier1) {
+        return Some(3);
+    }
 
     if discoveries >= 2 {
         return Some(2);
@@ -1128,7 +1206,13 @@ pub async fn run(
             tool_calls,
             &results,
         );
-        controller.observe_turn(TurnEndReason::ToolContinuation, drift_kind, progress_signal);
+        let evidence_sufficiency = detect_evidence_sufficiency(conversation, tool_calls, &results);
+        controller.observe_turn(
+            TurnEndReason::ToolContinuation,
+            drift_kind,
+            progress_signal,
+            evidence_sufficiency,
+        );
         let continuation_tier = continuation_pressure_tier(
             config,
             &controller,
@@ -3246,6 +3330,103 @@ mod tests {
     }
 
     #[test]
+    fn evidence_sufficiency_detected_after_target_file_and_targeted_validation() {
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "bash".into(),
+            arguments: serde_json::json!({"command": "cargo test parser::tests::smoke"}),
+        }];
+        let results = vec![ToolResultEntry {
+            call_id: "1".into(),
+            tool_name: "bash".into(),
+            content: vec![ContentBlock::Text { text: "ok".into() }],
+            is_error: false,
+            args_summary: None,
+        }];
+        assert_eq!(
+            detect_evidence_sufficiency(&conversation, &tool_calls, &results),
+            EvidenceSufficiency::Sufficient
+        );
+    }
+
+    #[test]
+    fn evidence_sufficiency_not_detected_without_target_file() {
+        let conversation = ConversationState::new();
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "bash".into(),
+            arguments: serde_json::json!({"command": "cargo test parser::tests::smoke"}),
+        }];
+        let results = vec![ToolResultEntry {
+            call_id: "1".into(),
+            tool_name: "bash".into(),
+            content: vec![ContentBlock::Text { text: "ok".into() }],
+            is_error: false,
+            args_summary: None,
+        }];
+        assert_eq!(
+            detect_evidence_sufficiency(&conversation, &tool_calls, &results),
+            EvidenceSufficiency::None
+        );
+    }
+
+    #[test]
+    fn post_sufficiency_pressure_escalates_faster_than_default() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "read".into(),
+            arguments: serde_json::json!({"path": "core/src/context.rs"}),
+        }];
+        let controller = ControllerState {
+            consecutive_tool_continuations: 4,
+            orientation_churn_streak: 1,
+            evidence_sufficient_streak: 1,
+            ..ControllerState::default()
+        };
+        assert_eq!(
+            continuation_pressure_tier(
+                &config,
+                &controller,
+                &conversation,
+                &tool_calls,
+                Some(OodaPhase::Orient),
+            ),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn mutation_resets_evidence_sufficiency_streak() {
+        let mut controller = ControllerState {
+            evidence_sufficient_streak: 3,
+            consecutive_tool_continuations: 5,
+            ..ControllerState::default()
+        };
+        controller.observe_turn(
+            TurnEndReason::ToolContinuation,
+            None,
+            ProgressSignal::Mutation,
+            EvidenceSufficiency::Sufficient,
+        );
+        assert_eq!(controller.evidence_sufficient_streak, 0);
+        assert_eq!(controller.consecutive_tool_continuations, 0);
+    }
+
+    #[test]
     fn execution_pressure_not_detected_before_repo_contact() {
         let config = LoopConfig {
             enforce_first_turn_execution_bias: true,
@@ -3291,11 +3472,13 @@ mod tests {
             validation_thrash_streak: 3,
             closure_stall_streak: 2,
             constraint_discovery_streak: 0,
+            evidence_sufficient_streak: 0,
         };
         controller.observe_turn(
             TurnEndReason::ToolContinuation,
             Some(DriftKind::OrientationChurn),
             ProgressSignal::ConstraintDiscovery,
+            EvidenceSufficiency::None,
         );
         assert!(controller.consecutive_tool_continuations < 8);
         assert!(controller.orientation_churn_streak < 4);
