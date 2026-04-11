@@ -23,6 +23,31 @@ pub enum WorkspaceKind {
     Generic,
 }
 
+impl WorkspaceKind {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "code" => Some(Self::Code),
+            "vault" => Some(Self::Vault),
+            "knowledge" => Some(Self::Knowledge),
+            "spec" => Some(Self::Spec),
+            "mixed" => Some(Self::Mixed),
+            "generic" => Some(Self::Generic),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Code => "code",
+            Self::Vault => "vault",
+            Self::Knowledge => "knowledge",
+            Self::Spec => "spec",
+            Self::Mixed => "mixed",
+            Self::Generic => "generic",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Mutability {

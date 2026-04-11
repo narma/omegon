@@ -306,6 +306,10 @@ pub(crate) enum CanonicalSlashCommand {
     SetModel(String),
     SetThinking(crate::settings::ThinkingLevel),
     StatusView,
+    WorkspaceStatusView,
+    WorkspaceKindView,
+    WorkspaceKindSet(crate::workspace::types::WorkspaceKind),
+    WorkspaceKindClear,
     SessionStatsView,
     TreeView { args: String },
     NoteAdd { text: String },
@@ -352,6 +356,14 @@ pub(crate) fn canonical_slash_command(cmd: &str, args: &str) -> Option<Canonical
         "think" => crate::settings::ThinkingLevel::parse(args)
             .map(CanonicalSlashCommand::SetThinking),
         "status" if args.is_empty() => Some(CanonicalSlashCommand::StatusView),
+        "workspace" if args.is_empty() => Some(CanonicalSlashCommand::WorkspaceStatusView),
+        "workspace" if args == "status" => Some(CanonicalSlashCommand::WorkspaceStatusView),
+        "workspace" if args == "kind" => Some(CanonicalSlashCommand::WorkspaceKindView),
+        "workspace" if args == "kind clear" => Some(CanonicalSlashCommand::WorkspaceKindClear),
+        "workspace" => args
+            .strip_prefix("kind set ")
+            .and_then(crate::workspace::types::WorkspaceKind::parse)
+            .map(CanonicalSlashCommand::WorkspaceKindSet),
         "stats" if args.is_empty() => Some(CanonicalSlashCommand::SessionStatsView),
         "tree" => Some(CanonicalSlashCommand::TreeView {
             args: if args.is_empty() { "list".to_string() } else { args.to_string() },
@@ -3327,7 +3339,25 @@ impl App {
             }
 
             "workspace" => {
-                let request = crate::control_runtime::ControlRequest::WorkspaceStatusView;
+                let request = if let Some(command) = canonical_slash_command("workspace", args) {
+                    match command {
+                        CanonicalSlashCommand::WorkspaceStatusView => {
+                            crate::control_runtime::ControlRequest::WorkspaceStatusView
+                        }
+                        CanonicalSlashCommand::WorkspaceKindView => {
+                            crate::control_runtime::ControlRequest::WorkspaceKindView
+                        }
+                        CanonicalSlashCommand::WorkspaceKindSet(kind) => {
+                            crate::control_runtime::ControlRequest::WorkspaceKindSet { kind }
+                        }
+                        CanonicalSlashCommand::WorkspaceKindClear => {
+                            crate::control_runtime::ControlRequest::WorkspaceKindClear
+                        }
+                        _ => crate::control_runtime::ControlRequest::WorkspaceStatusView,
+                    }
+                } else {
+                    crate::control_runtime::ControlRequest::WorkspaceStatusView
+                };
                 let _ = tx.try_send(TuiCommand::ExecuteControl {
                     request,
                     respond_to: None,

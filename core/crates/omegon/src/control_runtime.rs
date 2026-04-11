@@ -35,6 +35,9 @@ pub enum ControlRequest {
     SetThinking { level: crate::settings::ThinkingLevel },
     StatusView,
     WorkspaceStatusView,
+    WorkspaceKindView,
+    WorkspaceKindSet { kind: crate::workspace::types::WorkspaceKind },
+    WorkspaceKindClear,
     SessionStatsView,
     TreeView { args: String },
     NoteAdd { text: String },
@@ -87,6 +90,18 @@ pub fn control_request_from_slash(
             ControlRequest::SetThinking { level: *level }
         }
         crate::tui::CanonicalSlashCommand::StatusView => ControlRequest::StatusView,
+        crate::tui::CanonicalSlashCommand::WorkspaceStatusView => {
+            ControlRequest::WorkspaceStatusView
+        }
+        crate::tui::CanonicalSlashCommand::WorkspaceKindView => {
+            ControlRequest::WorkspaceKindView
+        }
+        crate::tui::CanonicalSlashCommand::WorkspaceKindSet(kind) => {
+            ControlRequest::WorkspaceKindSet { kind: *kind }
+        }
+        crate::tui::CanonicalSlashCommand::WorkspaceKindClear => {
+            ControlRequest::WorkspaceKindClear
+        }
         crate::tui::CanonicalSlashCommand::SessionStatsView => ControlRequest::SessionStatsView,
         crate::tui::CanonicalSlashCommand::TreeView { args } => {
             ControlRequest::TreeView { args: args.clone() }
@@ -193,6 +208,9 @@ pub async fn execute_control(
         }
         ControlRequest::StatusView => status_view_response(ctx.runtime_state, ctx.shared_settings).await,
         ControlRequest::WorkspaceStatusView => workspace_status_view_response(ctx.agent).await,
+        ControlRequest::WorkspaceKindView => workspace_kind_view_response(ctx.agent).await,
+        ControlRequest::WorkspaceKindSet { kind } => workspace_kind_set_response(ctx.agent, kind).await,
+        ControlRequest::WorkspaceKindClear => workspace_kind_clear_response(ctx.agent).await,
         ControlRequest::SessionStatsView => {
             session_stats_view_response(ctx.runtime_state, ctx.shared_settings, ctx.agent).await
         }
@@ -608,6 +626,111 @@ pub async fn workspace_status_view_response(agent: &InteractiveAgentHost) -> Sla
     SlashCommandResponse {
         accepted: true,
         output: Some(text),
+    }
+}
+
+pub async fn workspace_kind_view_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let lease = crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten();
+    let inferred = crate::workspace::infer::infer_workspace_kind(&agent.cwd);
+    let Some(lease) = lease else {
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some(format!(
+                "Workspace kind: no lease metadata yet. Inferred kind would be {}.",
+                inferred.as_str()
+            )),
+        };
+    };
+    let declared = lease.workspace_kind;
+    let source = if declared == inferred { "inferred/default" } else { "operator-declared" };
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!(
+            "Workspace Kind\n  Current:      {}\n  Inferred:     {}\n  Source:       {}",
+            declared.as_str(),
+            inferred.as_str(),
+            source,
+        )),
+    }
+}
+
+pub async fn workspace_kind_set_response(
+    agent: &InteractiveAgentHost,
+    kind: crate::workspace::types::WorkspaceKind,
+) -> SlashCommandResponse {
+    let mut lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace kind cannot be set before workspace metadata exists.".into()),
+            }
+        }
+    };
+    lease.workspace_kind = kind;
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&agent.cwd, &lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Failed to update workspace lease: {err}")),
+        };
+    }
+    if let Some(mut registry) = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        for workspace in &mut registry.workspaces {
+            if workspace.path == lease.path {
+                workspace.workspace_kind = kind;
+            }
+        }
+        let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!("Workspace kind set to {}.", kind.as_str())),
+    }
+}
+
+pub async fn workspace_kind_clear_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let mut lease = match crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        Some(lease) => lease,
+        None => {
+            return SlashCommandResponse {
+                accepted: false,
+                output: Some("Workspace kind cannot be cleared before workspace metadata exists.".into()),
+            }
+        }
+    };
+    let inferred = crate::workspace::infer::infer_workspace_kind(&agent.cwd);
+    lease.workspace_kind = inferred;
+    if let Err(err) = crate::workspace::runtime::write_workspace_lease(&agent.cwd, &lease) {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!("Failed to update workspace lease: {err}")),
+        };
+    }
+    if let Some(mut registry) = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten()
+    {
+        for workspace in &mut registry.workspaces {
+            if workspace.path == lease.path {
+                workspace.workspace_kind = inferred;
+            }
+        }
+        let _ = crate::workspace::runtime::write_workspace_registry(&agent.cwd, &registry);
+    }
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(format!("Workspace kind reset to inferred value {}.", inferred.as_str())),
     }
 }
 

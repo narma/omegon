@@ -1297,8 +1297,47 @@ fn slash_workspace_enqueues_execute_control() {
     assert!(matches!(result, SlashResult::Handled));
 
     match rx.try_recv().expect("queued command") {
-        TuiCommand::ExecuteControl { .. } => {}
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceStatusView,
+            ..
+        } => {}
         other => panic!("expected ExecuteControl, got {other:?}"),
+    }
+}
+
+#[test]
+fn slash_workspace_kind_set_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace kind set vault", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceKindSet {
+                kind: crate::workspace::types::WorkspaceKind::Vault,
+            },
+            ..
+        } => {}
+        other => panic!("expected workspace kind set request, got {other:?}"),
+    }
+}
+
+#[test]
+fn slash_workspace_kind_clear_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace kind clear", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::WorkspaceKindClear,
+            ..
+        } => {}
+        other => panic!("expected workspace kind clear request, got {other:?}"),
     }
 }
 
