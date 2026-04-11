@@ -7,8 +7,23 @@ use super::types::{WorkspaceLease, WorkspaceRegistry};
 
 const STALE_HEARTBEAT_SECS: i64 = 300;
 
+pub fn workspace_root(cwd: &Path) -> PathBuf {
+    let mut dir = cwd.to_path_buf();
+    loop {
+        let git_path = dir.join(".git");
+        let jj_path = dir.join(".jj");
+        if git_path.is_dir() || git_path.is_file() || jj_path.is_dir() {
+            return dir;
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    cwd.to_path_buf()
+}
+
 pub fn runtime_dir(cwd: &Path) -> PathBuf {
-    cwd.join(".omegon").join("runtime")
+    workspace_root(cwd).join(".omegon").join("runtime")
 }
 
 pub fn workspace_lease_path(cwd: &Path) -> PathBuf {
@@ -104,17 +119,15 @@ mod tests {
     };
 
     #[test]
-    fn runtime_paths_are_under_omegon_runtime() {
-        let cwd = Path::new("/tmp/project");
-        assert_eq!(runtime_dir(cwd), PathBuf::from("/tmp/project/.omegon/runtime"));
-        assert_eq!(
-            workspace_lease_path(cwd),
-            PathBuf::from("/tmp/project/.omegon/runtime/workspace.json")
-        );
-        assert_eq!(
-            workspace_registry_path(cwd),
-            PathBuf::from("/tmp/project/.omegon/runtime/workspaces.json")
-        );
+    fn runtime_paths_are_under_workspace_root_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+        let cwd = dir.path().join("nested/project");
+        std::fs::create_dir_all(&cwd).unwrap();
+        assert_eq!(workspace_root(&cwd), dir.path());
+        assert_eq!(runtime_dir(&cwd), dir.path().join(".omegon/runtime"));
+        assert_eq!(workspace_lease_path(&cwd), dir.path().join(".omegon/runtime/workspace.json"));
+        assert_eq!(workspace_registry_path(&cwd), dir.path().join(".omegon/runtime/workspaces.json"));
     }
 
     #[test]
