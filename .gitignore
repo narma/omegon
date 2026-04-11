@@ -30,6 +30,7 @@ sessions/
 
 # Local benchmark run artifacts
 ai/benchmarks/runs/
+ai/benchmarks/archive/
 
 # Jujutsu VCS (co-located with git)
 .jj/
