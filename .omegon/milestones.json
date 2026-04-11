@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 59,
+    "rc_count": 60,
     "notes": [
       "feat(aggregate-mode): Add a minimal directory-level aggregation/report mode for benchmark result files, shaped by existing result artifact structure. Include tests and doc updates if the mode is added.",
       "feat(anthropic): prefer adaptive thinking for claude 4.6",
@@ -516,6 +516,7 @@
       "fix(benchmark): parse real Claude Code usage fields",
       "fix(benchmark): preserve explicit model over profile defaults",
       "fix(benchmark): preserve non-empty context snapshots",
+      "fix(benchmark): preserve provider attribution in artifacts",
       "fix(benchmark): propagate cache creation tokens through usage summaries",
       "fix(benchmark): run acceptance against clean-room repo",
       "fix(brew): fail early on unsupported Linux glibc",
@@ -546,6 +547,7 @@
       "fix(loop): curb first-turn benchmark orientation churn",
       "fix(loop): disable commit nudge for headless runs",
       "fix(loop): escalate post-inspection execution pressure",
+      "fix(loop): escalate sustained tool-continuation churn",
       "fix(loop): generalize execution-pressure heuristics",
       "fix(multimodal): preserve attachment source paths for redisplay",
       "fix(multimodal): store user attachments in canonical conversation state",
@@ -641,6 +643,7 @@
       "refactor(control): extract shared runtime control layer",
       "refactor(control): finish typed secrets and vault routing",
       "refactor(control): narrow generic slash adapters to compatibility paths",
+      "refactor(control): promote phase-1 slash commands to execute control",
       "refactor(control): promote secrets and vault to typed requests",
       "refactor(control): promote skills and plugin commands to typed control requests",
       "refactor(control): route auth through shared control helpers",
@@ -649,6 +652,7 @@
       "refactor(control): route more runtime actions through dispatcher",
       "refactor(control): route remote slash through shared typed helpers",
       "refactor(ipc): dispatch typed control methods through canonical requests",
+      "refactor(loop): generalize commit nudge to progress telemetry",
       "refactor(runtime): attach source identity to prompt submissions",
       "refactor(runtime): drop legacy .pi state fallbacks",
       "refactor(runtime): extract interactive turn execution helpers",
@@ -659,10 +663,12 @@
       "refactor(tui): make /auspex open the primary browser launch path",
       "refactor(tui): remove activity-row phase labels",
       "refactor(tui): simplify slash command auth and context paths",
+      "refactor(web): canonicalize cleave child cancel control",
       "refactor(web): migrate dashboard prompt bar to typed control messages",
+      "refactor(web): route canonical slash commands through control",
       "refactor(web): route typed control commands through dispatcher"
     ],
-    "rc_version": "0.15.10-rc.65",
-    "last_rc": "2026-04-10T21:11:12Z"
+    "rc_version": "0.15.10-rc.66",
+    "last_rc": "2026-04-11T00:09:58Z"
   }
 }
