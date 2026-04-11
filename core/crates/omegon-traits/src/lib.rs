@@ -1352,6 +1352,16 @@ pub enum AgentEvent {
         drift_kind: Option<DriftKind>,
         /// If the harness injected a progress nudge, the reason subtype.
         progress_nudge_reason: Option<ProgressNudgeReason>,
+        /// Snapshot of current task for checkpoint persistence.
+        intent_task: Option<String>,
+        /// Snapshot of lifecycle phase name for checkpoint persistence.
+        intent_phase: Option<String>,
+        /// Number of files read in this session so far.
+        files_read_count: usize,
+        /// Number of files modified in this session so far.
+        files_modified_count: usize,
+        /// Cumulative tool calls for checkpoint persistence.
+        stats_tool_calls: u32,
     },
     AgentEnd,
     PhaseChanged {

@@ -61,6 +61,8 @@ pub struct CleaveConfig {
     pub child_runtime: CleaveChildRuntimeProfile,
     /// Embedding-aware sink for live progress events.
     pub progress_sink: SharedProgressSink,
+    /// Optional workflow template for per-phase configuration.
+    pub workflow: Option<crate::workflow::WorkflowTemplate>,
 }
 
 /// Result of a cleave run.
@@ -851,6 +853,7 @@ fn spawn_child_process(
     if !config.runtime.enabled_extensions.is_empty() { child.env("OMEGON_CHILD_ENABLED_EXTENSIONS", config.runtime.enabled_extensions.join(",")); }
     if !config.runtime.disabled_extensions.is_empty() { child.env("OMEGON_CHILD_DISABLED_EXTENSIONS", config.runtime.disabled_extensions.join(",")); }
     if !config.runtime.preloaded_files.is_empty() { child.env("OMEGON_CHILD_PRELOADED_FILES", config.runtime.preloaded_files.join(":")); }
+    if let Some(ref persona) = config.runtime.persona { child.env("OMEGON_CHILD_PERSONA", persona); }
     let child = child.spawn().context(format!("Failed to spawn omegon-agent for child '{label}'"))?;
     let pid = child.id().unwrap_or(0);
     tracing::info!(child = %label, pid, "child spawned");
@@ -1245,6 +1248,7 @@ mod tests {
             injected_env: vec![],
             child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
             progress_sink: crate::cleave::progress::stdout_progress_sink(),
+            workflow: None,
         };
         assert_eq!(config.idle_timeout_secs, 300);
         assert_eq!(config.timeout_secs, 900);

@@ -2165,6 +2165,11 @@ mod tests {
             dominant_phase: Some(omegon_traits::OodaPhase::Act),
             drift_kind: Some(omegon_traits::DriftKind::ClosureStall),
             progress_nudge_reason: Some(omegon_traits::ProgressNudgeReason::ClosurePressure),
+            intent_task: None,
+            intent_phase: None,
+            files_read_count: 0,
+            files_modified_count: 0,
+            stats_tool_calls: 0,
         };
         let messages = serialize_ws_messages(&event);
         assert_eq!(messages.len(), 2);
@@ -2240,6 +2245,11 @@ mod tests {
                 dominant_phase: None,
                 drift_kind: None,
                 progress_nudge_reason: None,
+                intent_task: None,
+                intent_phase: None,
+                files_read_count: 0,
+                files_modified_count: 0,
+                stats_tool_calls: 0,
             },
             AgentEvent::MessageStart {
                 role: "assistant".into(),

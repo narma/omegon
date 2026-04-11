@@ -37,6 +37,9 @@ pub struct CleaveChildRuntimeProfile {
     pub disabled_extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub preloaded_files: Vec<String>,
+    /// Persona to activate at child startup (resolved by name or ID).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona: Option<String>,
 }
 
 /// A single child in the plan.
@@ -164,5 +167,30 @@ mod tests {
         assert_eq!(runtime.enabled_extensions, vec!["scribe-rpc"]);
         assert_eq!(runtime.disabled_extensions, vec!["legacy-http"]);
         assert_eq!(runtime.preloaded_files, vec!["docs/spec.md"]);
+    }
+
+    #[test]
+    fn parse_runtime_persona() {
+        let json = r#"{
+            "children": [
+                {
+                    "label": "review",
+                    "description": "security review",
+                    "scope": ["auth/"],
+                    "runtime": {
+                        "persona": "security-auditor"
+                    }
+                }
+            ]
+        }"#;
+        let plan = CleavePlan::from_json(json).unwrap();
+        let runtime = plan.children[0].runtime.as_ref().unwrap();
+        assert_eq!(runtime.persona.as_deref(), Some("security-auditor"));
+    }
+
+    #[test]
+    fn persona_absent_by_default() {
+        let profile = CleaveChildRuntimeProfile::default();
+        assert_eq!(profile.persona, None);
     }
 }

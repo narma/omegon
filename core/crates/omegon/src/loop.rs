@@ -662,6 +662,11 @@ pub async fn run(
                 dominant_phase: None,
                 drift_kind: None,
                 progress_nudge_reason: None,
+                intent_task: conversation.intent.current_task.clone(),
+                intent_phase: Some(format!("{:?}", conversation.intent.lifecycle_phase)),
+                files_read_count: conversation.intent.files_read.len(),
+                files_modified_count: conversation.intent.files_modified.len(),
+                stats_tool_calls: conversation.intent.stats.tool_calls,
             });
             break;
         }
@@ -893,6 +898,11 @@ pub async fn run(
                     dominant_phase: None,
                     drift_kind: None,
                     progress_nudge_reason: None,
+                    intent_task: conversation.intent.current_task.clone(),
+                    intent_phase: Some(format!("{:?}", conversation.intent.lifecycle_phase)),
+                    files_read_count: conversation.intent.files_read.len(),
+                    files_modified_count: conversation.intent.files_modified.len(),
+                    stats_tool_calls: conversation.intent.stats.tool_calls,
                 });
                 break;
             }
@@ -968,6 +978,11 @@ pub async fn run(
                     dominant_phase: None,
                     drift_kind: Some(DriftKind::ClosureStall),
                     progress_nudge_reason: Some(ProgressNudgeReason::CommitHygiene),
+                    intent_task: conversation.intent.current_task.clone(),
+                    intent_phase: Some(format!("{:?}", conversation.intent.lifecycle_phase)),
+                    files_read_count: conversation.intent.files_read.len(),
+                    files_modified_count: conversation.intent.files_modified.len(),
+                    stats_tool_calls: conversation.intent.stats.tool_calls,
                 });
                 continue; // give it one more turn to commit
             }
@@ -1005,6 +1020,11 @@ pub async fn run(
                 dominant_phase: None,
                 drift_kind: None,
                 progress_nudge_reason: None,
+                intent_task: conversation.intent.current_task.clone(),
+                intent_phase: Some(format!("{:?}", conversation.intent.lifecycle_phase)),
+                files_read_count: conversation.intent.files_read.len(),
+                files_modified_count: conversation.intent.files_modified.len(),
+                stats_tool_calls: conversation.intent.stats.tool_calls,
             });
             break;
         }
@@ -1213,6 +1233,11 @@ pub async fn run(
             dominant_phase,
             drift_kind,
             progress_nudge_reason: drift_kind.map(progress_nudge_reason_for_drift),
+            intent_task: conversation.intent.current_task.clone(),
+            intent_phase: Some(format!("{:?}", conversation.intent.lifecycle_phase)),
+            files_read_count: conversation.intent.files_read.len(),
+            files_modified_count: conversation.intent.files_modified.len(),
+            stats_tool_calls: conversation.intent.stats.tool_calls,
         });
     }
 

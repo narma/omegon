@@ -466,6 +466,28 @@ impl AgentSetup {
         } else {
             persona_registry.load_skills_subset(&cwd, &child_skills);
         }
+
+        // ─── Activate startup persona (child or headless --persona) ────
+        if let Ok(persona_name) = std::env::var("OMEGON_CHILD_PERSONA") {
+            let (personas, _) = crate::plugins::persona_loader::scan_available();
+            let target = persona_name.to_lowercase();
+            if let Some(available) = personas.iter().find(|p| {
+                p.name.to_lowercase() == target || p.id.to_lowercase().contains(&target)
+            }) {
+                match crate::plugins::persona_loader::load_persona(&available.path) {
+                    Ok(loaded) => {
+                        tracing::info!(persona = %loaded.name, "activating startup persona");
+                        persona_registry.activate_persona(loaded);
+                    }
+                    Err(e) => {
+                        tracing::warn!(persona = %persona_name, error = %e, "startup persona load failed");
+                    }
+                }
+            } else {
+                tracing::warn!(persona = %persona_name, "startup persona not found");
+            }
+        }
+
         bus.register(Box::new(features::persona::PersonaFeature::new(
             persona_registry,
         )));

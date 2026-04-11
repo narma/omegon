@@ -58,6 +58,8 @@ mod tools;
 mod tui;
 pub mod util;
 mod web;
+mod checkpoint;
+mod workflow;
 
 use bridge::LlmBridge;
 use omegon_traits::AgentEvent;
@@ -176,6 +178,10 @@ struct Cli {
     /// Override context class (squad/maniple/clan/legion).
     #[arg(long)]
     context_class: Option<String>,
+
+    /// Activate a persona by name at startup (headless/child mode).
+    #[arg(long)]
+    persona: Option<String>,
 
     /// Enable slim runtime mode — reduce prompt and tool surface for quick interactive work.
     #[arg(long)]
@@ -614,6 +620,7 @@ async fn main() -> anyhow::Result<()> {
                     initial_prompt: None,
                     initial_prompt_file: None,
                     context_class: cli.context_class.clone(),
+                    persona: cli.persona.clone(),
                     log_level: cli.log_level.clone(),
                     log_file: cli.log_file.clone(),
                     ollama_integration: cli.ollama_integration,
@@ -659,21 +666,56 @@ struct EmbeddedStartupEvent {
 }
 
 async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::Result<()> {
-    let mut harness_status = crate::status::HarnessStatus::assemble();
-    harness_status.update_runtime_posture(
+    let cwd = std::fs::canonicalize(".")?;
+
+    // ─── Shared setup ───────────────────────────────────────────────────
+    let shared_settings = settings::shared("anthropic:claude-sonnet-4-6");
+    let profile = settings::Profile::load(&cwd);
+    if let Ok(mut s) = shared_settings.lock() {
+        profile.apply_to(&mut s);
+    }
+
+    let mut agent =
+        setup::AgentSetup::new(&cwd, None, Some(shared_settings.clone())).await?;
+    agent.initial_harness_status.update_runtime_posture(
         omegon_traits::OmegonRuntimeProfile::LongRunningDaemon,
         omegon_traits::OmegonAutonomyMode::GuardedAutonomous,
     );
-    let state = web::WebState::new(
-        crate::tui::dashboard::DashboardHandles {
-            harness: Some(std::sync::Arc::new(std::sync::Mutex::new(harness_status))),
-            ..Default::default()
-        },
-        tokio::sync::broadcast::channel::<AgentEvent>(32).0,
-    );
+    if let Some(ref harness) = agent.dashboard_handles.harness
+        && let Ok(mut status) = harness.lock()
+    {
+        status.update_runtime_posture(
+            omegon_traits::OmegonRuntimeProfile::LongRunningDaemon,
+            omegon_traits::OmegonAutonomyMode::GuardedAutonomous,
+        );
+    }
 
-    let (startup, _cmd_rx) =
+    // ─── LLM bridge (init once, reused across prompts) ──────────────────
+    let model = shared_settings
+        .lock()
+        .map(|s| s.model.clone())
+        .unwrap_or_else(|_| "anthropic:claude-sonnet-4-6".into());
+    let bridge: Box<dyn LlmBridge> = match providers::auto_detect_bridge(&model).await {
+        Some(native) => native,
+        None => {
+            anyhow::bail!(
+                "No LLM provider available for daemon mode. \
+                 Set ANTHROPIC_API_KEY or another provider credential."
+            );
+        }
+    };
+
+    // ─── Event channel (shared with web dashboard) ──────────────────────
+    let (events_tx, _) = broadcast::channel::<AgentEvent>(256);
+
+    // ─── Web control plane ──────────────────────────────────────────────
+    let state = web::WebState::new(
+        agent.dashboard_handles.clone(),
+        events_tx.clone(),
+    );
+    let (startup, mut cmd_rx) =
         web::start_server_with_options(state, control_port, strict_port).await?;
+
     let event = EmbeddedStartupEvent {
         event_type: "omegon.startup",
         schema_version: startup.schema_version,
@@ -688,7 +730,111 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
     };
     println!("{}", serde_json::to_string(&event)?);
 
-    tokio::signal::ctrl_c().await?;
+    // ─── Cancellation (Ctrl-C) ──────────────────────────────────────────
+    let global_cancel = CancellationToken::new();
+    let cancel_clone = global_cancel.clone();
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        cancel_clone.cancel();
+    });
+
+    // ─── Checkpoint subscriber (turn-boundary crash recovery) ────────────
+    let _daemon_checkpoint_task = checkpoint::spawn_checkpoint_subscriber(
+        &events_tx,
+        agent.session_id.clone(),
+        agent.context_metrics.clone(),
+    );
+
+    // ─── Dispatch loop — consume commands, run agent loops ──────────────
+    tracing::info!("daemon dispatch loop started");
+    loop {
+        tokio::select! {
+            _ = global_cancel.cancelled() => {
+                tracing::info!("daemon shutting down (signal)");
+                break;
+            }
+            cmd = cmd_rx.recv() => {
+                match cmd {
+                    Some(web::WebCommand::UserPrompt(text)) => {
+                        tracing::info!(prompt_len = text.len(), "daemon: received user prompt");
+                        agent.conversation.push_user(text);
+
+                        let loop_config = r#loop::LoopConfig {
+                            max_turns: shared_settings
+                                .lock()
+                                .map(|s| s.max_turns)
+                                .unwrap_or(50),
+                            soft_limit_turns: 35,
+                            max_retries: 0, // daemon retries indefinitely
+                            retry_delay_ms: 750,
+                            model: shared_settings
+                                .lock()
+                                .map(|s| s.model.clone())
+                                .unwrap_or_else(|_| model.clone()),
+                            cwd: agent.cwd.clone(),
+                            extended_context: false,
+                            settings: Some(shared_settings.clone()),
+                            secrets: Some(agent.secrets.clone()),
+                            force_compact: None,
+                            allow_commit_nudge: true,
+                            enforce_first_turn_execution_bias: false,
+                        };
+
+                        let turn_cancel = CancellationToken::new();
+                        if let Err(e) = r#loop::run(
+                            bridge.as_ref(),
+                            &mut agent.bus,
+                            &mut agent.context_manager,
+                            &mut agent.conversation,
+                            &events_tx,
+                            turn_cancel,
+                            &loop_config,
+                        )
+                        .await
+                        {
+                            tracing::error!(error = %e, "daemon agent loop error");
+                        }
+                        // Conversation persists — next prompt continues the session
+                    }
+                    Some(web::WebCommand::SlashCommand { name, args: _, respond_to }) => {
+                        tracing::info!(command = %name, "daemon: slash command");
+                        if let Some(tx) = respond_to {
+                            let _ = tx.send(omegon_traits::SlashCommandResponse {
+                                accepted: false,
+                                output: Some(format!(
+                                    "Slash command /{name} not yet supported in daemon mode"
+                                )),
+                            });
+                        }
+                    }
+                    Some(web::WebCommand::Cancel) => {
+                        tracing::info!("daemon: cancel requested (no active loop)");
+                    }
+                    Some(web::WebCommand::Shutdown) => {
+                        tracing::info!("daemon: shutdown requested");
+                        break;
+                    }
+                    Some(_) => {
+                        tracing::debug!("daemon: unhandled command variant");
+                    }
+                    None => {
+                        tracing::info!("daemon: command channel closed");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── Cleanup ────────────────────────────────────────────────────────
+    if let Err(e) = session::save_session(
+        &agent.conversation,
+        &agent.cwd,
+        Some(&agent.session_id),
+    ) {
+        tracing::debug!("Daemon session save failed (non-fatal): {e}");
+    }
+    bridge.shutdown().await;
     Ok(())
 }
 
@@ -844,6 +990,7 @@ async fn run_cleave_command(
         injected_env: Vec::new(),
         child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
         progress_sink: cleave::progress::stdout_progress_sink(),
+        workflow: workflow::discover_workflow(&cli.cwd),
     };
 
     let cancel = CancellationToken::new();
@@ -1409,6 +1556,11 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
                                         dominant_phase: None,
                                         drift_kind: None,
                                         progress_nudge_reason: None,
+                                        intent_task: runtime_state.conversation.intent.current_task.clone(),
+                                        intent_phase: Some(format!("{:?}", runtime_state.conversation.intent.lifecycle_phase)),
+                                        files_read_count: runtime_state.conversation.intent.files_read.len(),
+                                        files_modified_count: runtime_state.conversation.intent.files_modified.len(),
+                                        stats_tool_calls: runtime_state.conversation.intent.stats.tool_calls,
                                     });
                                 }
                             }
@@ -2778,6 +2930,12 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
         }
     }
 
+    // ─── Persona activation (headless/child) ─────────────────────────
+    if let Some(ref persona) = cli.persona {
+        // SAFETY: called before spawning any threads that read this var.
+        unsafe { std::env::set_var("OMEGON_CHILD_PERSONA", persona) };
+    }
+
     let resume = cli.resume.as_ref().map(|r| r.as_deref());
     let mut agent = setup::AgentSetup::new(&cli.cwd, resume, Some(shared_settings.clone())).await?;
     agent.initial_harness_status.update_runtime_posture(
@@ -2909,6 +3067,7 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
                     cache_read_tokens,
                     cache_creation_tokens,
                     provider_telemetry,
+                    ..
                 } => {
                     if let Ok(mut summary) = benchmark_summary_task.lock() {
                         summary.observe_turn(
@@ -2943,6 +3102,13 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
             }
         }
     });
+
+    // ─── Checkpoint subscriber (turn-boundary crash recovery) ────────────
+    let _checkpoint_task = checkpoint::spawn_checkpoint_subscriber(
+        &events_tx,
+        agent.session_id.clone(),
+        agent.context_metrics.clone(),
+    );
 
     // ─── Run the loop ───────────────────────────────────────────────────
     let cancel = CancellationToken::new();

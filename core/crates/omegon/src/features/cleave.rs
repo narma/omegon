@@ -767,6 +767,7 @@ impl CleaveFeature {
             injected_env: Vec::new(),
             child_runtime: crate::cleave::CleaveChildRuntimeProfile::default(),
             progress_sink,
+            workflow: crate::workflow::discover_workflow(&self.repo_path),
         };
 
         let result = cleave::run_cleave(
