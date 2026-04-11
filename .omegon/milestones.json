@@ -420,18 +420,21 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 61,
+    "rc_count": 62,
     "notes": [
       "feat(aggregate-mode): Add a minimal directory-level aggregation/report mode for benchmark result files, shaped by existing result artifact structure. Include tests and doc updates if the mode is added.",
       "feat(anthropic): prefer adaptive thinking for claude 4.6",
       "feat(auspex): add mode-aware local handoff probe",
       "feat(auspex): launch desktop handoff from cached startup payload",
+      "feat(benchmark): add archive and reset workflow",
       "feat(benchmark): add backward-compatible task schema upgrade",
       "feat(benchmark): add omegon bench run-task adapter",
       "feat(benchmark): add plaintext result reporting",
       "feat(benchmark): add shared adapter contract for pi and claude",
       "feat(benchmark): aggregate report directories safely",
+      "feat(benchmark): derive process metrics in result artifacts",
       "feat(benchmark): emit omegon context telemetry in results",
+      "feat(benchmark): emit richer task and acceptance artifacts",
       "feat(benchmark): run adapters in clean-room mode",
       "feat(benchmark): scaffold token efficiency harness v1",
       "feat(benchmark): support task-level model pinning",
@@ -550,6 +553,7 @@
       "fix(loop): escalate post-inspection execution pressure",
       "fix(loop): escalate sustained tool-continuation churn",
       "fix(loop): generalize execution-pressure heuristics",
+      "fix(loop): treat constraint discovery as partial progress",
       "fix(multimodal): preserve attachment source paths for redisplay",
       "fix(multimodal): store user attachments in canonical conversation state",
       "fix(providers): cache Ollama probe result and tighten TCP timeout",
@@ -669,7 +673,7 @@
       "refactor(web): route canonical slash commands through control",
       "refactor(web): route typed control commands through dispatcher"
     ],
-    "rc_version": "0.15.10-rc.67",
-    "last_rc": "2026-04-11T00:56:55Z"
+    "rc_version": "0.15.10-rc.68",
+    "last_rc": "2026-04-11T02:07:24Z"
   }
 }
