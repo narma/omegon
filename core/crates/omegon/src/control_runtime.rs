@@ -34,6 +34,7 @@ pub enum ControlRequest {
     },
     SetThinking { level: crate::settings::ThinkingLevel },
     StatusView,
+    WorkspaceStatusView,
     SessionStatsView,
     TreeView { args: String },
     NoteAdd { text: String },
@@ -191,6 +192,7 @@ pub async fn execute_control(
             set_thinking_response(ctx.shared_settings, level).await
         }
         ControlRequest::StatusView => status_view_response(ctx.runtime_state, ctx.shared_settings).await,
+        ControlRequest::WorkspaceStatusView => workspace_status_view_response(ctx.agent).await,
         ControlRequest::SessionStatsView => {
             session_stats_view_response(ctx.runtime_state, ctx.shared_settings, ctx.agent).await
         }
@@ -567,6 +569,45 @@ pub async fn status_view_response(
     SlashCommandResponse {
         accepted: true,
         output: Some(panel),
+    }
+}
+
+pub async fn workspace_status_view_response(agent: &InteractiveAgentHost) -> SlashCommandResponse {
+    let lease = crate::workspace::runtime::read_workspace_lease(&agent.cwd)
+        .ok()
+        .flatten();
+    let registry = crate::workspace::runtime::read_workspace_registry(&agent.cwd)
+        .ok()
+        .flatten();
+
+    let Some(lease) = lease else {
+        return SlashCommandResponse {
+            accepted: true,
+            output: Some("Workspace: no local runtime metadata yet.".into()),
+        };
+    };
+
+    let occupancy = registry
+        .as_ref()
+        .map(|registry| registry.workspaces.len())
+        .unwrap_or(1);
+    let owner = lease.owner_session_id.as_deref().unwrap_or("(none)");
+    let text = format!(
+        "Workspace\n  ID:           {}\n  Project:      {}\n  Path:         {}\n  Branch:       {}\n  Role:         {:?}\n  Kind:         {:?}\n  Mutability:   {:?}\n  Owner:        {}\n  Source:       {}\n  Local Views:  {}",
+        lease.workspace_id,
+        lease.project_id,
+        lease.path,
+        lease.branch,
+        lease.role,
+        lease.workspace_kind,
+        lease.mutability,
+        owner,
+        lease.source,
+        occupancy,
+    );
+    SlashCommandResponse {
+        accepted: true,
+        output: Some(text),
     }
 }
 

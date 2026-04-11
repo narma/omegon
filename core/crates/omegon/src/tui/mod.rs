@@ -3326,6 +3326,15 @@ impl App {
                 }
             }
 
+            "workspace" => {
+                let request = crate::control_runtime::ControlRequest::WorkspaceStatusView;
+                let _ = tx.try_send(TuiCommand::ExecuteControl {
+                    request,
+                    respond_to: None,
+                });
+                SlashResult::Handled
+            }
+
             "persona" => {
                 if args == "off" {
                     if let Some(ref mut registry) = self.plugin_registry {
@@ -4634,6 +4643,7 @@ pub struct TuiInitialState {
     pub total_facts: usize,
     pub focused_node: Option<dashboard::FocusedNodeSummary>,
     pub active_changes: Vec<dashboard::ChangeSummary>,
+    pub workspace_status: Option<String>,
 }
 
 /// Path to the editor history file — persists across sessions.

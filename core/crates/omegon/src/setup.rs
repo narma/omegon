@@ -845,6 +845,18 @@ impl AgentSetup {
             total_facts: self.startup_snapshot.total_facts,
             focused_node: self.startup_snapshot.lifecycle.focused_node.clone(),
             active_changes: self.startup_snapshot.lifecycle.active_changes.clone(),
+            workspace_status: Some(format!(
+                "Workspace {} [{:?}/{:?}] owner={} admission={:?}",
+                self.workspace_state.lease.workspace_id,
+                self.workspace_state.lease.role,
+                self.workspace_state.lease.workspace_kind,
+                self.workspace_state
+                    .lease
+                    .owner_session_id
+                    .as_deref()
+                    .unwrap_or("(none)"),
+                self.workspace_state.admission
+            )),
         }
     }
 }

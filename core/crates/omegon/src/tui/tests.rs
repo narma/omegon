@@ -1289,6 +1289,20 @@ fn slash_update_install_requires_update_info() {
 }
 
 #[test]
+fn slash_workspace_enqueues_execute_control() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+
+    let result = app.handle_slash_command("/workspace", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl { .. } => {}
+        other => panic!("expected ExecuteControl, got {other:?}"),
+    }
+}
+
+#[test]
 fn slash_help_returns_display() {
     let mut app = test_app();
     let tx = test_tx();
