@@ -190,30 +190,23 @@ pub fn canonical_provider_id(id: &str) -> &str {
     match id.trim().to_ascii_lowercase().as_str() {
         "claude" => "anthropic",
         "chatgpt" | "codex" => "openai-codex",
-        other => {
-            // Lifetime widen: only return canonical static ids for recognized aliases.
-            // Unknown providers fall back to the original caller-owned id path elsewhere.
-            if other == "anthropic"
-                || other == "openai"
-                || other == "openai-codex"
-                || other == "openrouter"
-                || other == "ollama-cloud"
-                || other == "ollama"
-                || other == "groq"
-                || other == "xai"
-                || other == "mistral"
-                || other == "cerebras"
-                || other == "brave"
-                || other == "tavily"
-                || other == "serper"
-                || other == "github"
-                || other == "gitlab"
-                || other == "huggingface"
-                {
-                    return provider_by_id(other).map(|p| p.id).unwrap_or("anthropic");
-                }
-            id
-        }
+        "anthropic" => "anthropic",
+        "openai" => "openai",
+        "openai-codex" => "openai-codex",
+        "openrouter" => "openrouter",
+        "ollama-cloud" => "ollama-cloud",
+        "ollama" => "ollama",
+        "groq" => "groq",
+        "xai" => "xai",
+        "mistral" => "mistral",
+        "cerebras" => "cerebras",
+        "brave" => "brave",
+        "tavily" => "tavily",
+        "serper" => "serper",
+        "github" => "github",
+        "gitlab" => "gitlab",
+        "huggingface" => "huggingface",
+        _ => id,
     }
 }
 
@@ -1559,5 +1552,30 @@ mod tests {
         assert_eq!(canonical_provider_id("chatgpt"), "openai-codex");
         assert_eq!(canonical_provider_id("codex"), "openai-codex");
         assert_eq!(canonical_provider_id("openai"), "openai");
+    }
+
+    #[test]
+    fn canonical_provider_id_returns_static_known_provider_ids_without_recursing() {
+        for provider in [
+            "anthropic",
+            "openai",
+            "openai-codex",
+            "openrouter",
+            "ollama-cloud",
+            "ollama",
+            "groq",
+            "xai",
+            "mistral",
+            "cerebras",
+            "brave",
+            "tavily",
+            "serper",
+            "github",
+            "gitlab",
+            "huggingface",
+        ] {
+            assert_eq!(canonical_provider_id(provider), provider);
+            assert!(provider_by_id(provider).is_some(), "provider should resolve: {provider}");
+        }
     }
 }
