@@ -37,6 +37,7 @@ mod task_spawn;
 mod update;
 mod upstream_errors;
 mod usage;
+mod workspace;
 
 mod conversation;
 mod lifecycle;

@@ -36,6 +36,7 @@ ai/benchmarks/archive/
 .jj/
 .omegon/history
 .omegon/release-worktrees/
+.omegon/runtime/
 test-project/
 dist/
 
