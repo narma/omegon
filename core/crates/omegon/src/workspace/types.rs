@@ -30,6 +30,34 @@ pub enum Mutability {
     ReadOnly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceActionKind {
+    SessionStart,
+    DaemonAttach,
+    CleaveChildCreate,
+    ReleaseCut,
+    BenchmarkRun,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceAdmissionRequest {
+    pub requested_role: WorkspaceRole,
+    pub requested_kind: WorkspaceKind,
+    pub requested_mutability: Mutability,
+    pub session_id: Option<String>,
+    pub action: WorkspaceActionKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AdmissionOutcome {
+    GrantedMutable,
+    GrantedReadOnly,
+    ConflictReadOnlySuggested { owner_session_id: Option<String> },
+    ConflictCreateWorkspaceSuggested { owner_session_id: Option<String> },
+    ConflictStaleLeaseAdoptable { owner_session_id: Option<String> },
+    DeniedByAuthorityPolicy { reason: String },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceLease {
     pub project_id: String,
@@ -70,6 +98,21 @@ pub struct WorkspaceRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_admission_request_holds_role_kind_and_action() {
+        let req = WorkspaceAdmissionRequest {
+            requested_role: WorkspaceRole::Feature,
+            requested_kind: WorkspaceKind::Mixed,
+            requested_mutability: Mutability::Mutable,
+            session_id: Some("session-1".into()),
+            action: WorkspaceActionKind::SessionStart,
+        };
+        assert_eq!(req.requested_role, WorkspaceRole::Feature);
+        assert_eq!(req.requested_kind, WorkspaceKind::Mixed);
+        assert_eq!(req.requested_mutability, Mutability::Mutable);
+        assert_eq!(req.action, WorkspaceActionKind::SessionStart);
+    }
 
     #[test]
     fn workspace_lease_round_trip() {
