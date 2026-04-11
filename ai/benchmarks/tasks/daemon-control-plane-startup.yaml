@@ -1,0 +1,24 @@
+id: daemon-control-plane-startup
+kind: implementation
+repo: .
+base_ref: f03c031df30c063f87038d4124705dec57e18f77
+model: anthropic:claude-sonnet-4-6
+slim: false
+prompt: |
+  Ensure the daemon control plane still starts even when no executable LLM provider is configured. The daemon should bring up its control surface and remain attachable for remote tooling and blackbox tests instead of aborting startup when provider detection returns no bridge.
+harnesses:
+  - omegon
+  - claude-code
+  - pi
+acceptance:
+  required:
+    - cargo test -p omegon --test daemon_serve_blackbox --manifest-path core/Cargo.toml -- --nocapture
+success_files:
+  - core/crates/omegon/src/main.rs
+budget:
+  max_turns: 20
+  max_minutes: 25
+process_expectations:
+  must_preserve_control_plane_startup: true
+notes: |
+  Light benchmark rung C2: daemon startup robustness. Historically coherent acceptance: the task starts before the NullBridge daemon startup fix and only checks the daemon blackbox startup/attach surface.

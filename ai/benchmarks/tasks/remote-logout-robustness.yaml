@@ -1,0 +1,25 @@
+id: remote-logout-robustness
+kind: implementation
+repo: .
+base_ref: 1e98ca2521e8ca25eb0480acb83c5ddb5f7230bc
+model: anthropic:claude-sonnet-4-6
+slim: false
+prompt: |
+  Make remote auth logout robust for canonical provider aliases. The remote slash logout path should accept valid aliases such as openai-codex / codex / chatgpt, and logout should be safe to invoke even when the provider is already effectively logged out.
+harnesses:
+  - omegon
+  - claude-code
+  - pi
+acceptance:
+  required:
+    - cargo test -p omegon remote_slash_logout_accepts_openai_codex_provider --manifest-path core/Cargo.toml -- --nocapture
+success_files:
+  - core/crates/omegon/src/auth.rs
+  - core/crates/omegon/src/main.rs
+budget:
+  max_turns: 20
+  max_minutes: 25
+process_expectations:
+  must_handle_canonical_provider_aliases: true
+notes: |
+  Light benchmark rung C1: auth/logout robustness. Historically coherent acceptance: the task starts before the canonical-provider alias cleanup and uses the focused logout test only.
