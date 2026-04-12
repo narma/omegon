@@ -81,6 +81,7 @@ impl Default for LoopConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct AutoDelegatePlan {
     worker_profile: &'static str,
+    background: bool,
 }
 
 fn classify_auto_delegate_plan(
@@ -99,7 +100,7 @@ fn classify_auto_delegate_plan(
     if !conversation.intent.files_modified.is_empty() {
         return None;
     }
-    if tool_calls.iter().any(|call| is_mutation_tool(&call.name) || call.name == "commit") {
+    if tool_calls.iter().any(|call| call.name == "commit") {
         return None;
     }
     if matches!(drift_kind, Some(DriftKind::OrientationChurn))
@@ -107,6 +108,13 @@ fn classify_auto_delegate_plan(
     {
         return Some(AutoDelegatePlan {
             worker_profile: "scout",
+            background: true,
+        });
+    }
+    if is_narrow_patch_candidate(tool_calls) {
+        return Some(AutoDelegatePlan {
+            worker_profile: "patch",
+            background: false,
         });
     }
     if matches!(dominant_phase, Some(OodaPhase::Act))
@@ -114,6 +122,7 @@ fn classify_auto_delegate_plan(
     {
         return Some(AutoDelegatePlan {
             worker_profile: "verify",
+            background: false,
         });
     }
     None
@@ -138,7 +147,7 @@ fn auto_delegate_tool_call(
         name: "delegate".to_string(),
         arguments: serde_json::json!({
             "task": task,
-            "background": false,
+            "background": plan.background,
             "worker_profile": plan.worker_profile,
         }),
     }
@@ -187,6 +196,37 @@ fn is_targeted_repo_inspection_tool(name: &str) -> bool {
 
 fn is_mutation_tool_name(name: &str) -> bool {
     matches!(name, "write" | "edit" | "change")
+}
+
+fn mutation_targets_within_limit(tool_calls: &[ToolCall], max_files: usize) -> bool {
+    let mut paths = std::collections::BTreeSet::new();
+    for call in tool_calls {
+        if !is_mutation_tool_name(&call.name) {
+            continue;
+        }
+        let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) else {
+            return false;
+        };
+        paths.insert(path.to_string());
+        if paths.len() > max_files {
+            return false;
+        }
+    }
+    !paths.is_empty()
+}
+
+fn is_narrow_patch_candidate(tool_calls: &[ToolCall]) -> bool {
+    if !tool_calls.iter().any(|call| is_mutation_tool_name(&call.name)) {
+        return false;
+    }
+    if !mutation_targets_within_limit(tool_calls, 2) {
+        return false;
+    }
+    tool_calls.iter().all(|call| {
+        is_mutation_tool_name(&call.name)
+            || call.name == "read"
+            || is_validation_tool(call)
+    })
 }
 
 fn is_validation_tool(call: &ToolCall) -> bool {
@@ -3810,6 +3850,7 @@ mod tests {
             Some(DriftKind::OrientationChurn),
         );
         assert_eq!(plan.map(|p| p.worker_profile), Some("scout"));
+        assert_eq!(plan.map(|p| p.background), Some(true));
     }
 
     #[test]
@@ -3836,6 +3877,73 @@ mod tests {
             None,
         );
         assert_eq!(plan.map(|p| p.worker_profile), Some("verify"));
+        assert_eq!(plan.map(|p| p.background), Some(false));
+    }
+
+    #[test]
+    fn auto_delegate_patch_on_small_scoped_edit_turn() {
+        let config = LoopConfig {
+            settings: Some(std::sync::Arc::new(std::sync::Mutex::new({
+                let mut s = crate::settings::Settings::new("openai-codex:gpt-4.1");
+                s.set_slim_mode(true);
+                s
+            }))),
+            ..LoopConfig::default()
+        };
+        let conversation = ConversationState::new();
+        let tool_calls = vec![
+            ToolCall {
+                id: "1".into(),
+                name: "read".into(),
+                arguments: serde_json::json!({"path": "src/lib.rs"}),
+            },
+            ToolCall {
+                id: "2".into(),
+                name: "edit".into(),
+                arguments: serde_json::json!({"path": "src/lib.rs", "oldText": "a", "newText": "b"}),
+            },
+            ToolCall {
+                id: "3".into(),
+                name: "bash".into(),
+                arguments: serde_json::json!({"command": "cargo test -p omegon lib"}),
+            },
+        ];
+        let plan = classify_auto_delegate_plan(
+            &config,
+            &conversation,
+            &tool_calls,
+            Some(OodaPhase::Act),
+            None,
+        );
+        assert_eq!(plan.map(|p| p.worker_profile), Some("patch"));
+        assert_eq!(plan.map(|p| p.background), Some(false));
+    }
+
+    #[test]
+    fn auto_delegate_tool_call_marks_background_for_scout_only() {
+        let conversation = ConversationState::new();
+        let scout = auto_delegate_tool_call(
+            &conversation,
+            AutoDelegatePlan {
+                worker_profile: "scout",
+                background: true,
+            },
+        );
+        let patch = auto_delegate_tool_call(
+            &conversation,
+            AutoDelegatePlan {
+                worker_profile: "patch",
+                background: false,
+            },
+        );
+        assert_eq!(
+            scout.arguments.get("background").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            patch.arguments.get("background").and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 
     #[test]
