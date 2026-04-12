@@ -362,6 +362,23 @@ def cleanup_stale_benchmark_tempdirs() -> None:
     if leaked:
         audit(f"cleaning {len(leaked)} leaked benchmark temp director{'y' if len(leaked) == 1 else 'ies'} from {root}")
         cleanup_benchmark_tempfiles(leaked)
+    # Prune stale per-task cargo-target dirs left by pre-fix sharding.  The
+    # current scheme shards by harness only (e.g. cargo-target/omegon), so
+    # any subdirectory of cargo-target/ whose name is NOT a known harness is
+    # a legacy per-task dir that can be removed.
+    try:
+        cargo_target = benchmark_cache_root() / "cargo-target"
+        if cargo_target.is_dir():
+            stale = [
+                child
+                for child in cargo_target.iterdir()
+                if child.is_dir() and child.name not in SUPPORTED_HARNESSES
+            ]
+            if stale:
+                audit(f"pruning {len(stale)} stale per-task cargo-target dir(s)")
+                cleanup_benchmark_tempfiles(stale)
+    except OSError:
+        pass
 
 
 def benchmark_cache_root() -> Path:
@@ -393,12 +410,12 @@ def benchmark_process_env(repo_path: Path, clean_repo_path: Path, harness: str, 
     source_core = repo_path / "core"
     clean_core = clean_repo_path / "core"
     if source_core.exists() and clean_core.exists():
-        safe_task = "".join(ch if ch.isalnum() or ch in ("-", "_") else "-" for ch in task_id)
         # Anchor the shared cargo target dir outside the source tree so
-        # per-run state cannot leak back into the working copy. Per-(task,
-        # harness) sharding is preserved so incremental builds across
-        # consecutive matrix cells still hit a warm cache.
-        shared_target = benchmark_cache_root() / "cargo-target" / safe_task / harness
+        # per-run state cannot leak back into the working copy.  Shard by
+        # harness only (not by task) — every task builds the same workspace,
+        # so a single target dir per harness gives warm incremental builds
+        # without accumulating multi-GB dirs per task.
+        shared_target = benchmark_cache_root() / "cargo-target" / harness
         shared_target.mkdir(parents=True, exist_ok=True)
         env["CARGO_TARGET_DIR"] = str(shared_target.resolve())
     return env

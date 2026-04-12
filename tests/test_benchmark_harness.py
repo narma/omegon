@@ -880,7 +880,7 @@ acceptance: [echo ok]
             self.assertEqual(result.returncode, 2)
             self.assertIn("claude-code adapter requires 'claude' in PATH", result.stderr)
 
-    def test_benchmark_process_env_uses_dedicated_target_dir_per_task_and_harness(self) -> None:
+    def test_benchmark_process_env_uses_shared_target_dir_per_harness(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             repo = Path(tmpdir) / "repo"
             clean = Path(tmpdir) / "clean"
@@ -891,18 +891,47 @@ acceptance: [echo ok]
             old = os.environ.get("OMEGON_BENCHMARK_CACHE_DIR")
             os.environ["OMEGON_BENCHMARK_CACHE_DIR"] = str(cache)
             try:
-                env = BENCHMARK_HARNESS.benchmark_process_env(repo, clean, "omegon", "task:alpha")
+                env_a = BENCHMARK_HARNESS.benchmark_process_env(repo, clean, "omegon", "task:alpha")
+                env_b = BENCHMARK_HARNESS.benchmark_process_env(repo, clean, "omegon", "task:beta")
             finally:
                 if old is None:
                     os.environ.pop("OMEGON_BENCHMARK_CACHE_DIR", None)
                 else:
                     os.environ["OMEGON_BENCHMARK_CACHE_DIR"] = old
-            expected = (cache / "cargo-target" / "task-alpha" / "omegon").resolve()
-            self.assertEqual(env["CARGO_TARGET_DIR"], str(expected))
+            # Target dir is per-harness, NOT per-task — different tasks share
+            # the same target to avoid multi-GB accumulation.
+            expected = (cache / "cargo-target" / "omegon").resolve()
+            self.assertEqual(env_a["CARGO_TARGET_DIR"], str(expected))
+            self.assertEqual(env_b["CARGO_TARGET_DIR"], str(expected),
+                             "different tasks must share the same target dir")
             self.assertTrue(expected.exists(), "shared target dir should be created")
-            # Critically: the shared target dir must NOT be a path inside
-            # the source tree any more.
-            self.assertNotIn(str(repo), env["CARGO_TARGET_DIR"])
+            # The shared target dir must NOT be inside the source tree.
+            self.assertNotIn(str(repo), env_a["CARGO_TARGET_DIR"])
+
+    def test_cleanup_stale_per_task_cargo_target_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = Path(tmpdir) / "bench-cache"
+            cargo_target = cache / "cargo-target"
+            # Simulate legacy per-task dirs
+            (cargo_target / "litmus-at-symbol-file-selection" / "omegon").mkdir(parents=True)
+            (cargo_target / "controller-research-repair" / "omegon").mkdir(parents=True)
+            # Simulate current per-harness dirs (should be kept)
+            (cargo_target / "omegon").mkdir(parents=True)
+            (cargo_target / "claude-code").mkdir(parents=True)
+
+            old = os.environ.get("OMEGON_BENCHMARK_CACHE_DIR")
+            os.environ["OMEGON_BENCHMARK_CACHE_DIR"] = str(cache)
+            try:
+                BENCHMARK_HARNESS.cleanup_stale_benchmark_tempdirs()
+            finally:
+                if old is None:
+                    os.environ.pop("OMEGON_BENCHMARK_CACHE_DIR", None)
+                else:
+                    os.environ["OMEGON_BENCHMARK_CACHE_DIR"] = old
+
+            remaining = {child.name for child in cargo_target.iterdir()}
+            self.assertEqual(remaining, {"omegon", "claude-code"},
+                             "only per-harness dirs should survive cleanup")
 
     def test_benchmark_cache_root_resolution_order(self) -> None:
         # Save and restore environment so other tests are not perturbed.

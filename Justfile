@@ -274,6 +274,8 @@ rc-validate:
     set -euo pipefail
 
     echo "Release validation..."
+    echo "Rust warning gate..."
+    cd core && RUSTFLAGS="-D warnings" cargo check -p omegon -q
     cd core && cargo test -p omegon 2>&1 | tail -3
     cd ..
 
@@ -367,6 +369,9 @@ rc:
     fi
 
     echo "Note: full release validation is now split out of 'just rc'. Run 'just rc-validate' before cutting if you need local test confirmation."
+    echo "Rust warning gate..."
+    cd core && RUSTFLAGS="-D warnings" cargo check -p omegon -q
+    cd ..
 
     # From here on, rollback mutated files if anything fails before commit.
     MUTATED=0
@@ -449,6 +454,10 @@ release:
     # Preflight: proves repo is releasable before any mutation.
     # Checks branch, clean tree, tests, docs/install version, CHANGELOG.
     just preflight
+
+    echo "Rust warning gate..."
+    cd core && RUSTFLAGS="-D warnings" cargo check -p omegon -q
+    cd ..
 
     CURRENT=$(grep '^version = ' core/Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
     NEW_VERSION=$(echo "$CURRENT" | sed 's/-rc\.[0-9]*//')
