@@ -58,7 +58,7 @@ use self::dashboard::DashboardState;
 use self::editor::Editor;
 use self::footer::{FooterData, SessionUsageSlice};
 use self::instruments::InstrumentPanel;
-use self::segments::{build_meta_tag, SegmentContent, SegmentExportMode};
+use self::segments::{build_meta_tag, SegmentContent, SegmentExportMode, SegmentRenderMode};
 
 #[derive(Debug, Clone)]
 pub struct PromptSubmission {
@@ -2385,7 +2385,13 @@ impl App {
         if self.conversation.tabs.is_conversation_active() {
             // Render conversation widget (can mutate conv_state via frame.render_stateful_widget)
             let (segments, conv_state) = self.conversation.segments_and_state();
-            let conv_widget = conv_widget::ConversationWidget::new(segments, t.as_ref());
+            let conv_widget = conv_widget::ConversationWidget::new(segments, t.as_ref()).with_mode(
+                if matches!(self.ui_mode, UiMode::Slim) {
+                    SegmentRenderMode::Slim
+                } else {
+                    SegmentRenderMode::Full
+                },
+            );
             frame.render_stateful_widget(conv_widget, content_area, conv_state);
         } else {
             // Render extension widget with schema-aware formatting
@@ -2606,15 +2612,26 @@ impl App {
             } else {
                 "⏎ confirm  Esc cancel ".into()
             };
-            let editor_block = Block::default()
-                .borders(Borders::TOP)
-                .border_type(ratatui::widgets::BorderType::Rounded)
-                .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
-                .title(editor_title)
-                .title_bottom(
-                    Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
-                        .right_aligned(),
-                );
+            let editor_block = if matches!(self.ui_mode, UiMode::Slim) {
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::default().fg(t.border_dim()).bg(t.surface_bg()))
+                    .title(editor_title)
+                    .title_bottom(
+                        Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
+                            .right_aligned(),
+                    )
+            } else {
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_type(ratatui::widgets::BorderType::Rounded)
+                    .border_style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
+                    .title(editor_title)
+                    .title_bottom(
+                        Line::from(Span::styled(hint_text, Style::default().fg(t.border_dim())))
+                            .right_aligned(),
+                    )
+            };
             let editor_widget = Paragraph::new(masked)
                 .style(Style::default().fg(t.accent_muted()).bg(t.surface_bg()))
                 .block(editor_block)
@@ -6337,6 +6354,18 @@ pub async fn run_tui(
                         // Ctrl+F: toggle focus mode (copy-first selected segment view)
                         (KeyCode::Char('f'), KeyModifiers::CONTROL) => {
                             app.set_focus_mode(!app.focus_mode);
+                        }
+
+                        // Ctrl+G: UI full preset
+                        (KeyCode::Char('g'), KeyModifiers::CONTROL) => {
+                            app.set_ui_mode(UiMode::Full);
+                            app.show_toast("UI mode → full", ratatui_toaster::ToastType::Info);
+                        }
+
+                        // Ctrl+L: UI slim preset
+                        (KeyCode::Char('l'), KeyModifiers::CONTROL) => {
+                            app.set_ui_mode(UiMode::Slim);
+                            app.show_toast("UI mode → slim", ratatui_toaster::ToastType::Info);
                         }
 
                         // Ctrl+D: toggle sidebar navigation mode (design tree)

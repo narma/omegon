@@ -7,7 +7,7 @@
 
 use ratatui::prelude::*;
 
-use super::segments::{Segment, SegmentContent};
+use super::segments::{Segment, SegmentContent, SegmentRenderMode};
 use super::theme::Theme;
 
 /// Scroll state for the conversation widget.
@@ -183,11 +183,21 @@ impl Default for ConvState {
 pub struct ConversationWidget<'a> {
     segments: &'a [Segment],
     theme: &'a dyn Theme,
+    mode: SegmentRenderMode,
 }
 
 impl<'a> ConversationWidget<'a> {
     pub fn new(segments: &'a [Segment], theme: &'a dyn Theme) -> Self {
-        Self { segments, theme }
+        Self {
+            segments,
+            theme,
+            mode: SegmentRenderMode::Full,
+        }
+    }
+
+    pub fn with_mode(mut self, mode: SegmentRenderMode) -> Self {
+        self.mode = mode;
+        self
     }
 }
 
@@ -274,7 +284,7 @@ impl<'a> StatefulWidget for ConversationWidget<'a> {
                     width: area.width,
                     height: seg_height.min(available_height),
                 };
-                segment.render(seg_area, buf, self.theme);
+                segment.render(seg_area, buf, self.theme, self.mode);
             } else {
                 // Segment starts ABOVE the viewport — partially visible.
                 // Render into a temp buffer at full size, then copy the
@@ -298,7 +308,7 @@ impl<'a> StatefulWidget for ConversationWidget<'a> {
                         cell.set_fg(fg);
                     }
                 }
-                segment.render(temp_area, &mut temp_buf, self.theme);
+                segment.render(temp_area, &mut temp_buf, self.theme, self.mode);
 
                 // Copy the visible portion from temp_buf to main buf
                 for row in 0..visible_rows {
@@ -560,4 +570,35 @@ mod tests {
             "live tail should continue following output"
         );
     }
+
+    #[test]
+    fn slim_mode_renders_lighter_segment_chrome() {
+        let segments = vec![
+            Segment::user_prompt("hello"),
+            Segment {
+                meta: Default::default(),
+                content: SegmentContent::AssistantText {
+                    text: "response".into(),
+                    thinking: String::new(),
+                    complete: true,
+                },
+            },
+        ];
+        let widget = ConversationWidget::new(&segments, &Alpharius).with_mode(SegmentRenderMode::Slim);
+        let area = Rect::new(0, 0, 80, 12);
+        let mut buf = Buffer::empty(area);
+        let mut state = ConvState::new();
+        widget.render(area, &mut buf, &mut state);
+
+        let mut text = String::new();
+        for y in 0..12 {
+            for x in 0..80 {
+                text.push_str(buf[(x, y)].symbol());
+            }
+            text.push('\n');
+        }
+        assert!(!text.contains("╭"), "slim mode should avoid rounded card chrome: {text}");
+        assert!(text.contains("│"), "slim mode should keep a simple left rule: {text}");
+    }
+
 }

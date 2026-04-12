@@ -1,80 +1,109 @@
 {
-  "runId": "clv-ag4ik0lh-ub05",
-  "directive": "Full pass on CHANGELOG.md, landing page, and install docs to reflect current 0.15.10-rc state: brew RC channel, upgrade path, release flow fixes, and accurate feature descriptions.",
+  "runId": "clv-uby91ndu-uby9",
+  "directive": "Add hotkeys for /ui presets, reduce slim editor chrome, and make the normal slim conversation widget render with lighter card/chrome affordances while preserving /focus as the stricter plaintext mode.",
   "repoPath": "/Users/cwilson/workspace/black-meridian/omegon",
   "workspacePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace",
-  "supervisorToken": "supv-18a583ad452cc700",
+  "supervisorToken": "supv-18a5967fb3a2f940",
   "children": [
     {
       "childId": 0,
-      "label": "changelog",
-      "description": "Update CHANGELOG.md Unreleased section to add all changes since 0.15.10 stable entry: brew RC channel (omegon-rc formula, brew install styrene-lab/tap/omegon-rc), brew-managed upgrade guard in update.rs (detects Cellar path, redirects to brew upgrade), developer just cut-rc command, release workflow fixes (draft-before-upload, lifecycle doctor skip, rc validation split), TUI fixes (nuclear panel clear #36, table body trailing pipe #37), and glibc legacy build enforcement with Linux ABI validation matrix.",
+      "label": "hotkeys",
+      "description": "Add TUI hotkeys for UI posture switching, including fast access to /ui full and /ui slim, with tests covering the new keybindings and state transitions.",
       "scope": [
-        "CHANGELOG.md"
+        "core/crates/omegon/src/tui/mod.rs",
+        "core/crates/omegon/src/tui/tests.rs"
       ],
       "dependsOn": [],
-      "status": "pending",
-      "branch": "cleave/0-changelog",
-      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/0-wt-changelog",
+      "status": "running",
+      "branch": "cleave/0-hotkeys",
+      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/0-wt-hotkeys",
       "backend": "native",
-      "executeModel": "anthropic:claude-sonnet-4-6"
+      "executeModel": "openai-codex:gpt-5.4",
+      "pid": 85673,
+      "startedAtUnixMs": 1775991104371,
+      "lastActivityUnixMs": 1775991104371,
+      "adoptionWorktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/0-wt-hotkeys",
+      "adoptionModel": "openai-codex:gpt-5.4",
+      "supervisorToken": "supv-18a5967fb3a2f940"
     },
     {
       "childId": 1,
-      "label": "landing",
-      "description": "Update site/src/pages/index.astro landing page: add RC install option alongside the brew stable line (brew install styrene-lab/tap/omegon-rc), update the hero-alt-install to mention both stable and RC channel, verify and update stats (providers count, tools count, binary size). Keep the existing tone and style.",
+      "label": "editor-chrome",
+      "description": "Reduce slim-mode editor chrome in the TUI while preserving full-mode styling and interaction behavior. Update tests for the slim editor presentation and hints.",
       "scope": [
-        "site/src/pages/index.astro"
+        "core/crates/omegon/src/tui/mod.rs",
+        "core/crates/omegon/src/tui/tests.rs"
       ],
       "dependsOn": [],
-      "status": "pending",
-      "branch": "cleave/1-landing",
-      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/1-wt-landing",
+      "status": "running",
+      "branch": "cleave/1-editor-chrome",
+      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/1-wt-editor-chrome",
       "backend": "native",
-      "executeModel": "anthropic:claude-sonnet-4-6"
+      "executeModel": "openai-codex:gpt-5.4",
+      "pid": 85674,
+      "startedAtUnixMs": 1775991104373,
+      "lastActivityUnixMs": 1775991104373,
+      "adoptionWorktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/1-wt-editor-chrome",
+      "adoptionModel": "openai-codex:gpt-5.4",
+      "supervisorToken": "supv-18a5967fb3a2f940"
     },
     {
       "childId": 2,
-      "label": "install-docs",
-      "description": "Update site/src/pages/docs/install.astro: add RC channel section under Homebrew with brew install styrene-lab/tap/omegon-rc and brew upgrade styrene-lab/tap/omegon-rc, update the Updates section to note that brew-managed installs should use brew upgrade (not the install script), document that the in-app /upgrade command redirects brew-managed installs to brew upgrade automatically.",
+      "label": "conversation-chrome",
+      "description": "Make the normal slim conversation widget render with lighter card/chrome affordances, while keeping /focus as the stricter plaintext fullscreen mode. Update rendering tests/snapshots as needed.",
       "scope": [
-        "site/src/pages/docs/install.astro"
+        "core/crates/omegon/src/tui/mod.rs",
+        "core/crates/omegon/src/tui/tests.rs",
+        "core/crates/omegon/src/tui/snapshot_tests.rs",
+        "core/crates/omegon/src/tui/conv_widget.rs"
       ],
       "dependsOn": [],
-      "status": "pending",
-      "branch": "cleave/2-install-docs",
-      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/2-wt-install-docs",
+      "status": "running",
+      "branch": "cleave/2-conversation-chrome",
+      "worktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/2-wt-conversation-chrome",
       "backend": "native",
-      "executeModel": "anthropic:claude-sonnet-4-6"
+      "executeModel": "openai-codex:gpt-5.4",
+      "pid": 85675,
+      "startedAtUnixMs": 1775991104374,
+      "lastActivityUnixMs": 1775991104374,
+      "adoptionWorktreePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace/2-wt-conversation-chrome",
+      "adoptionModel": "openai-codex:gpt-5.4",
+      "supervisorToken": "supv-18a5967fb3a2f940"
     }
   ],
   "plan": {
     "children": [
       {
         "depends_on": [],
-        "description": "Update CHANGELOG.md Unreleased section to add all changes since 0.15.10 stable entry: brew RC channel (omegon-rc formula, brew install styrene-lab/tap/omegon-rc), brew-managed upgrade guard in update.rs (detects Cellar path, redirects to brew upgrade), developer just cut-rc command, release workflow fixes (draft-before-upload, lifecycle doctor skip, rc validation split), TUI fixes (nuclear panel clear #36, table body trailing pipe #37), and glibc legacy build enforcement with Linux ABI validation matrix.",
-        "label": "changelog",
+        "description": "Add TUI hotkeys for UI posture switching, including fast access to /ui full and /ui slim, with tests covering the new keybindings and state transitions.",
+        "label": "hotkeys",
         "scope": [
-          "CHANGELOG.md"
+          "core/crates/omegon/src/tui/mod.rs",
+          "core/crates/omegon/src/tui/tests.rs"
         ]
       },
       {
         "depends_on": [],
-        "description": "Update site/src/pages/index.astro landing page: add RC install option alongside the brew stable line (brew install styrene-lab/tap/omegon-rc), update the hero-alt-install to mention both stable and RC channel, verify and update stats (providers count, tools count, binary size). Keep the existing tone and style.",
-        "label": "landing",
+        "description": "Reduce slim-mode editor chrome in the TUI while preserving full-mode styling and interaction behavior. Update tests for the slim editor presentation and hints.",
+        "label": "editor-chrome",
         "scope": [
-          "site/src/pages/index.astro"
+          "core/crates/omegon/src/tui/mod.rs",
+          "core/crates/omegon/src/tui/tests.rs"
         ]
       },
       {
         "depends_on": [],
-        "description": "Update site/src/pages/docs/install.astro: add RC channel section under Homebrew with brew install styrene-lab/tap/omegon-rc and brew upgrade styrene-lab/tap/omegon-rc, update the Updates section to note that brew-managed installs should use brew upgrade (not the install script), document that the in-app /upgrade command redirects brew-managed installs to brew upgrade automatically.",
-        "label": "install-docs",
+        "description": "Make the normal slim conversation widget render with lighter card/chrome affordances, while keeping /focus as the stricter plaintext fullscreen mode. Update rendering tests/snapshots as needed.",
+        "label": "conversation-chrome",
         "scope": [
-          "site/src/pages/docs/install.astro"
+          "core/crates/omegon/src/tui/mod.rs",
+          "core/crates/omegon/src/tui/tests.rs",
+          "core/crates/omegon/src/tui/snapshot_tests.rs",
+          "core/crates/omegon/src/tui/conv_widget.rs"
         ]
       }
     ],
-    "rationale": "Three independent files with no shared edit surface — safe to parallelize"
+    "default_model": "openai-codex:gpt-5.4",
+    "rationale": "These three UI changes touch overlapping but separable TUI subsystems: input/key handling, editor rendering, and conversation rendering. Splitting them reduces merge risk and keeps each child testable."
   }
 }

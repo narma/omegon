@@ -1,42 +1,123 @@
 ---
 task_id: 1
-label: landing
-siblings: [0:changelog, 2:install-docs]
+label: editor-chrome
+siblings: [0:hotkeys, 2:conversation-chrome]
 ---
 
-# Task 1: landing
+# Task 1: editor-chrome
 
 ## Root Directive
 
-> Full pass on CHANGELOG.md, landing page, and install docs to reflect current 0.15.10-rc state: brew RC channel, upgrade path, release flow fixes, and accurate feature descriptions.
+> Add hotkeys for /ui presets, reduce slim editor chrome, and make the normal slim conversation widget render with lighter card/chrome affordances while preserving /focus as the stricter plaintext mode.
 
 ## Mission
 
-Update site/src/pages/index.astro landing page: add RC install option alongside the brew stable line (brew install styrene-lab/tap/omegon-rc), update the hero-alt-install to mention both stable and RC channel, verify and update stats (providers count, tools count, binary size). Keep the existing tone and style.
+Reduce slim-mode editor chrome in the TUI while preserving full-mode styling and interaction behavior. Update tests for the slim editor presentation and hints.
 
 ## Scope
 
-- `site/src/pages/index.astro`
+- `core/crates/omegon/src/tui/mod.rs`
+- `core/crates/omegon/src/tui/tests.rs`
 
 **Depends on:** none (independent)
 
 ## Siblings
 
-- **changelog**: Update CHANGELOG.md Unreleased section to add all changes since 0.15.10 stable entry: brew RC channel (omegon-rc formula, brew install styrene-lab/tap/omegon-rc), brew-managed upgrade guard in update.rs (detects Cellar path, redirects to brew upgrade), developer just cut-rc command, release workflow fixes (draft-before-upload, lifecycle doctor skip, rc validation split), TUI fixes (nuclear panel clear #36, table body trailing pipe #37), and glibc legacy build enforcement with Linux ABI validation matrix.
-- **install-docs**: Update site/src/pages/docs/install.astro: add RC channel section under Homebrew with brew install styrene-lab/tap/omegon-rc and brew upgrade styrene-lab/tap/omegon-rc, update the Updates section to note that brew-managed installs should use brew upgrade (not the install script), document that the in-app /upgrade command redirects brew-managed installs to brew upgrade automatically.
+- **hotkeys**: Add TUI hotkeys for UI posture switching, including fast access to /ui full and /ui slim, with tests covering the new keybindings and state transitions.
+- **conversation-chrome**: Make the normal slim conversation widget render with lighter card/chrome affordances, while keeping /focus as the stricter plaintext fullscreen mode. Update rendering tests/snapshots as needed.
 
 ## Dependency Versions
 
 Use these exact versions — do not rely on training data for API shapes:
 
 ```toml
-# site/package.json
+# core/crates/omegon/Cargo.toml
 [dependencies]
-@astrojs/sitemap = "^3.3.0"
-astro = "^5.7.0"
-markdown-it = "^14.1.1"
-[devDependencies]
-gray-matter = "^4.0.3"
+omegon-extension = { path = "../omegon-extension" }
+omegon-traits = { path = "../omegon-traits" }
+omegon-git = { path = "../omegon-git" }
+omegon-memory = { path = "../omegon-memory" }
+omegon-codescan = { path = "../omegon-codescan" }
+omegon-secrets = { path = "../omegon-secrets" }
+opsx-core = { path = "../opsx-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+toml = "0.8"
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+rusqlite = { workspace = true }
+tokio-util = { workspace = true }
+indexmap = { workspace = true }
+dirs = "6.0.0"
+unicode-truncate = "2.0"
+chrono = "0.4"
+libc = "0.2"
+regex-lite = "0.1"
+ratatui = "0.30.0"
+syntect = { version = "5", default-features = false, features = ["default-syntaxes", "default-themes", "regex-onig"] }
+tui-syntax-highlight = "0.2"
+tachyonfx = { version = "0.25.0", features = ["sendable"] }
+crossterm = "0.29.0"
+reqwest = { version = "0.13.2", features = ["json", "stream"] }
+tokio-stream = "0.1.18"
+sha2 = "0.10.9"
+secrecy = "0.10"
+sysinfo = "0.33"
+getrandom = "0.4.2"
+open = "5.3.3"
+tracing-appender = "0.2.4"
+unicode-width = "0.2.2"
+ratatui-image = { version = "10.0.6", default-features = false, features = ["crossterm", "image-defaults"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+axum = { version = "0.8.8", features = ["ws", "macros"] }
+tower-http = { version = "0.6.8", features = ["cors"] }
+futures-util = "0.3.32"
+base64 = "0.22"
+hmac = "0.12"
+ansi-to-tui = "8.0"
+tui-tree-widget = "0.24"
+ratatui-toaster = "0.1"
+ratatui-textarea = { version = "0.8", features = ["crossterm"] }
+tui-popup = "0.7"
+hyperrat = "0.1"
+rmcp = { version = "1.2", features = ["transport-child-process", "client", "transport-streamable-http-client-reqwest", "auth"], default-features = false }
+tar = "0.4"
+flate2 = "1.0"
+sigstore = { version = "0.13.0", default-features = false, features = ["cosign", "rustls-tls"] }
+x509-parser = "0.17"
+rpassword = "7"
+
+[dev-dependencies]
+insta = "1.46"
+tempfile = "3.27.0"
+
+```
+
+## Test Convention
+
+Follow this pattern from an existing test in the same crate:
+
+```rust
+// From bridge.rs
+    #[test]
+    fn llm_message_user_round_trip() {
+        let msg = LlmMessage::User {
+            content: "hello".into(),
+            images: vec![],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""role":"user"#));
+        let parsed: LlmMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            LlmMessage::User { content, .. } => assert_eq!(content, "hello"),
+            _ => panic!("wrong variant"),
+        }
+    }
 ```
 
 
@@ -45,7 +126,27 @@ gray-matter = "^4.0.3"
 
 ### Test Convention
 
-Write tests for new functions and changed behavior — co-locate as *.test.ts
+Write tests as #[test] functions in the same file or a tests submodule
+
+Example from codebase:
+
+```rust
+// From bridge.rs
+    #[test]
+    fn llm_message_user_round_trip() {
+        let msg = LlmMessage::User {
+            content: "hello".into(),
+            images: vec![],
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""role":"user"#));
+        let parsed: LlmMessage = serde_json::from_str(&json).unwrap();
+        match parsed {
+            LlmMessage::User { content, .. } => assert_eq!(content, "hello"),
+            _ => panic!("wrong variant"),
+        }
+    }
+```
 
 
 ## Contract

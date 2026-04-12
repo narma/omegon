@@ -200,6 +200,13 @@ pub enum SegmentExportMode {
     Plaintext,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SegmentRenderMode {
+    #[default]
+    Full,
+    Slim,
+}
+
 /// The typed content of a conversation segment.
 #[derive(Debug, Clone)]
 pub enum SegmentContent {
@@ -481,12 +488,12 @@ impl Segment {
     }
 
     /// Render this segment into the given area of the buffer.
-    pub fn render(&self, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
+    pub fn render(&self, area: Rect, buf: &mut Buffer, t: &dyn Theme, mode: SegmentRenderMode) {
         use SegmentContent::*;
         let presentation = self.presentation();
         match &self.content {
             UserPrompt { text } => {
-                render_user_prompt(text, &presentation, &self.meta, area, buf, t)
+                render_user_prompt(text, &presentation, &self.meta, area, buf, t, mode)
             }
             AssistantText {
                 text,
@@ -502,6 +509,7 @@ impl Segment {
                     area,
                     buf,
                     t,
+                    mode,
                 );
             }
             ToolCard {
@@ -530,7 +538,7 @@ impl Segment {
                     t,
                 );
             }
-            SystemNotification { text } => render_system(text, area, buf, t),
+            SystemNotification { text } => render_system(text, area, buf, t, mode),
             LifecycleEvent { icon, text } => render_lifecycle(icon, text, area, buf, t),
             Image { path, alt } => render_image_placeholder(path, alt, area, buf, t),
             TurnSeparator => render_separator(area, buf, t),
@@ -673,7 +681,7 @@ impl Segment {
         let h = estimate.clamp(4, 400);
         let temp_area = Rect::new(0, 0, width, h);
         let mut temp_buf = Buffer::empty(temp_area);
-        self.render(temp_area, &mut temp_buf, t);
+        self.render(temp_area, &mut temp_buf, t, SegmentRenderMode::Full);
 
         // Find the last row with actual text content.
         // Skip border characters (│╰╯┐┘├┤┌└) in the first/last 2 columns
@@ -725,6 +733,7 @@ fn render_user_prompt(
     area: Rect,
     buf: &mut Buffer,
     t: &dyn Theme,
+    mode: SegmentRenderMode,
 ) {
     if area.width < 3 || area.height == 0 {
         return;
@@ -736,24 +745,32 @@ fn render_user_prompt(
         SegmentEmphasis::Normal => t.accent_muted(),
         SegmentEmphasis::Muted => t.border_dim(),
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color).bg(bg))
-        .title_top(Line::from(Span::styled(
-            format!(" {}", presentation.sigil),
-            Style::default()
-                .fg(border_color)
-                .bg(bg)
-                .add_modifier(Modifier::BOLD),
-        )))
-        .title_top(
-            top_right_timestamp(meta, t)
-                .unwrap_or_else(Line::default)
-                .right_aligned(),
-        )
-        .padding(Padding::horizontal(1))
-        .style(Style::default().bg(bg));
+    let block = if matches!(mode, SegmentRenderMode::Slim) {
+        Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    } else {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .title_top(Line::from(Span::styled(
+                format!(" {}", presentation.sigil),
+                Style::default()
+                    .fg(border_color)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD),
+            )))
+            .title_top(
+                top_right_timestamp(meta, t)
+                    .unwrap_or_else(Line::default)
+                    .right_aligned(),
+            )
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    };
     let inner = block.inner(area);
     block.render(area, buf);
 
@@ -893,6 +910,7 @@ fn render_assistant_text(
     area: Rect,
     buf: &mut Buffer,
     t: &dyn Theme,
+    mode: SegmentRenderMode,
 ) {
     if area.width < 3 || area.height == 0 {
         return;
@@ -904,17 +922,25 @@ fn render_assistant_text(
     } else {
         t.accent_muted()
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color).bg(bg))
-        .title_top(
-            top_right_timestamp(meta, t)
-                .unwrap_or_else(Line::default)
-                .right_aligned(),
-        )
-        .padding(Padding::horizontal(1))
-        .style(Style::default().bg(bg));
+    let block = if matches!(mode, SegmentRenderMode::Slim) {
+        Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    } else {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .title_top(
+                top_right_timestamp(meta, t)
+                    .unwrap_or_else(Line::default)
+                    .right_aligned(),
+            )
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    };
     let inner = block.inner(area);
     block.render(area, buf);
 
@@ -2210,26 +2236,34 @@ fn truncate_table_cell(text: &str, width: usize) -> String {
     out
 }
 
-fn render_system(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
+fn render_system(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme, mode: SegmentRenderMode) {
     if area.width < 3 || area.height == 0 {
         return;
     }
 
     let bg = t.card_bg();
     let border_color = t.accent_muted();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color).bg(bg))
-        .title_top(Line::from(Span::styled(
-            " Ω ",
-            Style::default()
-                .fg(border_color)
-                .bg(bg)
-                .add_modifier(Modifier::BOLD),
-        )))
-        .padding(Padding::horizontal(1))
-        .style(Style::default().bg(bg));
+    let block = if matches!(mode, SegmentRenderMode::Slim) {
+        Block::default()
+            .borders(Borders::LEFT)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    } else {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(border_color).bg(bg))
+            .title_top(Line::from(Span::styled(
+                " Ω ",
+                Style::default()
+                    .fg(border_color)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD),
+            )))
+            .padding(Padding::horizontal(1))
+            .style(Style::default().bg(bg))
+    };
     let inner = block.inner(area);
     block.render(area, buf);
 
@@ -2393,7 +2427,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         assert!(text.contains("╭") || text.contains("╮"), "system segment should use rounded card chrome: {text}");
@@ -2455,7 +2489,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("↑1.5k"),
@@ -2493,7 +2527,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             !text.contains("↑") && !text.contains("↓"),
@@ -2520,7 +2554,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 6);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("↑12.3k"),
@@ -2560,7 +2594,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 20);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         // Diff summary line: total +N -M counts.
@@ -2627,7 +2661,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 24);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         // Multi-file: per-file headers with the ▸ glyph and the path.
@@ -2681,7 +2715,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 20);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("more diff line"),
@@ -2727,7 +2761,7 @@ mod tests {
             "",
         );
         let (area, mut buf) = make_buf(80, 14);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         // Full disk path is in the title, not just the filename.
@@ -2765,7 +2799,7 @@ mod tests {
             "tui screenshot",
         );
         let (area, mut buf) = make_buf(80, 14);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("tui screenshot"),
@@ -2781,7 +2815,7 @@ mod tests {
     fn user_prompt_renders() {
         let seg = Segment::user_prompt("hello world");
         let (area, mut buf) = make_buf(40, 5);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert_eq!(seg.role(), SegmentRole::Operator);
         assert_eq!(seg.presentation().sigil, "OP");
@@ -2844,7 +2878,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(40, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("Ω"),
@@ -2897,7 +2931,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("src/main.rs"),
@@ -2934,7 +2968,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(90, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("src/main.rs"),
@@ -2973,7 +3007,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 12);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
 
         let code_row = find_row_containing(&buf, area, "println!").expect("code row in buffer");
         let trailing_content_cell = &buf[(area.right() - 3, code_row)];
@@ -2994,7 +3028,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
 
         let row =
             find_row_containing(&buf, area, "plain text with").expect("assistant row in buffer");
@@ -3027,7 +3061,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(100, 16);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("codebase_search: foo"),
@@ -3071,7 +3105,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 16);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("omegon"),
@@ -3102,7 +3136,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 16);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("omegon"),
@@ -3130,7 +3164,7 @@ mod tests {
     fn user_prompt_preserves_multiline_and_trailing_blank_lines() {
         let seg = Segment::user_prompt("alpha\nbeta\n\n");
         let (area, mut buf) = make_buf(30, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("alpha"), "first line should render: {text}");
         assert!(text.contains("beta"), "second line should render: {text}");
@@ -3151,7 +3185,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(40, 10);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         // Cell content checks (padding is determined by shared column
         // widths from compute_table_widths and shouldn't be locked in
@@ -3183,7 +3217,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(70, 14);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("Here are the strongest matches:"),
@@ -3257,7 +3291,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 18);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         // Status header populated from progress fields
@@ -3304,7 +3338,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("running"),
@@ -3352,7 +3386,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 12);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
 
         // Walk every cell and assert no control char ended up in the
         // buffer. The visible content should still be present.
@@ -3429,7 +3463,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("8.0s") || text.contains("8.1s") || text.contains("7.9s"),
@@ -3475,7 +3509,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("idle"),
@@ -3509,7 +3543,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(90, 18);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("│ File"), "table header should still render: {text}");
         assert!(text.contains("Preview"), "preview column should remain visible: {text}");
@@ -3529,7 +3563,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 12);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         // Aligned-separator markdown (`:----:`) should still parse as
         // a table — the separator-detection logic accepts colons.
@@ -3564,7 +3598,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 10);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("╭"), "should have top border: {text}");
         assert!(text.contains("╰"), "should have bottom border: {text}");
@@ -3614,8 +3648,8 @@ mod tests {
         };
 
         let (area, mut buf) = make_buf(72, 8);
-        long.render(area, &mut buf, &Alpharius);
-        short.render(area, &mut buf, &Alpharius);
+        long.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
+        short.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
 
         let row = (1..area.width.saturating_sub(1))
             .map(|x| buf[(x, 1)].symbol())
@@ -3655,7 +3689,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(28, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
             .collect::<String>();
@@ -3715,8 +3749,8 @@ mod tests {
         };
 
         let (area, mut buf) = make_buf(24, 8);
-        long.render(area, &mut buf, &Alpharius);
-        short.render(area, &mut buf, &Alpharius);
+        long.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
+        short.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
 
         let top_row = (0..area.width)
             .map(|x| buf[(x, 0)].symbol())
@@ -3754,7 +3788,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("✗"), "should have error icon: {text}");
         assert!(
@@ -3786,7 +3820,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(50, 8);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("▶"),
@@ -3813,7 +3847,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(60, 10);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("fn main"), "should have code: {text}");
     }
@@ -3933,7 +3967,7 @@ mod tests {
     fn system_notification_renders() {
         let seg = Segment::system("Tool display → detailed");
         let (area, mut buf) = make_buf(60, 3);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(text.contains("detailed"), "should show text: {text}");
     }
@@ -4030,7 +4064,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 16);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
 
         // Header cells should render
@@ -4222,7 +4256,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 12);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         // The ANSI escape should be parsed, not rendered as raw escape
         assert!(
@@ -4256,7 +4290,7 @@ mod tests {
             },
         };
         let (area, mut buf) = make_buf(80, 10);
-        seg.render(area, &mut buf, &Alpharius);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
         let text = buf_text(&buf, area);
         assert!(
             text.contains("hello world"),
