@@ -598,7 +598,7 @@ mod tests {
             text.push('\n');
         }
         assert!(!text.contains("╭"), "slim mode should avoid rounded card chrome: {text}");
-        assert!(text.contains("│"), "slim mode should keep a simple left rule: {text}");
+        assert!(!text.contains("│"), "slim mode should avoid left-rule chrome too: {text}");
     }
 
 }

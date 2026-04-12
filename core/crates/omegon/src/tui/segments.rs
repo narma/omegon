@@ -747,9 +747,7 @@ fn render_user_prompt(
     };
     let block = if matches!(mode, SegmentRenderMode::Slim) {
         Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::default().fg(border_color).bg(bg))
-            .padding(Padding::horizontal(1))
+            .padding(Padding::horizontal(0))
             .style(Style::default().bg(bg))
     } else {
         Block::default()
@@ -924,9 +922,7 @@ fn render_assistant_text(
     };
     let block = if matches!(mode, SegmentRenderMode::Slim) {
         Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::default().fg(border_color).bg(bg))
-            .padding(Padding::horizontal(1))
+            .padding(Padding::horizontal(0))
             .style(Style::default().bg(bg))
     } else {
         Block::default()
@@ -2245,9 +2241,7 @@ fn render_system(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme, mode: 
     let border_color = t.accent_muted();
     let block = if matches!(mode, SegmentRenderMode::Slim) {
         Block::default()
-            .borders(Borders::LEFT)
-            .border_style(Style::default().fg(border_color).bg(bg))
-            .padding(Padding::horizontal(1))
+            .padding(Padding::horizontal(0))
             .style(Style::default().bg(bg))
     } else {
         Block::default()
