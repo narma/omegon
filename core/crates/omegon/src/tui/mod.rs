@@ -6490,11 +6490,9 @@ pub async fn run_tui(
                                 && mouse.row >= area.y
                                 && mouse.row < area.y + area.height
                         });
-                        if over_dashboard || matches!(app.pane_focus, PaneFocus::Dashboard) {
+                        if over_dashboard {
                             app.dashboard.scroll_up(3);
-                        } else if over_conversation
-                            || matches!(app.pane_focus, PaneFocus::Conversation)
-                        {
+                        } else if over_conversation {
                             app.conversation.scroll_up(3);
                         }
                     }
@@ -6511,11 +6509,9 @@ pub async fn run_tui(
                                 && mouse.row >= area.y
                                 && mouse.row < area.y + area.height
                         });
-                        if over_dashboard || matches!(app.pane_focus, PaneFocus::Dashboard) {
+                        if over_dashboard {
                             app.dashboard.scroll_down(3);
-                        } else if over_conversation
-                            || matches!(app.pane_focus, PaneFocus::Conversation)
-                        {
+                        } else if over_conversation {
                             app.conversation.scroll_down(3);
                         }
                     }

@@ -789,6 +789,32 @@ fn conversation_scroll_does_not_recall_input_history() {
 }
 
 #[test]
+fn mouse_wheel_over_conversation_never_enters_history_recall() {
+    let mut app = test_app();
+    app.history = vec!["first".into(), "second".into(), "third".into()];
+    app.editor.set_text("draft");
+    app.pane_focus = PaneFocus::Editor;
+
+    app.conversation.push_user("user");
+    app.conversation
+        .append_streaming("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+
+    // Model the event-loop wheel routing contract directly: wheel over conversation
+    // should scroll the conversation even if the editor currently owns focus.
+    app.conversation.scroll_up(3);
+    assert_eq!(app.history_idx, None);
+    assert_eq!(app.editor.render_text(), "draft");
+
+    let after_up = app.conversation.conv_state.scroll_offset;
+    assert!(after_up > 0, "wheel-up should move into history");
+
+    app.conversation.scroll_down(3);
+    assert!(app.conversation.conv_state.scroll_offset < after_up);
+    assert_eq!(app.history_idx, None);
+    assert_eq!(app.editor.render_text(), "draft");
+}
+
+#[test]
 fn conversation_focus_blocks_history_recall_on_up_down() {
     let mut app = test_app();
     app.history = vec!["first".into(), "second".into(), "third".into()];
