@@ -2770,18 +2770,28 @@ impl App {
             if self.ui_surfaces.instruments {
                 let footer_cols = Layout::horizontal([
                     Constraint::Percentage(32),
-                    Constraint::Percentage(36),
+                    Constraint::Length(1),
+                    Constraint::Percentage(35),
+                    Constraint::Length(1),
                     Constraint::Percentage(32),
                 ])
                 .split(footer_area);
 
                 self.footer_data
                     .render_left_panel(footer_cols[0], frame, t.as_ref());
+                frame.render_widget(
+                    Block::default().style(Style::default().bg(t.footer_bg())),
+                    footer_cols[1],
+                );
                 self.instrument_panel
-                    .render_inference_panel(footer_cols[1], frame, t.as_ref());
+                    .render_inference_panel(footer_cols[2], frame, t.as_ref());
+                frame.render_widget(
+                    Block::default().style(Style::default().bg(t.footer_bg())),
+                    footer_cols[3],
+                );
                 self.instrument_panel
-                    .render_tools_panel(footer_cols[2], frame, t.as_ref());
-                footer_cols[1].union(footer_cols[2])
+                    .render_tools_panel(footer_cols[4], frame, t.as_ref());
+                footer_cols[2].union(footer_cols[4])
             } else {
                 self.footer_data.render_left_panel(footer_area, frame, t.as_ref());
                 footer_area

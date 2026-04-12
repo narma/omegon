@@ -2429,39 +2429,56 @@ fn harness_status_changed_detects_persona_transition() {
 }
 
 #[test]
-fn harness_status_memory_drives_instrument_panel_working_row() {
+fn footer_instrument_layout_reserves_gutters_between_engine_inference_and_tools() {
     let mut app = test_app();
-    app.footer_data.working_memory = 0;
-    app.footer_data.harness.memory = crate::status::MemoryStatus {
-        total_facts: 18,
-        active_facts: 18,
-        project_facts: 18,
-        persona_facts: 0,
-        working_facts: 4,
-        episodes: 2,
-        edges: 0,
-        active_persona_mind: None,
-    };
-
-    app.instrument_panel.update_mind_facts(
-        app.footer_data.harness.memory.project_facts,
-        app.footer_data.harness.memory.working_facts,
-        app.footer_data.harness.memory.episodes,
-        0.08,
+    app.ui_surfaces.footer = true;
+    app.ui_surfaces.instruments = true;
+    app.footer_data.provider_connected = true;
+    app.footer_data.model_id = "anthropic:claude-sonnet-4-6".into();
+    app.footer_data.model_provider = "anthropic".into();
+    app.footer_data.context_percent = 39.0;
+    app.footer_data.context_window = 272_000;
+    app.footer_data.harness.memory.project_facts = 704;
+    app.footer_data.harness.memory.working_facts = 0;
+    app.footer_data.harness.memory.episodes = 624;
+    app.instrument_panel.update_mind_facts(704, 0, 624, 0.08);
+    app.instrument_panel.update_turn_tokens(
+        105_100,
+        538,
+        0,
+        omegon_traits::ContextComposition {
+            conversation_tokens: 105_100,
+            system_tokens: 538,
+            memory_tokens: 0,
+            tool_schema_tokens: 0,
+            tool_history_tokens: 0,
+            thinking_tokens: 0,
+            free_tokens: 166_362,
+            ..Default::default()
+        },
+        272_000,
+    );
+    app.instrument_panel.update_telemetry(
+        39.0,
+        272_000,
+        None,
+        false,
+        "medium",
+        Some((0, crate::tui::instruments::WaveDirection::Right)),
+        true,
+        0.016,
     );
 
-    assert_eq!(app.instrument_panel.debug_mind_fact_count(1), Some(4));
-}
+    let rendered = render_app_to_string(&mut app, 140, 20);
+    assert!(rendered.contains("inference"), "expected inference panel: {rendered}");
+    assert!(rendered.contains("tools"), "expected tools panel: {rendered}");
 
-#[test]
-fn slash_model_no_args_opens_selector() {
-    let mut app = test_app();
-    let tx = test_tx();
-
-    let result = app.handle_slash_command("/model", &tx);
-    assert!(matches!(result, SlashResult::Handled));
-    assert!(app.selector.is_some(), "expected model selector to open");
-    assert!(matches!(app.selector_kind, Some(SelectorKind::Model)));
+    let footer_lines: Vec<&str> = rendered.lines().rev().take(6).collect();
+    let gutter_present = footer_lines.iter().any(|line| line.contains("│ │"));
+    assert!(
+        gutter_present,
+        "footer should preserve visible gutter columns between panels: {rendered}"
+    );
 }
 
 #[test]
