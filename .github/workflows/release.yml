@@ -368,7 +368,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           prerelease: ${{ contains(env.RELEASE_TAG, '-rc.') }}
-          draft: false
+          draft: true
           files: |
             artifacts/omegon-*.tar.gz
             artifacts/omegon-*.tar.gz.sha256
@@ -382,3 +382,13 @@ jobs:
             artifacts/THIRD_PARTY_NOTICES.md
             artifacts/THIRD_PARTY_NOTICES.md.sig
             artifacts/THIRD_PARTY_NOTICES.md.pem
+        id: create_release
+
+      - name: Publish stable/rc GitHub Release
+        if: ${{ !contains(env.RELEASE_TAG, '-nightly.') }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_TOKEN || github.token }}
+        run: |
+          gh release edit "${{ env.RELEASE_TAG }}" \
+            --repo "${{ github.repository }}" \
+            --draft=false
