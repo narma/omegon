@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+pub type DelegateEventSlot = Arc<Mutex<Option<BusRequestSink>>>;
 use std::time::SystemTime;
 
 use anyhow::Context;
@@ -24,8 +26,9 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use omegon_traits::{
-    BusEvent, BusRequest, CommandDefinition, CommandResult, ContentBlock, ContextInjection,
-    ContextSignals, Feature, NotifyLevel, ToolDefinition, ToolResult,
+    AgentEvent, BusEvent, BusRequest, BusRequestSink, CommandDefinition, CommandResult,
+    ContentBlock, ContextInjection, ContextSignals, Feature, NotifyLevel, ToolDefinition,
+    ToolResult,
 };
 
 /// Agent specification loaded from .omegon/agents/*.md
@@ -531,6 +534,7 @@ pub struct DelegateFeature {
     available_agents: Vec<AgentSpec>,
     runner: Arc<DelegateRunner>,
     progress_handle: Arc<Mutex<DelegateProgress>>,
+    event_slot: DelegateEventSlot,
 }
 
 impl DelegateFeature {
@@ -539,11 +543,13 @@ impl DelegateFeature {
         let runner = Arc::new(DelegateRunner::new(cwd.clone(), result_store.clone()));
 
         let progress_handle = Arc::new(Mutex::new(DelegateProgress::default()));
+        let event_slot = Arc::new(Mutex::new(None));
         Self {
             result_store,
             available_agents: agents,
             runner,
             progress_handle,
+            event_slot,
         }
     }
 }
@@ -552,6 +558,59 @@ impl DelegateFeature {
 impl DelegateFeature {
     pub fn progress_handle(&self) -> Arc<Mutex<DelegateProgress>> {
         self.progress_handle.clone()
+    }
+
+    pub fn event_sender_slot(&self) -> DelegateEventSlot {
+        self.event_slot.clone()
+    }
+
+    fn emit_delegate_event(&self, event: AgentEvent) {
+        if let Ok(slot) = self.event_slot.lock()
+            && let Some(ref sink) = *slot
+        {
+            sink.send(BusRequest::EmitAgentEvent { event });
+        }
+    }
+
+    fn emit_delegate_family_vitals(&self) {
+        let progress = self.result_store.progress_snapshot();
+        let signs = omegon_traits::FamilyVitalSigns {
+            run_id: "delegate".into(),
+            active: progress.active,
+            total_children: progress.children.len(),
+            completed: progress.completed,
+            failed: progress.failed,
+            running: progress.running,
+            pending: 0,
+            total_tokens_in: 0,
+            total_tokens_out: 0,
+            children: progress
+                .children
+                .iter()
+                .map(|child| omegon_traits::ChildVitalSigns {
+                    label: child.label.clone(),
+                    status: child.status.clone(),
+                    started_at_unix_ms: child
+                        .started_at
+                        .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as u64),
+                    last_activity_unix_ms: child
+                        .completed_at
+                        .or(child.started_at)
+                        .and_then(|ts| ts.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_millis() as u64),
+                    duration_secs: child
+                        .started_at
+                        .and_then(|ts| ts.elapsed().ok())
+                        .map(|d| d.as_secs_f64()),
+                    last_tool: child.result_summary.clone(),
+                    last_turn: None,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                })
+                .collect(),
+        };
+        self.emit_delegate_event(AgentEvent::FamilyVitalSignsUpdated { signs });
     }
 }
 
@@ -692,6 +751,10 @@ impl Feature for DelegateFeature {
                 if let Ok(mut handle) = self.progress_handle.lock() {
                     *handle = self.result_store.progress_snapshot();
                 }
+                self.emit_delegate_event(AgentEvent::DecompositionStarted {
+                    children: vec![task_id.clone()],
+                });
+                self.emit_delegate_family_vitals();
 
                 if background {
                     // Return task ID for background execution
@@ -870,6 +933,11 @@ impl Feature for DelegateFeature {
                     {
                         // Only notify if completed recently (within last 5 seconds)
                         if completed_at.elapsed().unwrap_or_default().as_secs() < 5 {
+                            self.emit_delegate_event(AgentEvent::DecompositionChildCompleted {
+                                label: task.task_id.clone(),
+                                success,
+                            });
+                            self.emit_delegate_family_vitals();
                             let message = if success {
                                 format!(
                                     "✅ Delegate {} completed: {}",

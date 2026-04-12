@@ -740,6 +740,9 @@ async fn run_embedded_command(control_port: u16, strict_port: bool) -> anyhow::R
     if let Ok(mut slot) = agent.cleave_event_slot.lock() {
         *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
     }
+    if let Ok(mut slot) = agent.delegate_event_slot.lock() {
+        *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
+    }
 
     // ─── Web control plane ──────────────────────────────────────────────
     let state = web::WebState::new(
@@ -1363,6 +1366,9 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
     // sink routes BusRequest::EmitAgentEvent to the broadcast channel —
     // the cleave feature itself never touches the broadcast directly.
     if let Ok(mut slot) = agent.cleave_event_slot.lock() {
+        *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
+    }
+    if let Ok(mut slot) = agent.delegate_event_slot.lock() {
         *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
     }
 
@@ -3248,6 +3254,9 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
     // sink routes BusRequest::EmitAgentEvent to the broadcast channel —
     // the cleave feature itself never touches the broadcast directly.
     if let Ok(mut slot) = agent.cleave_event_slot.lock() {
+        *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
+    }
+    if let Ok(mut slot) = agent.delegate_event_slot.lock() {
         *slot = Some(build_runtime_bus_request_sink(events_tx.clone()));
     }
 

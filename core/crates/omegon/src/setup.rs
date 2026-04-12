@@ -76,6 +76,8 @@ pub struct AgentSetup {
     /// emitting `AgentEvent::Decomposition*` events from inside its tool
     /// execution path. See `features::cleave::CleaveEventSlot`.
     pub cleave_event_slot: features::cleave::CleaveEventSlot,
+    /// Same concept for delegate/scout worker events.
+    pub delegate_event_slot: features::delegate::DelegateEventSlot,
 }
 
 /// Pre-computed state gathered during setup for TUI initial display.
@@ -443,6 +445,7 @@ impl AgentSetup {
         let agents = crate::features::delegate::scan_agents(&cwd);
         let delegate_feature = features::delegate::DelegateFeature::new(&cwd, agents);
         let delegate_handle = delegate_feature.progress_handle();
+        let delegate_event_slot = delegate_feature.event_sender_slot();
         bus.register(Box::new(delegate_feature));
 
         // ─── Session log (context injection) ────────────────────────────
@@ -948,6 +951,7 @@ impl AgentSetup {
                 ))),
             },
             cleave_event_slot,
+            delegate_event_slot,
         })
     }
 
