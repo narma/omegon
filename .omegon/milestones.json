@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 75,
+    "rc_count": 76,
     "notes": [
       "docs(benchmark): seed design node for deferred bwrap sandbox work",
       "feat(aggregate-mode): Add a minimal directory-level aggregation/report mode for benchmark result files, shaped by existing result artifact structure. Include tests and doc updates if the mode is added.",
@@ -458,6 +458,7 @@
       "feat(cleave): support selective armory skills and extensions",
       "feat(cleave): surface attached vs recovered supervision modes",
       "feat(cleave): track lost supervision state for unrecoverable children",
+      "feat(cleave-restore): Fix stale restored cleave visibility in TUI/dashboard by auditing cleave restore state, dashboard visibility guards, and adding regression tests for inactive restored snapshots and dashboard hiding behavior.",
       "feat(code-survey): Inspect the codebase for telemetry, metrics, tracing, event logging, and dashboard/session instrumentation surfaces. Summarize what telemetry the harness currently captures, where it lives, and notable gaps or inconsistencies.",
       "feat(compliance): enforce Anthropic subscription ToS interactive-only boundary",
       "feat(compliance): subscription-aware cleave fallback routing",
@@ -505,6 +506,7 @@
       "feat(runtime-matrix): Inspect and extend the Rust live upstream smoke/drift test surface. Define or add a checked-in expectation matrix and determine the minimal viable assertions for provider-specific endpoint drift (not just round-trip OK), plus tests or validation around the matrix parsing/execution path.",
       "feat(runtime-state): Implement persistent daemon runtime state for the serve/embedded runtime: runtime directory layout, persisted daemon instance/session metadata as appropriate, durable queued-event storage replacing in-memory-only queue, and ownership/runtime mode metadata in shared descriptors. Reuse the existing embedded/web runtime rather than introducing a new stack.",
       "feat(runtime-telemetry): Wire prompt breakdown through setup/loop/session-log context telemetry and add regression tests for reporting/output.",
+      "feat(secrets-vault-context): Implement TUI interactive slash UX for /secrets configure, /vault configure, and bare /context. Restore selector-driven flows, keep typed control integration correct, update docs if command contracts changed, and add regression tests for each command path.",
       "feat(session-log): add context composition usage substats",
       "feat(session-log): add provider and model usage breakdowns",
       "feat(session-log): record provider telemetry per turn",
@@ -530,6 +532,7 @@
       "feat(tui-copy): Update in-product copy in the TUI/tutorial/help surfaces so operator-facing text points to Auspex as the primary browser UI, while leaving current `/dash` command behavior intact as compatibility wording. Focus on core/crates/omegon/src/tui/mod.rs, core/crates/omegon/src/tui/tutorial.rs, and nearby help/command descriptions only.",
       "feat(tutorial): add tutorial gate and orientation mode",
       "feat(usage): add telemetry advisory command",
+      "feat(usage-metrics): Repair Anthropic /usage metrics by tracing captured provider telemetry, fixing any missing/incorrect header parsing or usage formatting behavior, and add regression tests covering the broken Anthropics metrics path.",
       "feat(validate-note): After the contract changes land, validate the resulting control-plane surface against the current Auspex client expectations and write a concise migration note documenting the canonical backend fields/events now guaranteed for Auspex. Keep this note in Omegon docs near the control-plane/Auspex contract docs and ensure tests/builds cover the touched code.",
       "feat(web): mirror omegon instance descriptor into startup and state",
       "feat(workflow-issueing): Inspect and repair/replace the stale provider-drift GitHub Actions workflow. Design the daily control-plane workflow, issue dedupe/update behavior, artifact/log strategy, and docs. Implement the workflow and any helper scripts/files needed for issue creation/reporting without making release/nightly blocking.",
@@ -655,6 +658,7 @@
       "fix(telemetry): format provider usage by active backend",
       "fix(tui): accept json context request slash payloads",
       "fix(tui): add a dedicated seam gutter between instrument panels",
+      "fix(tui): add selectors for update and workspace slash flows",
       "fix(tui): align activity row with context band semantics",
       "fix(tui): align cursor with inline attachment tokens",
       "fix(tui): align footer context state with inference composition",
@@ -699,6 +703,7 @@
       "fix(tui): render table body rows that omit trailing pipe (#37)",
       "fix(tui): render tool result markdown tables",
       "fix(tui): restore editor token and paste semantics",
+      "fix(tui): restore interactive slash selectors",
       "fix(tui): restore model selector modal for bare slash command",
       "fix(tui): restyle system notifications as conversation cards",
       "fix(tui): separate defs and history context colors",
@@ -760,6 +765,7 @@
       "refactor(slash): map promoted commands into canonical control requests",
       "refactor(slim): retune OM as a lean coding loop",
       "refactor(tui): add ui preset hotkeys and slimmer slim-mode chrome",
+      "refactor(tui): enrich auth stats and memory read surfaces",
       "refactor(tui): improve slim onboarding and add /ui toggle controls",
       "refactor(tui): make /auspex open the primary browser launch path",
       "refactor(tui): remove activity-row phase labels",
@@ -771,7 +777,7 @@
       "refactor(workspace): add backend and vcs identity boundaries",
       "refactor(workspace): separate labels from substrate identity"
     ],
-    "rc_version": "0.15.10-rc.81",
-    "last_rc": "2026-04-12T14:27:54Z"
+    "rc_version": "0.15.10-rc.82",
+    "last_rc": "2026-04-12T15:51:59Z"
   }
 }
