@@ -23,8 +23,8 @@ CHANNEL=rc curl -fsSL https://omegon.styrene.io/install.sh | sh
 CHANNEL=nightly curl -fsSL https://omegon.styrene.io/install.sh | sh
 
 # Install a specific stable or RC version
-VERSION=0.15.10-rc.78 curl -fsSL https://omegon.styrene.io/install.sh | sh
-# Replace 0.15.10-rc.78 with the release you actually want
+VERSION=<release-version> curl -fsSL https://omegon.styrene.io/install.sh | sh
+# Replace <release-version> with the release you actually want (for example: 0.15.10 or 0.15.10-rc.79)
 
 # Non-interactive (CI)
 curl -fsSL https://omegon.styrene.io/install.sh | sh -s -- --no-confirm</code></pre>
@@ -69,10 +69,10 @@ brew install omegon</code></pre>
 
   <h3>Verify a Download</h3>
   <pre><code># Verify cosign signature (keyless)
-# Replace 0.15.10 with the release you downloaded
-cosign verify-blob omegon-0.15.10-aarch64-apple-darwin.tar.gz \
-  --signature omegon-0.15.10-aarch64-apple-darwin.tar.gz.sig \
-  --certificate omegon-0.15.10-aarch64-apple-darwin.tar.gz.pem \
+# Replace <release-version> with the release you downloaded
+cosign verify-blob omegon-<release-version>-aarch64-apple-darwin.tar.gz \
+  --signature omegon-<release-version>-aarch64-apple-darwin.tar.gz.sig \
+  --certificate omegon-<release-version>-aarch64-apple-darwin.tar.gz.pem \
   --certificate-identity-regexp '.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com</code></pre>
   <p>
