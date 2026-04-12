@@ -2216,23 +2216,26 @@ fn render_system(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
     }
 
     let bg = t.card_bg();
-    let block = Block::default().style(Style::default().bg(bg));
+    let border_color = t.accent_muted();
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(border_color).bg(bg))
+        .title_top(Line::from(Span::styled(
+            " Ω ",
+            Style::default()
+                .fg(border_color)
+                .bg(bg)
+                .add_modifier(Modifier::BOLD),
+        )))
+        .padding(Padding::horizontal(1))
+        .style(Style::default().bg(bg));
+    let inner = block.inner(area);
     block.render(area, buf);
 
-    // Accent bar on left edge — muted cyan for system messages
-    for y in area.top()..area.bottom() {
-        if let Some(cell) = buf.cell_mut((area.x, y)) {
-            cell.set_symbol("▎");
-            cell.set_style(Style::default().fg(t.accent_muted()).bg(bg));
-        }
+    if inner.width == 0 || inner.height == 0 {
+        return;
     }
-
-    let inner = Rect {
-        x: area.x + 2,
-        y: area.y,
-        width: area.width.saturating_sub(3),
-        height: area.height,
-    };
 
     let mut lines: Vec<Line<'_>> = Vec::new();
     for (i, line) in text.lines().enumerate() {
@@ -2241,7 +2244,7 @@ fn render_system(text: &str, area: Rect, buf: &mut Buffer, t: &dyn Theme) {
                 .fg(t.accent())
                 .bg(bg)
                 .add_modifier(Modifier::BOLD)
-        } else if i == 0 && (line.starts_with('⚠') || line.starts_with('⟳')) {
+        } else if i == 0 && (line.starts_with('⚠') || line.starts_with('⟳') || line.starts_with('✓')) {
             Style::default().fg(t.warning()).bg(bg)
         } else if line.starts_with("  ▸") || line.starts_with("  /") || line.starts_with("  Ctrl")
         {
@@ -2379,6 +2382,23 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn system_notifications_render_as_rounded_cards_not_legacy_left_banners() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::SystemNotification {
+                text: "⚠ Provider connected — active route anthropic:claude-sonnet-4-6".into(),
+            },
+        };
+        let (area, mut buf) = make_buf(80, 8);
+        seg.render(area, &mut buf, &Alpharius);
+        let text = buf_text(&buf, area);
+
+        assert!(text.contains("╭") || text.contains("╮"), "system segment should use rounded card chrome: {text}");
+        assert!(text.contains("Provider connected"), "system message body should render: {text}");
+        assert!(!text.contains("▎"), "legacy left-banner accent bar should be gone: {text}");
     }
 
     #[test]
