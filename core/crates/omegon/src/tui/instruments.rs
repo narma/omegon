@@ -711,7 +711,7 @@ impl InstrumentPanel {
             .iter()
             .map(|tool| {
                 let recency =
-                    (1.0 - ((self.time - tool.last_called).max(0.0) / 4.0)).clamp(0.0, 1.0);
+                    (1.0 - ((self.time - tool.last_called).max(0.0) / 180.0)).clamp(0.0, 1.0);
                 if tool.running { 1.0 } else { recency }
             })
             .fold(0.0_f64, f64::max)
@@ -1663,10 +1663,10 @@ impl InstrumentPanel {
             clear_row(y, inner.x, inner.right(), buf, panel_bg(t));
 
             let age = (self.time - tool.last_called).max(0.0);
-            let recency = if age > 120.0 {
+            let recency = if age > 180.0 {
                 0.0
             } else {
-                (1.0 - age / 120.0).max(0.0)
+                (1.0 - age / 180.0).max(0.0)
             };
 
             // Indicator glyphs are subject to the same emoji-safety
@@ -1836,7 +1836,7 @@ impl InstrumentPanel {
             let active = self
                 .tools
                 .iter()
-                .filter(|t| self.time - t.last_called < 120.0)
+                .filter(|t| self.time - t.last_called < 180.0)
                 .count();
             let total = self.tools.len();
             let footer = format!("  {active}/{total} active");
