@@ -678,7 +678,7 @@ pub async fn set_thinking_response(
 }
 
 pub async fn status_view_response(
-    runtime_state: &InteractiveAgentState,
+    _runtime_state: &InteractiveAgentState,
     shared_settings: &settings::SharedSettings,
 ) -> SlashCommandResponse {
     let mut status = crate::status::HarnessStatus::assemble();
@@ -1690,7 +1690,7 @@ pub async fn notes_clear_response(agent: &InteractiveAgentHost) -> SlashCommandR
 
 pub async fn checkin_view_response(
     agent: &InteractiveAgentHost,
-    runtime_state: &InteractiveAgentState,
+    _runtime_state: &InteractiveAgentState,
 ) -> SlashCommandResponse {
     let mut sections: Vec<String> = Vec::new();
 

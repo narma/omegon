@@ -392,7 +392,7 @@ If blocked, say the blocker plainly.\n",
         }
     }
 
-    pub async fn spawn_delegate(
+    async fn spawn_delegate(
         &self,
         task_id: String,
         agent_name: Option<String>,

@@ -32,7 +32,7 @@
 //! another process is mid-read, the file gets unlinked but the
 //! reader's open handle keeps working.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 /// Filename prefix that identifies an omegon clipboard paste. Must

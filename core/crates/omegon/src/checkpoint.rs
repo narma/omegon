@@ -7,7 +7,7 @@
 //! Follows the same append-only pattern as `upstream_errors.rs`.
 
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// A single turn checkpoint entry, appended to JSONL after each turn.
 #[derive(Debug, Serialize, Deserialize)]

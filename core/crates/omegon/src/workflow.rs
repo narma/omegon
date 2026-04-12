@@ -5,7 +5,7 @@
 //! and cleave orchestrator consult these when dispatching work.
 
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// A parsed workflow template.
 #[derive(Debug, Clone, Deserialize)]
