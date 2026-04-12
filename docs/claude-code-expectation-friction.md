@@ -17,7 +17,7 @@ The main conclusion is simple: the friction is real, and most of it is not a bug
 
 This assessment is grounded in current repo behavior and docs:
 
-- README positions `omegon --slim` as the fastest interactive path and the comparison profile for mainstream CLI coding agents (`README.md:59-70`, `README.md:164-168`).
+- README positions `om` as the fastest interactive path and the comparison profile for mainstream CLI coding agents, while `omegon` remains the richer harness mode (`README.md:59-85`, `README.md:180-188`).
 - README also describes default Omegon as a richer harness with durable memory, design tree, OpenSpec, worktrees, `/auspex open`, and `/dash` (`README.md:93-103`, `README.md:123-153`).
 - The tutorial itself is not a passive help screen; it can fire real agent turns, read code, store memory, mutate design-tree state, and push OpenSpec work (`core/crates/omegon/src/tui/tutorial.rs:22-62`, `core/crates/omegon/src/tui/tutorial.rs:135-220`).
 - The TUI footer exposes system telemetry beyond a normal chat loop: context, memory, provider identity, authorization, model tier, and provider telemetry (`core/crates/omegon/src/tui/footer.rs:33-83`).
@@ -36,8 +36,8 @@ A Claude Code user usually expects: open terminal, ask for code work, see terse 
 
 **Evidence**
 
-- README's fastest path for quick interactive use is explicitly `omegon --slim`, not plain `omegon` (`README.md:59-70`).
-- README says `omegon --slim` is the de-facto comparison profile for mainstream CLI coding agents, while default Omegon is the premium richer mode (`README.md:164-168`).
+- README's fastest path for quick interactive use is explicitly `om`, not plain `omegon` (`README.md:59-85`).
+- README says `om` is the de-facto comparison profile for mainstream CLI coding agents, while default `omegon` is the premium richer mode (`README.md:180-188`).
 - Default Omegon is described with persistent memory, design tree, OpenSpec, browser surfaces, and worktree decomposition (`README.md:93-153`).
 
 **Why I think this matters most**
@@ -47,7 +47,7 @@ This is the root mismatch. If the operator expected Claude Code and launched pla
 **Mitigation direction**
 
 - Make mode selection explicit at first-run: **Lean interactive** vs **Systems mode**.
-- Bias onboarding, docs, and shell alias guidance toward `omegon --slim` for Claude Code migrants.
+- Bias onboarding, docs, and shell guidance toward `om` for Claude Code migrants.
 - In the default TUI, explain early that the extra surfaces are intentional harness features, not incidental clutter.
 
 ### 2. Omegon exposes far more visible runtime telemetry than Claude Code users expect

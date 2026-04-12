@@ -28,8 +28,8 @@ Today Omegon is clear about what it is in architecture terms, but less clear in 
 
 The repo already describes two materially different usage shapes:
 
-- **lean interactive path** — `omegon --slim`, positioned as the fastest interactive path and the comparison profile for mainstream CLI coding agents (`README.md:59-70`, `README.md:164-168`)
-- **full systems harness** — default Omegon with durable memory, design tree, OpenSpec, browser surfaces, and worktree-based decomposition (`README.md:93-153`)
+- **lean interactive path** — `om`, positioned as the fastest interactive path and the comparison profile for mainstream CLI coding agents (`README.md:59-85`, `README.md:180-188`)
+- **full systems harness** — default `omegon` with durable memory, design tree, OpenSpec, browser surfaces, and worktree-based decomposition (`README.md:101-153`)
 
 The problem is not that these two shapes exist. The problem is that they are not yet expressed as first-class product modes with clean migration stories.
 
@@ -127,7 +127,7 @@ A clean autonomous contract: what is allowed, what is recommended, what is inter
 Fast terminal-native coding loop for operators who want Claude Code-shaped ergonomics.
 
 **Current nearest implementation**
-`omegon --slim`
+`om`
 
 **Required characteristics**
 - terminal-first
@@ -191,7 +191,7 @@ This is the core product decision.
 
 #### Claude Code migrants
 Default recommendation:
-- **launch `omegon --slim`**
+- **launch `om`**
 
 Not because default Omegon is wrong, but because it is the wrong *starting point* for their expectations.
 
