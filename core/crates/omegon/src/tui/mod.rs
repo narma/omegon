@@ -318,6 +318,7 @@ enum SelectorKind {
     ContextClass,
     SecretName,
     LoginProvider,
+    VaultConfigure,
 }
 
 /// Result of handling a slash command.
@@ -1408,8 +1409,9 @@ impl App {
             }
             SelectorKind::ContextClass => {
                 if let Some(class) = crate::settings::ContextClass::parse(&value) {
-                    self.update_settings(|s| {
-                        s.set_requested_context_class(class);
+                    let _ = tx.try_send(TuiCommand::ExecuteControl {
+                        request: crate::control_runtime::ControlRequest::SetContextClass { class },
+                        respond_to: None,
                     });
                     Some(format!("Context policy → {}", class.label()))
                 } else {
@@ -1492,7 +1494,7 @@ impl App {
                     if suggested.is_empty() {
                         // Direct value — enter masked secret input mode
                         self.editor.start_secret_input(&value);
-                        Some(format!("🔒 Enter value for {value} (input is hidden):"))
+                        Some(format!("🔒 Paste or type value for {value} (input is hidden):"))
                     } else {
                         // Dynamic recipe — set immediately
                         if let Some(request) = crate::control_runtime::control_request_from_slash(
@@ -1509,6 +1511,11 @@ impl App {
                         Some(format!("✓ {value} → {suggested}"))
                     }
                 }
+            }
+            SelectorKind::VaultConfigure => {
+                let command = format!("/vault configure {}", value);
+                self.editor.set_text(&command);
+                Some(format!("Vault configure → {value}"))
             }
         }
     }
@@ -1617,8 +1624,8 @@ impl App {
     fn handle_secrets(&mut self, args: &str, tx: &mpsc::Sender<TuiCommand>) -> SlashResult {
         let parts: Vec<&str> = args.splitn(3, ' ').collect();
         match parts.first().copied().unwrap_or("") {
-            // /secrets set with no name/value → open selector
-            "set" if parts.len() < 3 => {
+            // /secrets configure and /secrets set with no name/value → open selector
+            "configure" | "set" if parts.len() < 3 => {
                 let existing: Vec<String> = {
                     let _ = tx; // suppress unused warning in this branch
                     Vec::new()
@@ -3712,7 +3719,7 @@ impl App {
 
             "context" => {
                 if args.is_empty() {
-                    let _ = tx.try_send(TuiCommand::ContextStatus { respond_to: None });
+                    self.open_context_selector();
                     SlashResult::Handled
                 } else {
                     match canonical_slash_command("context", args) {
@@ -4093,7 +4100,28 @@ impl App {
             "secrets" => self.handle_secrets(args, tx),
 
             "vault" => {
-                if let Some(command) = canonical_slash_command("vault", args) {
+                if args == "configure" {
+                    let options = vec![
+                        selector::SelectOption {
+                            value: "env".to_string(),
+                            label: "Set VAULT_ADDR via environment".to_string(),
+                            description: "Write /vault configure env into the editor".to_string(),
+                            active: false,
+                        },
+                        selector::SelectOption {
+                            value: "file".to_string(),
+                            label: "Create ~/.omegon/vault.json".to_string(),
+                            description: "Write /vault configure file into the editor".to_string(),
+                            active: false,
+                        },
+                    ];
+                    self.selector = Some(selector::Selector::new(
+                        "Vault Configuration — pick a setup flow",
+                        options,
+                    ));
+                    self.selector_kind = Some(SelectorKind::VaultConfigure);
+                    SlashResult::Handled
+                } else if let Some(command) = canonical_slash_command("vault", args) {
                     if let Some(request) = crate::control_runtime::control_request_from_slash(&command)
                     {
                         let _ = tx.try_send(TuiCommand::ExecuteControl {

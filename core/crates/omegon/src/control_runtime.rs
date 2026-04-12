@@ -2438,7 +2438,10 @@ pub async fn vault_configure_response() -> SlashCommandResponse {
         accepted: true,
         output: Some(
             "Vault Configuration:\n\n\
-             Set VAULT_ADDR to your Vault server address:\n\
+             Interactive setup flows:\n\
+             \n  /vault configure env   # prime the editor with an env-based setup\n\
+             \n  /vault configure file  # prime the editor with a ~/.omegon/vault.json setup\n\
+             \nManual options:\n\
              \n  export VAULT_ADDR=https://vault.example.com\n\
              \nAuthenticate with:\n\
              \n  vault login                  # interactive\n\

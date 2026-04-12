@@ -1724,12 +1724,40 @@ fn slash_exit_returns_quit() {
 }
 
 #[test]
-fn slash_context_no_args_shows_context_status() {
+fn slash_context_no_args_opens_selector() {
     let mut app = test_app();
     let tx = test_tx();
     let result = app.handle_slash_command("/context", &tx);
     assert!(matches!(result, SlashResult::Handled));
-    assert!(app.selector.is_none(), "bare /context should no longer open the selector");
+    assert!(app.selector.is_some(), "bare /context should open the selector");
+    assert!(matches!(app.selector_kind, Some(super::SelectorKind::ContextClass)));
+}
+
+#[test]
+fn context_selector_confirm_enqueues_set_context_class() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+    app.handle_slash_command("/context", &tx);
+    let selector = app.selector.as_mut().expect("selector should be open");
+    let index = selector
+        .options
+        .iter()
+        .position(|o| o.value == "Clan")
+        .expect("Clan option present");
+    selector.cursor = index;
+
+    let message = app
+        .confirm_selector(&tx)
+        .expect("selector confirmation should return message");
+    assert!(message.contains("400k"), "unexpected message: {message}");
+
+    match rx.try_recv().expect("queued command") {
+        TuiCommand::ExecuteControl {
+            request: crate::control_runtime::ControlRequest::SetContextClass { class },
+            ..
+        } => assert_eq!(class, crate::settings::ContextClass::Clan),
+        other => panic!("expected set-context-class control request, got: {other:?}"),
+    }
 }
 
 #[test]
@@ -2439,6 +2467,38 @@ fn slash_vault_status_enqueues_execute_control() {
 }
 
 #[test]
+fn slash_vault_configure_opens_selector() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/vault configure", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+    assert!(app.selector.is_some(), "expected vault selector to open");
+    assert!(matches!(app.selector_kind, Some(super::SelectorKind::VaultConfigure)));
+}
+
+#[test]
+fn vault_configure_selector_confirm_primes_editor() {
+    let mut app = test_app();
+    let tx = test_tx();
+    app.handle_slash_command("/vault configure", &tx);
+    let selector = app.selector.as_mut().expect("selector should be open");
+    let index = selector
+        .options
+        .iter()
+        .position(|o| o.value == "file")
+        .expect("file option present");
+    selector.cursor = index;
+
+    let message = app
+        .confirm_selector(&tx)
+        .expect("selector confirmation should return message");
+
+    assert_eq!(app.editor.render_text(), "/vault configure file");
+    assert!(message.contains("file"), "unexpected message: {message}");
+}
+
+#[test]
 fn slash_secrets_set_without_value_opens_selector() {
     let mut app = test_app();
     let tx = test_tx();
@@ -2447,6 +2507,46 @@ fn slash_secrets_set_without_value_opens_selector() {
     assert!(matches!(result, SlashResult::Handled));
     assert!(app.selector.is_some(), "expected secret selector to open");
     assert!(matches!(app.selector_kind, Some(super::SelectorKind::SecretName)));
+}
+
+#[test]
+fn slash_secrets_configure_without_value_opens_selector() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/secrets configure", &tx);
+    assert!(matches!(result, SlashResult::Handled));
+    assert!(app.selector.is_some(), "expected secret selector to open");
+    assert!(matches!(app.selector_kind, Some(super::SelectorKind::SecretName)));
+}
+
+#[test]
+fn secret_selector_confirm_starts_hidden_secret_input() {
+    let mut app = test_app();
+    let tx = test_tx();
+    app.handle_slash_command("/secrets configure", &tx);
+    let selector = app.selector.as_mut().expect("selector should be open");
+    let index = selector
+        .options
+        .iter()
+        .position(|o| o.value == "ANTHROPIC_API_KEY")
+        .expect("ANTHROPIC_API_KEY option present");
+    selector.cursor = index;
+
+    let message = app
+        .confirm_selector(&tx)
+        .expect("selector confirmation should return message");
+    let (label, masked) = app
+        .editor
+        .secret_display()
+        .expect("selector should enter hidden secret mode");
+
+    assert_eq!(label, "ANTHROPIC_API_KEY");
+    assert!(masked.is_empty(), "secret buffer should start empty");
+    assert!(
+        message.contains("Paste or type value") && message.contains("input is hidden"),
+        "unexpected message: {message}"
+    );
 }
 
 #[test]
