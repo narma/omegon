@@ -3027,11 +3027,17 @@ fn has_nonempty_context_snapshot(context: &omegon_traits::ContextComposition) ->
         || context.thinking_tokens > 0
 }
 
-fn write_benchmark_usage_json(path: &Path, summary: &BenchmarkUsageSummary) -> anyhow::Result<()> {
+fn write_benchmark_usage_json(
+    path: &Path,
+    summary: &BenchmarkUsageSummary,
+    status: &str,
+) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let payload = serde_json::json!({
+        "status": status,
+        "last_completed_turn": summary.turn_count,
         "requested_model": summary.requested_model,
         "requested_provider": summary.requested_provider,
         "resolved_provider": summary.resolved_provider,
@@ -3201,6 +3207,7 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
         ..BenchmarkUsageSummary::default()
     }));
     let benchmark_summary_task = std::sync::Arc::clone(&benchmark_summary);
+    let usage_json_task = usage_json.clone();
 
     // ─── Event printer (headless mode: print to stderr) ─────────────────
     let event_task = tokio::spawn(async move {
@@ -3276,6 +3283,11 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
                             cache_creation_tokens,
                             provider_telemetry,
                         );
+                        if let Some(path) = usage_json_task.as_ref()
+                            && let Err(err) = write_benchmark_usage_json(path, &summary, "in_progress")
+                        {
+                            tracing::warn!(path = %path.display(), error = %err, "failed to checkpoint benchmark usage json at turn boundary");
+                        }
                     }
                     if actual_input_tokens > 0 || actual_output_tokens > 0 {
                         tracing::info!(
@@ -3356,7 +3368,7 @@ async fn run_agent_command(cli: &Cli, usage_json: Option<PathBuf>) -> anyhow::Re
             .lock()
             .map(|guard| guard.clone())
             .unwrap_or_default();
-        write_benchmark_usage_json(path, &summary)?;
+        write_benchmark_usage_json(path, &summary, "completed")?;
     }
 
     drop(events_tx);
@@ -4775,9 +4787,11 @@ mod tests {
             provider_telemetry: None,
         };
 
-        write_benchmark_usage_json(&path, &summary).unwrap();
+        write_benchmark_usage_json(&path, &summary, "completed").unwrap();
         let written: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["status"], "completed");
+        assert_eq!(written["last_completed_turn"], 3);
         assert_eq!(written["requested_model"], "anthropic:claude-sonnet-4-6");
         assert_eq!(written["requested_provider"], "anthropic");
         assert_eq!(written["resolved_provider"], "anthropic");
@@ -4801,6 +4815,40 @@ mod tests {
 
         let wait = tokio::time::timeout(std::time::Duration::from_millis(50), blocker).await;
         assert!(wait.is_err(), "event task should still be blocked before forced shutdown handling");
+    }
+
+    #[test]
+    fn benchmark_usage_json_writer_supports_in_progress_checkpoints() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bench").join("usage.json");
+        let summary = BenchmarkUsageSummary {
+            requested_model: Some("anthropic:claude-sonnet-4-6".into()),
+            requested_provider: Some("anthropic".into()),
+            resolved_provider: Some("anthropic".into()),
+            model: Some("anthropic:claude-sonnet-4-6".into()),
+            provider: Some("anthropic".into()),
+            dominant_phases: std::collections::BTreeMap::new(),
+            drift_kinds: std::collections::BTreeMap::new(),
+            progress_nudge_reasons: std::collections::BTreeMap::new(),
+            turn_count: 2,
+            turn_end_reasons: std::collections::BTreeMap::new(),
+            input_tokens: 88,
+            output_tokens: 21,
+            cache_tokens: 5,
+            cache_write_tokens: 3,
+            estimated_tokens: 144,
+            context_window: 200_000,
+            context_composition: omegon_traits::ContextComposition::default(),
+            provider_telemetry: None,
+        };
+
+        write_benchmark_usage_json(&path, &summary, "in_progress").unwrap();
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written["status"], "in_progress");
+        assert_eq!(written["last_completed_turn"], 2);
+        assert_eq!(written["input_tokens"], 88);
+        assert_eq!(written["output_tokens"], 21);
     }
 
     #[test]
