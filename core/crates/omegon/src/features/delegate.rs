@@ -36,6 +36,27 @@ pub struct AgentSpec {
     pub is_write_agent: bool,
 }
 
+
+#[derive(Debug, Clone)]
+pub struct DelegateProgressChild {
+    pub task_id: String,
+    pub label: String,
+    pub status: String,
+    pub last_tool: Option<String>,
+    pub started_at: Option<std::time::SystemTime>,
+    pub completed_at: Option<std::time::SystemTime>,
+    pub result_summary: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DelegateProgress {
+    pub active: bool,
+    pub running: usize,
+    pub completed: usize,
+    pub failed: usize,
+    pub children: Vec<DelegateProgressChild>,
+}
+
 /// Status of a delegate task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DelegateTaskStatus {
@@ -116,6 +137,43 @@ impl DelegateResultStore {
     pub fn list_all_tasks(&self) -> Vec<DelegateTask> {
         let tasks = self.tasks.lock().unwrap();
         tasks.values().cloned().collect()
+    }
+
+    pub fn progress_snapshot(&self) -> DelegateProgress {
+        let tasks = self.list_all_tasks();
+        let mut progress = DelegateProgress::default();
+        for task in tasks {
+            let status = match &task.status {
+                DelegateTaskStatus::Running => {
+                    progress.active = true;
+                    progress.running += 1;
+                    "running"
+                }
+                DelegateTaskStatus::Completed { success: true } => {
+                    progress.completed += 1;
+                    "completed"
+                }
+                DelegateTaskStatus::Completed { success: false } => {
+                    progress.failed += 1;
+                    "failed"
+                }
+                DelegateTaskStatus::Failed { .. } => {
+                    progress.failed += 1;
+                    "failed"
+                }
+            };
+            progress.children.push(DelegateProgressChild {
+                task_id: task.task_id.clone(),
+                label: task.agent_name.clone().unwrap_or_else(|| task.task_id.clone()),
+                status: status.to_string(),
+                last_tool: None,
+                started_at: Some(task.started_at),
+                completed_at: task.completed_at,
+                result_summary: task.result.as_ref().map(|r| crate::util::truncate(r, 40)),
+            });
+        }
+        progress.children.sort_by(|a,b| a.task_id.cmp(&b.task_id));
+        progress
     }
 }
 
@@ -472,6 +530,7 @@ pub struct DelegateFeature {
     result_store: Arc<DelegateResultStore>,
     available_agents: Vec<AgentSpec>,
     runner: Arc<DelegateRunner>,
+    progress_handle: Arc<Mutex<DelegateProgress>>,
 }
 
 impl DelegateFeature {
@@ -479,11 +538,20 @@ impl DelegateFeature {
         let result_store = Arc::new(DelegateResultStore::new());
         let runner = Arc::new(DelegateRunner::new(cwd.clone(), result_store.clone()));
 
+        let progress_handle = Arc::new(Mutex::new(DelegateProgress::default()));
         Self {
             result_store,
             available_agents: agents,
             runner,
+            progress_handle,
         }
+    }
+}
+
+
+impl DelegateFeature {
+    pub fn progress_handle(&self) -> Arc<Mutex<DelegateProgress>> {
+        self.progress_handle.clone()
     }
 }
 
@@ -621,6 +689,9 @@ impl Feature for DelegateFeature {
                         mind,
                     )
                     .await?;
+                if let Ok(mut handle) = self.progress_handle.lock() {
+                    *handle = self.result_store.progress_snapshot();
+                }
 
                 if background {
                     // Return task ID for background execution
@@ -786,6 +857,9 @@ impl Feature for DelegateFeature {
     fn on_event(&mut self, event: &BusEvent) -> Vec<BusRequest> {
         match event {
             BusEvent::TurnEnd { .. } => {
+                if let Ok(mut handle) = self.progress_handle.lock() {
+                    *handle = self.result_store.progress_snapshot();
+                }
                 // Check for completed background tasks and notify
                 let tasks = self.result_store.list_all_tasks();
                 let mut requests = Vec::new();

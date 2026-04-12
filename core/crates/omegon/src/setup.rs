@@ -441,9 +441,9 @@ impl AgentSetup {
 
         // ─── Delegate (subagent system) ─────────────────────────────────
         let agents = crate::features::delegate::scan_agents(&cwd);
-        bus.register(Box::new(features::delegate::DelegateFeature::new(
-            &cwd, agents,
-        )));
+        let delegate_feature = features::delegate::DelegateFeature::new(&cwd, agents);
+        let delegate_handle = delegate_feature.progress_handle();
+        bus.register(Box::new(delegate_feature));
 
         // ─── Session log (context injection) ────────────────────────────
         bus.register(Box::new(features::session_log::SessionLog::new(&cwd)));
@@ -939,6 +939,7 @@ impl AgentSetup {
             dashboard_handles: crate::tui::dashboard::DashboardHandles {
                 lifecycle: Some(lifecycle_handle),
                 cleave: Some(cleave_handle),
+                delegate: Some(delegate_handle),
                 session: std::sync::Arc::new(std::sync::Mutex::new(
                     crate::tui::dashboard::SharedSessionStats::default(),
                 )),

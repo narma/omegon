@@ -43,6 +43,7 @@ pub struct SharedSessionStats {
 pub struct DashboardHandles {
     pub lifecycle: Option<Arc<Mutex<LifecycleContextProvider>>>,
     pub cleave: Option<Arc<Mutex<CleaveProgress>>>,
+    pub delegate: Option<Arc<Mutex<crate::features::delegate::DelegateProgress>>>,
     pub session: Arc<Mutex<SharedSessionStats>>,
     pub harness: Option<Arc<Mutex<HarnessStatus>>>,
 }

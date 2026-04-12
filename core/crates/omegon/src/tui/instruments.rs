@@ -17,6 +17,7 @@
 use super::theme::Theme;
 use super::widgets::visible_width;
 use crate::features::cleave::CleaveProgress;
+use crate::features::delegate::DelegateProgress;
 use omegon_traits::ContextComposition;
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders};
@@ -444,8 +445,10 @@ pub struct InstrumentPanel {
     context_window: usize,
     /// Authoritative composition snapshot from the turn runner's accounting model.
     context_composition: ContextComposition,
-    /// Live cleave progress snapshot — if active, tools panel becomes cleave panel.
+    /// Live cleave progress snapshot — if active, tools panel becomes worker panel.
     cleave_progress: Option<CleaveProgress>,
+    /// Live delegate progress snapshot — shown in the same worker panel grammar.
+    delegate_progress: Option<DelegateProgress>,
 }
 
 impl Default for InstrumentPanel {
@@ -476,6 +479,7 @@ impl Default for InstrumentPanel {
             context_window: 200_000,
             context_composition: ContextComposition::default(),
             cleave_progress: None,
+            delegate_progress: None,
         }
     }
 }
@@ -618,6 +622,14 @@ impl InstrumentPanel {
                 return;
             }
         }
+        if let Some(ref dp) = self.delegate_progress {
+            if dp.active {
+                let border = t.border_dim();
+                let label = t.dim();
+                self.render_delegate_panel(area, frame, border, label, t, dp);
+                return;
+            }
+        }
         let (border, label) = if self.has_ever_fired {
             (t.border_dim(), t.dim())
         } else {
@@ -629,6 +641,11 @@ impl InstrumentPanel {
     /// Push an updated cleave progress snapshot from the orchestrator thread.
     pub fn set_cleave_progress(&mut self, cp: Option<CleaveProgress>) {
         self.cleave_progress = cp;
+    }
+
+    /// Push an updated delegate progress snapshot from the delegate feature.
+    pub fn set_delegate_progress(&mut self, dp: Option<DelegateProgress>) {
+        self.delegate_progress = dp;
     }
 
     pub fn render(&mut self, area: Rect, frame: &mut Frame, t: &dyn Theme) {
@@ -1508,6 +1525,88 @@ impl InstrumentPanel {
             let m = (secs / 60.0) as u64;
             let s = secs as u64 % 60;
             format!("{m}:{s:02}m")
+        }
+    }
+
+    fn render_delegate_panel(
+        &self,
+        area: Rect,
+        frame: &mut Frame,
+        border: Color,
+        _label_color: Color,
+        t: &dyn Theme,
+        dp: &DelegateProgress,
+    ) {
+        let title_text = format!(" ↗ delegate {}/{} ", dp.completed + dp.failed, dp.children.len());
+        let title_color = if dp.failed > 0 {
+            Color::Rgb(224, 72, 72)
+        } else if dp.active {
+            Color::Rgb(232, 186, 104)
+        } else {
+            Color::Rgb(42, 180, 200)
+        };
+        clear_area(area, frame.buffer_mut(), panel_bg(t));
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border).bg(t.footer_bg()))
+            .border_type(ratatui::widgets::BorderType::Plain)
+            .title(Span::styled(title_text, Style::default().fg(title_color).bg(t.footer_bg())))
+            .style(Style::default().bg(t.footer_bg()));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        if inner.width < 18 || inner.height < 2 {
+            return;
+        }
+        let buf = frame.buffer_mut();
+        clear_area(inner, buf, panel_bg(t));
+        let w = inner.width as usize;
+        let elapsed_w: usize = 5;
+        let label_w: usize = 11.min(w.saturating_sub(elapsed_w + 4));
+        let activity_w: usize = w.saturating_sub(2 + label_w + 1 + elapsed_w);
+        let child_rows = (inner.height as usize).saturating_sub(1);
+        for (row, child) in dp.children.iter().enumerate() {
+            if row >= child_rows { break; }
+            let y = inner.y + row as u16;
+            clear_row(y, inner.x, inner.right(), buf, panel_bg(t));
+            let (ind_ch, ind_color) = match child.status.as_str() {
+                "running" => ("▷ ", Color::Rgb(232, 186, 104)),
+                "completed" => ("✓ ", Color::Rgb(42, 180, 200)),
+                "failed" => ("✗ ", Color::Rgb(224, 72, 72)),
+                _ => ("○ ", Color::Rgb(40, 56, 72)),
+            };
+            let mut x = inner.x;
+            x = render_str_colored(ind_ch, x, y, inner.right(), panel_bg(t), buf, |_| ind_color);
+            let label_color = ind_color;
+            let display_label: String = child.label.chars().take(label_w).collect();
+            x = render_str_colored(&display_label, x, y, inner.right(), panel_bg(t), buf, |_| label_color);
+            while x < inner.x + 2 + label_w as u16 {
+                if x >= inner.right() { break; }
+                if let Some(cell) = buf.cell_mut(Position::new(x, y)) { cell.set_char(' '); cell.set_bg(panel_bg(t)); }
+                x += 1;
+            }
+            let activity = child.result_summary.clone().or_else(|| child.last_tool.clone()).unwrap_or_default();
+            let act_color = Color::Rgb(36, 80, 96);
+            let sanitized = strip_terminal_control(&activity);
+            let act_display = if UnicodeWidthStr::width(sanitized.as_str()) > activity_w {
+                truncate_display_width(&sanitized, activity_w)
+            } else { sanitized };
+            x = render_str_colored(&act_display, x, y, inner.right(), panel_bg(t), buf, |_| act_color);
+            let act_end_x = inner.x + 2 + label_w as u16 + activity_w as u16;
+            while x < act_end_x {
+                if x >= inner.right() { break; }
+                if let Some(cell) = buf.cell_mut(Position::new(x, y)) { cell.set_char(' '); cell.set_bg(panel_bg(t)); }
+                x += 1;
+            }
+            let elapsed_secs = child.started_at.and_then(|s| s.elapsed().ok()).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+            let elapsed_str = Self::format_elapsed(elapsed_secs);
+            let elapsed_color = Color::Rgb(36, 60, 76);
+            let _ = render_str_colored(&elapsed_str, x, y, inner.right(), panel_bg(t), buf, |_| elapsed_color);
+        }
+        let summary_y = inner.y + child_rows as u16;
+        if summary_y < inner.bottom() {
+            clear_row(summary_y, inner.x, inner.right(), buf, panel_bg(t));
+            let summary = format!("{} run {}✓ {}✗", dp.running, dp.completed, dp.failed);
+            let _ = render_str_colored(&summary, inner.x, summary_y, inner.right(), panel_bg(t), buf, |_| Color::Rgb(36, 60, 76));
         }
     }
 
