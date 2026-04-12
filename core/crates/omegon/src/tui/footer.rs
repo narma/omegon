@@ -269,15 +269,14 @@ impl FooterData {
                 t.muted(),
                 false,
             );
-            push_row(
-                &mut lines,
-                "version",
-                format_version_text(self.update_available.as_deref()),
-                value_width,
-                t.border_dim(),
-                t.dim(),
-                false,
-            );
+            lines.push(Line::from({
+                let mut spans = vec![Span::styled(
+                    format!(" {:<width$} ", "version", width = label_width),
+                    Style::default().fg(t.border_dim()),
+                )];
+                spans.extend(version_spans(self.update_available.as_deref(), t));
+                spans
+            }));
         } else {
             let model_short = short_model(&self.model_id);
             let provider_label = crate::auth::provider_by_id(&self.model_provider)
@@ -369,15 +368,14 @@ impl FooterData {
                 t.muted(),
                 true,
             );
-            push_row(
-                &mut lines,
-                "version",
-                format_version_text(self.update_available.as_deref()),
-                value_width,
-                t.border_dim(),
-                t.dim(),
-                false,
-            );
+            lines.push(Line::from({
+                let mut spans = vec![Span::styled(
+                    format!(" {:<width$} ", "version", width = label_width),
+                    Style::default().fg(t.border_dim()),
+                )];
+                spans.extend(version_spans(self.update_available.as_deref(), t));
+                spans
+            }));
             if !self.model_tier.is_empty() {
                 push_row(
                     &mut lines,
@@ -1006,9 +1004,26 @@ fn is_local_provider(provider: &str) -> bool {
 
 fn format_version_text(update_available: Option<&str>) -> String {
     match update_available {
-        Some(latest) => format!("v{} → v{latest}", env!("CARGO_PKG_VERSION")),
+        Some(_) => format!("v{}* - /update", env!("CARGO_PKG_VERSION")),
         None => format!("v{}", env!("CARGO_PKG_VERSION")),
     }
+}
+
+fn version_spans(update_available: Option<&str>, t: &dyn Theme) -> Vec<Span<'static>> {
+    let current = env!("CARGO_PKG_VERSION");
+    let (base, suffix) = current.split_once("-").unwrap_or((current, ""));
+    let mut spans = vec![Span::styled(
+        format!("v{base}"),
+        Style::default().fg(t.accent_bright()).add_modifier(Modifier::BOLD),
+    )];
+    if !suffix.is_empty() {
+        spans.push(Span::styled(format!("-{suffix}"), Style::default().fg(t.dim())));
+    }
+    if update_available.is_some() {
+        spans.push(Span::styled("*", Style::default().fg(t.warning()).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled(" - /update", Style::default().fg(t.dim())));
+    }
+    spans
 }
 
 fn short_model(model_id: &str) -> String {
@@ -1443,12 +1458,12 @@ mod tests {
     }
 
     #[test]
-    fn version_text_only_shows_transition_when_update_exists() {
+    fn version_text_only_shows_update_hint_when_update_exists() {
         let stable = format_version_text(None);
         assert_eq!(stable, format!("v{}", env!("CARGO_PKG_VERSION")));
 
         let upgrade = format_version_text(Some("9.9.9"));
-        assert_eq!(upgrade, format!("v{} → v9.9.9", env!("CARGO_PKG_VERSION")));
+        assert_eq!(upgrade, format!("v{}* - /update", env!("CARGO_PKG_VERSION")));
     }
 
     #[test]
@@ -1516,7 +1531,8 @@ mod tests {
         assert!(text.contains("T7"), "got {text}");
         assert!(text.contains("version"), "got {text}");
         assert!(text.contains("v"), "got {text}");
-        assert!(text.contains("9.9.9"), "got {text}");
+        assert!(text.contains("/update"), "got {text}");
+        assert!(!text.contains("9.9.9"), "got {text}");
         assert!(!text.contains("/Users/test/workspace"), "got {text}");
     }
 

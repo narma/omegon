@@ -163,6 +163,7 @@ fn is_clipboard_file(path: &Path) -> bool {
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
 
     fn touch(dir: &Path, name: &str, age: Duration) -> PathBuf {
         let path = dir.join(name);
