@@ -188,6 +188,56 @@ fn collapsed_paste_token_renders_as_editor_chip() {
     );
 }
 
+#[tokio::test]
+async fn bang_prefix_wraps_prompt_as_bash_request() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+    app.editor.set_text("!git status");
+
+    app.submit_editor_buffer(&tx).await;
+
+    match rx.recv().await.expect("queued prompt") {
+        TuiCommand::SubmitPrompt(PromptSubmission { text, .. }) => {
+            assert!(text.contains("Run this bash command"), "{text}");
+            assert!(text.contains("git status"), "{text}");
+        }
+        other => panic!("expected prompt submission, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn at_prefix_wraps_prompt_as_context_request() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+    app.editor.set_text("@queue semantics");
+
+    app.submit_editor_buffer(&tx).await;
+
+    match rx.recv().await.expect("queued prompt") {
+        TuiCommand::SubmitPrompt(PromptSubmission { text, .. }) => {
+            assert!(text.contains("request focused context"), "{text}");
+            assert!(text.contains("queue semantics"), "{text}");
+        }
+        other => panic!("expected prompt submission, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn star_prefix_wraps_prompt_as_memory_injection_request() {
+    let mut app = test_app();
+    let (tx, mut rx) = test_tx_with_rx();
+    app.editor.set_text("*document our work");
+
+    app.submit_editor_buffer(&tx).await;
+
+    match rx.recv().await.expect("queued prompt") {
+        TuiCommand::SubmitPrompt(PromptSubmission { text, .. }) => {
+            assert!(text.contains("recall relevant project memory"), "{text}");
+            assert!(text.contains("document our work"), "{text}");
+        }
+        other => panic!("expected prompt submission, got {other:?}"),
+    }
+}
 #[test]
 fn queued_prompt_preview_mentions_attachment_count() {
     let mut app = test_app();

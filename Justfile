@@ -323,9 +323,24 @@ rc:
         NEW_RC=$((RC_NUM + 1))
         NEW_VERSION="${BASE}-rc.${NEW_RC}"
     else
+        # Current version is a stable release (no -rc.N suffix).  Bumping
+        # from here starts a NEW minor release line, which is almost never
+        # what you want when iterating on RCs.  Require explicit opt-in so
+        # an accidental `just rc` right after a stable cut can't push tags
+        # for a version that doesn't exist yet.
         IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
         BASE="${MAJOR}.${MINOR}.$((PATCH + 1))"
         NEW_VERSION="${BASE}-rc.1"
+        echo ""
+        echo "⚠  Current version ($CURRENT) is a stable release."
+        echo "   This will start a NEW release line: $NEW_VERSION"
+        echo ""
+        printf "   Type 'yes' to confirm, or Ctrl-C to abort: "
+        read CONFIRM
+        if [ "$CONFIRM" != "yes" ]; then
+            echo "✗ Aborted."
+            exit 1
+        fi
     fi
 
     echo "New version: $NEW_VERSION"

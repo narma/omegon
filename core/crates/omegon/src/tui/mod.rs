@@ -77,6 +77,14 @@ pub enum PromptQueueMode {
     Immediate,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PromptPrefixMode {
+    Agent,
+    Bash,
+    Context,
+    MemoryInject,
+}
+
 /// Messages from TUI to the agent coordinator.
 #[derive(Debug)]
 pub enum TuiCommand {
@@ -2329,6 +2337,23 @@ impl App {
         }
     }
 
+    fn detect_prompt_prefix(text: &str) -> (PromptPrefixMode, String) {
+        let trimmed = text.trim_start();
+        if let Some(rest) = trimmed.strip_prefix('!') {
+            return (PromptPrefixMode::Bash, rest.trim_start().to_string());
+        }
+        if let Some(rest) = trimmed.strip_prefix('@') {
+            return (PromptPrefixMode::Context, rest.trim_start().to_string());
+        }
+        if let Some(rest) = trimmed.strip_prefix('*') {
+            return (
+                PromptPrefixMode::MemoryInject,
+                rest.trim_start().to_string(),
+            );
+        }
+        (PromptPrefixMode::Agent, text.to_string())
+    }
+
     fn queue_prompt_preview(text: &str, attachments: &[std::path::PathBuf]) -> String {
         let preview = text.chars().take(48).collect::<String>();
         if attachments.is_empty() {
@@ -2357,21 +2382,21 @@ impl App {
     }
 
     async fn submit_editor_buffer(&mut self, command_tx: &mpsc::Sender<TuiCommand>) {
-        let (text, attachments) = self.editor.take_submission();
-        if text.is_empty() && attachments.is_empty() {
+        let (raw_text, attachments) = self.editor.take_submission();
+        if raw_text.is_empty() && attachments.is_empty() {
             return;
         }
 
         if let Ok(mut guard) = self.login_prompt_tx.try_lock()
             && let Some(tx) = guard.take()
         {
-            let _ = tx.send(text.clone());
-            self.conversation.push_system(&format!("> {text}"));
+            let _ = tx.send(raw_text.clone());
+            self.conversation.push_system(&format!("> {raw_text}"));
             return;
         }
 
-        if text.starts_with('/') {
-            match self.handle_slash_command(&text, command_tx) {
+        if raw_text.starts_with('/') {
+            match self.handle_slash_command(&raw_text, command_tx) {
                 SlashResult::Display(response) => {
                     self.conversation.push_system(&response);
                 }
@@ -2381,59 +2406,47 @@ impl App {
                     let _ = command_tx.send(TuiCommand::Quit).await;
                 }
                 SlashResult::NotACommand => {
-                    if self.agent_active {
-                        let should_interrupt =
-                            matches!(self.queue_mode, PromptQueueMode::InterruptAfterTurn);
-                        let mode_label = match self.queue_mode {
-                            PromptQueueMode::InterruptAfterTurn => "after-turn",
-                            PromptQueueMode::UntilReady => "ready",
-                            PromptQueueMode::Immediate => "now",
-                        };
-                        self.queue_prompt(text.clone(), attachments.clone());
-                        self.conversation
-                            .push_system(&format!("Queue mode: {mode_label}"));
-                        if should_interrupt {
-                            let _ = self.interrupt();
-                        }
-                    } else {
-                        if attachments.is_empty() {
-                            self.conversation.push_user(&text);
-                        } else {
-                            self.conversation
-                                .push_user_with_attachments(&text, &attachments);
-                        }
-                        self.history.push(text.clone());
-                        self.history_idx = None;
-                        self.agent_active = true;
-                        if let Ok(mut ss) = self.dashboard_handles.session.lock() {
-                            ss.busy = true;
-                        }
-                        if attachments.is_empty() {
-                            let _ = command_tx
-                                .send(TuiCommand::SubmitPrompt(PromptSubmission {
-                                    text,
-                                    image_paths: Vec::new(),
-                                    submitted_by: "local-tui".to_string(),
-                                    via: "tui",
-                                    queue_mode: self.queue_mode,
-                                }))
-                                .await;
-                        } else {
-                            let _ = command_tx
-                                .send(TuiCommand::SubmitPrompt(PromptSubmission {
-                                    text,
-                                    image_paths: attachments,
-                                    submitted_by: "local-tui".to_string(),
-                                    via: "tui",
-                                    queue_mode: self.queue_mode,
-                                }))
-                                .await;
-                        }
-                    }
+                    self.submit_prefixed_prompt(raw_text, attachments, command_tx)
+                        .await;
                 }
             }
             return;
         }
+
+        self.submit_prefixed_prompt(raw_text, attachments, command_tx)
+            .await;
+    }
+
+    async fn submit_prefixed_prompt(
+        &mut self,
+        raw_text: String,
+        attachments: Vec<std::path::PathBuf>,
+        command_tx: &mpsc::Sender<TuiCommand>,
+    ) {
+        let (prefix_mode, text) = Self::detect_prompt_prefix(&raw_text);
+        let text = text.trim().to_string();
+        if text.is_empty() && attachments.is_empty() {
+            return;
+        }
+
+        let final_text = match prefix_mode {
+            PromptPrefixMode::Agent => text,
+            PromptPrefixMode::Bash => format!("Run this bash command and report the result clearly:
+
+```bash
+{}
+```", text),
+            PromptPrefixMode::Context => format!("Before answering, request focused context for this query and use it in your response:
+
+{}", text),
+            PromptPrefixMode::MemoryInject => {
+                let memory_line = format!("Memory recall requested for: {}", text);
+                self.conversation.push_system(&memory_line);
+                format!("Before answering, recall relevant project memory for this request and incorporate the retrieved facts explicitly:
+
+{}", text)
+            }
+        };
 
         if self.agent_active {
             let should_interrupt = matches!(self.queue_mode, PromptQueueMode::InterruptAfterTurn);
@@ -2442,7 +2455,7 @@ impl App {
                 PromptQueueMode::UntilReady => "ready",
                 PromptQueueMode::Immediate => "now",
             };
-            self.queue_prompt(text.clone(), attachments.clone());
+            self.queue_prompt(final_text.clone(), attachments.clone());
             self.conversation
                 .push_system(&format!("Queue mode: {mode_label}"));
             if should_interrupt {
@@ -2455,12 +2468,12 @@ impl App {
         }
 
         if attachments.is_empty() {
-            self.conversation.push_user(&text);
+            self.conversation.push_user(&final_text);
         } else {
             self.conversation
-                .push_user_with_attachments(&text, &attachments);
+                .push_user_with_attachments(&final_text, &attachments);
         }
-        self.history.push(text.clone());
+        self.history.push(raw_text.clone());
         self.history_idx = None;
         self.agent_active = true;
         if let Ok(mut ss) = self.dashboard_handles.session.lock() {
@@ -2468,7 +2481,7 @@ impl App {
         }
         let _ = command_tx
             .send(TuiCommand::SubmitPrompt(PromptSubmission {
-                text,
+                text: final_text,
                 image_paths: attachments,
                 submitted_by: "local-tui".to_string(),
                 via: "tui",
