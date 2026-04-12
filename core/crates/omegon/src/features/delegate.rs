@@ -9,17 +9,18 @@
 //! when background tasks complete.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use crate::child_agent::{
+    spawn_headless_child_agent, write_child_prompt_file, ChildAgentRuntimeProfile,
+    ChildAgentSpawnConfig,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use omegon_traits::{
@@ -33,20 +34,6 @@ pub struct AgentSpec {
     pub name: String,
     pub description: String,
     pub is_write_agent: bool,
-}
-
-fn parse_csv_env_local(name: &str) -> Vec<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| {
-            value
-                .split(',')
-                .map(str::trim)
-                .filter(|entry| !entry.is_empty())
-                .map(ToString::to_string)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Status of a delegate task
@@ -200,55 +187,51 @@ If blocked, say the blocker plainly.\n",
         runtime: &DelegateRuntimeRequest,
         mind: Option<&str>,
     ) -> anyhow::Result<String> {
-        let agent_binary = std::env::current_exe().context("delegate runner could not locate current executable")?;
-        let prompt_path = self.cwd.join(".omegon").join("delegate-prompt.md");
-        if let Some(parent) = prompt_path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create delegate prompt dir {}", parent.display()))?;
-        }
-        std::fs::write(&prompt_path, prompt)
-            .with_context(|| format!("failed to write delegate prompt {}", prompt_path.display()))?;
+        let prompt_path = write_child_prompt_file(&self.cwd, ".delegate-prompt.md", prompt)?;
 
         let model = runtime
             .model
             .clone()
             .unwrap_or_else(|| "qwen3:4b".to_string());
-        let mut cmd = Command::new(&agent_binary);
-        cmd.arg("agent")
-            .arg("--prompt-file")
-            .arg(&prompt_path)
-            .arg("--cwd")
-            .arg(&self.cwd)
-            .arg("--model")
-            .arg(&model)
-            .arg("--max-turns")
-            .arg("8")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .env("OMEGON_CHILD", "1")
-            .env("OMEGON_CHILD_ENABLED_TOOLS", "read,write,edit,change,bash")
-            .env("OMEGON_CHILD_DISABLED_TOOLS", "web_search,design_tree,design_tree_update,openspec_manage,lifecycle_doctor,cleave_assess,cleave_run,request_context,context_compact,context_clear")
-            .env("OMEGON_CHILD_CONTEXT_CLASS", "squad")
-            .env(
-                "OMEGON_CHILD_THINKING_LEVEL",
-                runtime.thinking_level.as_deref().unwrap_or("minimal"),
-            );
-        if let Some(scope) = runtime.scope.as_ref()
-            && !scope.is_empty()
-        {
-            cmd.env("OMEGON_CHILD_PRELOADED_FILES", scope.join(":"));
-        }
-        if let Some(persona) = mind
-            && !persona.is_empty()
-        {
-            cmd.env("OMEGON_CHILD_PERSONA", persona);
-        }
-        for tool in parse_csv_env_local("OMEGON_CHILD_ENABLED_TOOLS") {
-            let _ = tool;
-        }
-
-        let output = cmd.output().await.context("delegate child process failed to execute")?;
+        let child_config = ChildAgentSpawnConfig {
+            agent_binary: std::env::current_exe()
+                .context("delegate runner could not locate current executable")?,
+            model,
+            max_turns: 8,
+            inherited_env: Vec::new(),
+            injected_env: Vec::new(),
+            runtime: ChildAgentRuntimeProfile {
+                context_class: Some("squad".to_string()),
+                thinking_level: Some(
+                    runtime
+                        .thinking_level
+                        .clone()
+                        .unwrap_or_else(|| "minimal".to_string()),
+                ),
+                enabled_tools: vec!["read".into(), "write".into(), "edit".into(), "change".into(), "bash".into()],
+                disabled_tools: vec![
+                    "web_search".into(),
+                    "design_tree".into(),
+                    "design_tree_update".into(),
+                    "openspec_manage".into(),
+                    "lifecycle_doctor".into(),
+                    "cleave_assess".into(),
+                    "cleave_run".into(),
+                    "request_context".into(),
+                    "context_compact".into(),
+                    "context_clear".into(),
+                ],
+                preloaded_files: runtime.scope.clone().unwrap_or_default(),
+                persona: mind.map(ToString::to_string),
+                ..Default::default()
+            },
+        };
+        let (mut child, _pid) =
+            spawn_headless_child_agent(&child_config, &self.cwd, &prompt_path)?;
+        let output = child
+            .wait_with_output()
+            .await
+            .context("delegate child process failed to execute")?;
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if stdout.is_empty() {

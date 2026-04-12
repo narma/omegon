@@ -59,6 +59,7 @@ mod tools;
 mod tui;
 pub mod util;
 mod web;
+mod child_agent;
 mod checkpoint;
 mod workflow;
 

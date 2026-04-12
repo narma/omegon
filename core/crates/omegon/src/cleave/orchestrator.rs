@@ -10,13 +10,16 @@ use super::state::{self, ChildStatus, CleaveState};
 use super::waves::compute_waves;
 use super::worktree;
 use anyhow::{Context, Result};
+use crate::child_agent::{
+    spawn_headless_child_agent, write_child_prompt_file, ChildAgentRuntimeProfile,
+    ChildAgentSpawnConfig,
+};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
@@ -763,6 +766,20 @@ struct ChildDispatchConfig {
     progress_sink: SharedProgressSink,
 }
 
+fn child_runtime_profile(runtime: &CleaveChildRuntimeProfile) -> ChildAgentRuntimeProfile {
+    ChildAgentRuntimeProfile {
+        context_class: runtime.context_class.clone(),
+        thinking_level: runtime.thinking_level.clone(),
+        enabled_tools: runtime.enabled_tools.clone(),
+        disabled_tools: runtime.disabled_tools.clone(),
+        skills: runtime.skills.clone(),
+        enabled_extensions: runtime.enabled_extensions.clone(),
+        disabled_extensions: runtime.disabled_extensions.clone(),
+        preloaded_files: runtime.preloaded_files.clone(),
+        persona: runtime.persona.clone(),
+    }
+}
+
 fn classify_child_error(model: &str, e: anyhow::Error) -> ChildError {
     let provider = model.split(':').next().unwrap_or("unknown").to_string();
     let msg = e.to_string();
@@ -816,46 +833,18 @@ fn spawn_child_process(
     if !cwd.exists() {
         anyhow::bail!("Child cwd does not exist: {}", cwd.display());
     }
-    let prompt_file = std::fs::canonicalize(cwd)
-        .unwrap_or_else(|_| cwd.to_path_buf())
-        .join(".cleave-prompt.md");
+    let prompt_file = write_child_prompt_file(cwd, ".cleave-prompt.md", prompt)?;
     tracing::info!(child = %label, prompt_file = %prompt_file.display(), prompt_len = prompt.len(), "writing prompt file");
-    std::fs::write(&prompt_file, prompt)
-        .context(format!("Failed to write prompt file for child '{label}'"))?;
-    let max_turns_str = config.max_turns.to_string();
-    let canonical_cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    let cwd_arg = canonical_cwd.to_string_lossy().to_string();
-    let prompt_arg = prompt_file.to_string_lossy().to_string();
-    let mut args = vec![
-        "--prompt-file", prompt_arg.as_str(),
-        "--cwd", cwd_arg.as_str(),
-        "--model", config.model.as_str(),
-        "--max-turns", &max_turns_str,
-    ];
-    if let Some(ref context_class) = config.runtime.context_class {
-        args.extend(["--context-class", context_class.as_str()]);
-    }
-    if std::env::var("OMEGON_FORCE_BRIDGE").is_ok() {
-        args.extend(["--bridge", config.bridge_path.to_str().unwrap()]);
-        args.extend(["--node", config.node.as_str()]);
-    }
-    tracing::info!(child = %label, args = ?args, "spawn args");
+    let child_config = ChildAgentSpawnConfig {
+        agent_binary: config.agent_binary.clone(),
+        model: config.model.clone(),
+        max_turns: config.max_turns,
+        inherited_env: config.inherited_env.clone(),
+        injected_env: config.injected_env.clone(),
+        runtime: child_runtime_profile(&config.runtime),
+    };
     tracing::info!(child = %label, inherited_env = config.inherited_env.len(), injected_env = config.injected_env.len(), inherited_env_names = ?config.inherited_env.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), injected_env_names = ?config.injected_env.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(), "child env inheritance");
-    let mut child = Command::new(&config.agent_binary);
-    child.args(&args).current_dir(cwd).env("OMEGON_CHILD", "1").stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
-    for (key, value) in &config.inherited_env { child.env(key, value); }
-    for (key, value) in &config.injected_env { child.env(key, value); }
-    if let Some(ref thinking) = config.runtime.thinking_level { child.env("OMEGON_CHILD_THINKING_LEVEL", thinking); }
-    if let Some(ref context_class) = config.runtime.context_class { child.env("OMEGON_CHILD_CONTEXT_CLASS", context_class); }
-    if !config.runtime.enabled_tools.is_empty() { child.env("OMEGON_CHILD_ENABLED_TOOLS", config.runtime.enabled_tools.join(",")); }
-    if !config.runtime.disabled_tools.is_empty() { child.env("OMEGON_CHILD_DISABLED_TOOLS", config.runtime.disabled_tools.join(",")); }
-    if !config.runtime.skills.is_empty() { child.env("OMEGON_CHILD_SKILLS", config.runtime.skills.join(",")); }
-    if !config.runtime.enabled_extensions.is_empty() { child.env("OMEGON_CHILD_ENABLED_EXTENSIONS", config.runtime.enabled_extensions.join(",")); }
-    if !config.runtime.disabled_extensions.is_empty() { child.env("OMEGON_CHILD_DISABLED_EXTENSIONS", config.runtime.disabled_extensions.join(",")); }
-    if !config.runtime.preloaded_files.is_empty() { child.env("OMEGON_CHILD_PRELOADED_FILES", config.runtime.preloaded_files.join(":")); }
-    if let Some(ref persona) = config.runtime.persona { child.env("OMEGON_CHILD_PERSONA", persona); }
-    let child = child.spawn().context(format!("Failed to spawn omegon-agent for child '{label}'"))?;
-    let pid = child.id().unwrap_or(0);
+    let (child, pid) = spawn_headless_child_agent(&child_config, cwd, &prompt_file)?;
     tracing::info!(child = %label, pid, "child spawned");
     config.progress_sink.emit(&ProgressEvent::ChildSpawned { child: label.to_string(), pid });
     Ok((child, pid))
