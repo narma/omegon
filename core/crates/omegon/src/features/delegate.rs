@@ -301,6 +301,125 @@ pub struct DelegateRunner {
     result_store: Arc<DelegateResultStore>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DelegateChildFailureKind {
+    MissingLocalModel,
+    MissingCredential,
+    ProviderStartup,
+    WorkspaceStartup,
+    Unknown,
+}
+
+fn classify_delegate_child_failure(stderr: &str, model: &str) -> DelegateChildFailureKind {
+    let lower = stderr.to_ascii_lowercase();
+    let provider = crate::providers::infer_provider_id(model);
+
+    if lower.contains("model") && (lower.contains("not found") || lower.contains("pull")) {
+        return DelegateChildFailureKind::MissingLocalModel;
+    }
+    if lower.contains("api key")
+        || lower.contains("missing credential")
+        || lower.contains("auth")
+        || lower.contains("oauth")
+        || lower.contains("not logged in")
+        || lower.contains("secrets preflight") && lower.contains("missing")
+    {
+        return DelegateChildFailureKind::MissingCredential;
+    }
+    if lower.contains("repo model")
+        || lower.contains("workspace")
+        || lower.contains("branch=")
+        || lower.contains("cwd does not exist")
+    {
+        return DelegateChildFailureKind::WorkspaceStartup;
+    }
+    if matches!(provider.as_str(), "anthropic" | "openai" | "openai-codex" | "openrouter" | "groq" | "xai" | "mistral" | "cerebras" | "huggingface" | "ollama" | "ollama-cloud") {
+        return DelegateChildFailureKind::ProviderStartup;
+    }
+    DelegateChildFailureKind::Unknown
+}
+
+fn format_delegate_child_failure(
+    status_code: Option<i32>,
+    stderr: &str,
+    model: &str,
+    runtime: &DelegateRuntimeRequest,
+    prompt_path: &std::path::Path,
+) -> String {
+    let provider = crate::providers::infer_provider_id(model);
+    let failure_kind = classify_delegate_child_failure(stderr, model);
+    let summary = match failure_kind {
+        DelegateChildFailureKind::MissingLocalModel => {
+            "Delegate worker could not start because the selected local model is unavailable."
+        }
+        DelegateChildFailureKind::MissingCredential => {
+            "Delegate worker could not start because the selected upstream provider is missing credentials or login state."
+        }
+        DelegateChildFailureKind::ProviderStartup => {
+            "Delegate worker failed during provider/runtime startup."
+        }
+        DelegateChildFailureKind::WorkspaceStartup => {
+            "Delegate worker failed before inference while initializing workspace/repo state."
+        }
+        DelegateChildFailureKind::Unknown => "Delegate worker exited before completing the task.",
+    };
+
+    let mut out = String::new();
+    out.push_str(summary);
+    out.push_str("\n\n");
+    out.push_str("Delegate child context\n");
+    out.push_str(&format!("  provider: {provider}\n"));
+    out.push_str(&format!("  model: {model}\n"));
+    out.push_str(&format!("  worker_profile: {}\n", runtime.worker_profile.as_str()));
+    out.push_str(&format!(
+        "  thinking: {}\n",
+        runtime.thinking_level.as_deref().unwrap_or("minimal")
+    ));
+    out.push_str("  context_class: squad\n");
+    out.push_str(&format!(
+        "  scope: {}\n",
+        runtime
+            .scope
+            .as_ref()
+            .map(|s| if s.is_empty() { "(none)".to_string() } else { s.join(", ") })
+            .unwrap_or_else(|| "(none)".to_string())
+    ));
+    out.push_str(&format!("  prompt_file: {}\n", prompt_path.display()));
+    out.push_str(&format!(
+        "  exit_code: {}\n",
+        status_code
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".to_string())
+    ));
+
+    match failure_kind {
+        DelegateChildFailureKind::MissingLocalModel => {
+            out.push_str("\nSuggested next step\n");
+            out.push_str("  Choose a non-local delegate model or install the required Ollama model before retrying.\n");
+        }
+        DelegateChildFailureKind::MissingCredential => {
+            out.push_str("\nSuggested next step\n");
+            out.push_str("  Log in or configure credentials for the selected provider, or pass an explicit model/provider for delegate.\n");
+        }
+        DelegateChildFailureKind::ProviderStartup => {
+            out.push_str("\nSuggested next step\n");
+            out.push_str("  Retry with an explicit model/provider, then inspect provider auth and startup logs if it reproduces.\n");
+        }
+        DelegateChildFailureKind::WorkspaceStartup => {
+            out.push_str("\nSuggested next step\n");
+            out.push_str("  Check the child cwd/repo state and whether the delegated scope references files available in this workspace.\n");
+        }
+        DelegateChildFailureKind::Unknown => {}
+    }
+
+    if !stderr.trim().is_empty() {
+        out.push_str("\nChild stderr\n");
+        out.push_str(stderr.trim());
+    }
+
+    out
+}
+
 impl DelegateRunner {
     pub fn new(cwd: PathBuf, result_store: Arc<DelegateResultStore>) -> Self {
         Self { cwd, result_store }
@@ -366,7 +485,7 @@ If blocked, say the blocker plainly.\n",
         let child_config = ChildAgentSpawnConfig {
             agent_binary: std::env::current_exe()
                 .context("delegate runner could not locate current executable")?,
-            model,
+            model: model.clone(),
             max_turns: runtime.worker_profile.max_turns(),
             inherited_env: Vec::new(),
             injected_env: Vec::new(),
@@ -390,11 +509,13 @@ If blocked, say the blocker plainly.\n",
             }
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            Err(anyhow::anyhow!(
-                "delegate child exited with code {:?}: {}",
+            Err(anyhow::anyhow!(format_delegate_child_failure(
                 output.status.code(),
-                stderr
-            ))
+                &stderr,
+                &model,
+                runtime,
+                &prompt_path,
+            )))
         }
     }
 
@@ -1041,6 +1162,28 @@ fn parse_agent_spec(content: &str) -> Option<AgentSpec> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn delegate_failure_formatter_surfaces_provider_and_runtime_context() {
+        let runtime = DelegateRuntimeRequest {
+            scope: Some(vec!["src/lib.rs".into()]),
+            model: Some("ollama:qwen3:32b".into()),
+            thinking_level: Some("minimal".into()),
+            worker_profile: DelegateWorkerProfile::Patch,
+        };
+        let rendered = format_delegate_child_failure(
+            Some(1),
+            "model not found, try pulling it first",
+            "ollama:qwen3:32b",
+            &runtime,
+            std::path::Path::new("/tmp/.delegate-prompt.md"),
+        );
+        assert!(rendered.contains("provider: ollama"));
+        assert!(rendered.contains("model: ollama:qwen3:32b"));
+        assert!(rendered.contains("worker_profile: patch"));
+        assert!(rendered.contains("scope: src/lib.rs"));
+        assert!(rendered.contains("Suggested next step"));
+    }
 
     #[test]
     fn delegate_worker_profile_defaults_to_scout_and_is_hyper_scaled_down() {
