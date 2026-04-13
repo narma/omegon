@@ -415,7 +415,7 @@ rc:
     trap rollback ERR INT TERM
 
     # Mutate version and milestone state only after validation passes.
-    sed -i '' "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
+    sed -i "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
     ./scripts/milestone-update.sh rc "$NEW_VERSION"
 
     # Refresh the lockfile before commit/tag so release steps do not dirty the
@@ -497,7 +497,7 @@ release:
     NEW_VERSION=$(echo "$CURRENT" | sed 's/-rc\.[0-9]*//')
     echo "Releasing: $CURRENT → $NEW_VERSION"
 
-    sed -i '' "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
+    sed -i "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
 
     # Mark milestone as released
     ./scripts/milestone-update.sh release "$NEW_VERSION"
@@ -526,7 +526,7 @@ release:
     NEXT_RC="${NEXT_PATCH}-rc.1"
     echo ""
     echo "Opening next cycle: $NEXT_RC"
-    sed -i '' "s/^version = \"${NEW_VERSION}\"/version = \"${NEXT_RC}\"/" core/Cargo.toml
+    sed -i "s/^version = \"${NEW_VERSION}\"/version = \"${NEXT_RC}\"/" core/Cargo.toml
 
     # Open next milestone
     ./scripts/milestone-update.sh open "$NEXT_PATCH"
