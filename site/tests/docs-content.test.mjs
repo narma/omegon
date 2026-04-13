@@ -56,8 +56,8 @@ test('site builds in stable and preview variants', () => {
     env: {
       ...process.env,
       PUBLIC_SITE_VARIANT: 'preview',
-      PUBLIC_SITE_URL: 'https://omegon.dev',
-      PUBLIC_PREVIEW_SITE_URL: 'https://omegon.dev',
+      PUBLIC_SITE_URL: 'https://omegon.styrene.dev',
+      PUBLIC_PREVIEW_SITE_URL: 'https://omegon.styrene.dev',
     },
     stdio: 'pipe',
   });
