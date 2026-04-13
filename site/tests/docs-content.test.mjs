@@ -24,10 +24,12 @@ test('install docs separate stable public guidance from preview guidance', () =>
 test('homepage differentiates stable public site from preview site', () => {
   const content = readFileSync(resolve(here, '../src/pages/index.astro'), 'utf8');
 
-  assert.match(content, /Public stable site only\./);
-  assert.match(content, /Preview channel:/);
-  assert.match(content, /Nightly channel:/);
-  assert.match(content, /public stable releases remain on/i);
+  assert.match(content, /Public stable docs/);
+  assert.match(content, /Preview \/ staging docs/);
+  assert.match(content, /Preview channel/);
+  assert.match(content, /Nightly channel/);
+  assert.match(content, /Stable docs/);
+  assert.match(content, /Preview \/ RC/);
 });
 
 test('providers docs call out stable vs preview split', () => {

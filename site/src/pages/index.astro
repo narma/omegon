@@ -12,6 +12,38 @@ import {
 const changelog = readFileSync(resolve("../CHANGELOG.md"), "utf-8");
 const versionMatch = changelog.match(/## \[([0-9]+\.[0-9]+\.[0-9]+)\]/);
 const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
+
+const valueCards = [
+  {
+    title: "Honest engine identity",
+    body: "See the concrete runtime backend — Anthropic/Claude, OpenAI API, OpenAI/Codex, or Ollama — instead of vague routing theater.",
+  },
+  {
+    title: "Persistent project memory",
+    body: "Durable facts, episodic recall, and typed memory sections survive across sessions. Not another markdown file pretending to be state.",
+  },
+  {
+    title: "Parallel execution",
+    body: "Decompose substantial work into scoped git worktree children with conflict detection and merge-back into the parent branch.",
+  },
+  {
+    title: "Design + spec lifecycle",
+    body: "Track design exploration in the design tree, then drive implementation with OpenSpec scenarios and verification loops.",
+  },
+  {
+    title: "Real TUI instrumentation",
+    body: "Wrapped multiline editor, tool cards, memory telemetry, provider state, and quota metadata — an instrument panel, not a transcript dump.",
+  },
+  {
+    title: "Single binary",
+    body: "Native Rust harness, signed releases, no runtime Node.js dependency, and direct provider integrations instead of subprocess cosplay.",
+  },
+];
+
+const modeTitle = isPreviewSite ? "Preview / staging docs" : "Public stable docs";
+const modeBody = isPreviewSite
+  ? "RC and nightly guidance live here. Stable operator guidance stays on the public .io surface."
+  : "Conservative install and onboarding guidance lives here. Preview and RC guidance stay on the .styrene.dev surface.";
 ---
 
 <html lang="en">
@@ -22,7 +54,7 @@ const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
   <meta name="description" content="Single binary. Native Rust. Real memory. Parallel worktrees. An AI agent harness for operators who build." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 </head>
 <body>
@@ -35,101 +67,102 @@ const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
     </div>
   </nav>
 
-  <main class="hero">
-    <div class="hero-content">
-      <img src="/icon.svg" alt="Omegon" class="hero-icon" />
-      <p class="hero-subtitle">Terminal-native AI agent harness</p>
-      <p class="hero-tagline">
-        Single binary. Native Rust. Real memory. Parallel worktrees.<br />
-        For operators who build.
-      </p>
-      <p class="hero-copy">
-        Omegon is the agent harness for engineers who need more than a polite chatbot: persistent project memory,
-        honest provider identity, design and spec lifecycles, and enough systems discipline to survive real work.
-        It installs two entrypoints from the same binary: <code>om</code> for the slim, copy-friendly terminal mode,
-        and <code>omegon</code> for the full harness.
-      </p>
-      <p class="hero-surface-note">
-        {isPreviewSite
-          ? <>Preview surface: RC and nightly guidance live here. Public stable guidance stays on <a href={canonicalSiteUrl}>{canonicalSiteUrl}</a>.</>
-          : <>Public stable surface: conservative install and docs guidance lives here. Preview and RC guidance lives on <a href={previewSiteUrl}>{previewSiteUrl}</a>.</>}
-      </p>
-
-      <div class="hero-install-wrap">
-        <pre class="hero-install" id="hero-install-pre"><code id="hero-install-cmd">curl -fsSL {installScriptUrl} | sh</code></pre>
-        <button class="copy-btn" id="copy-btn" aria-label="Copy install command" title="Copy">
-          <svg class="copy-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
-            <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
-          </svg>
-          <svg class="check-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
-            <path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-      </div>
-      <p class="hero-version">
-        installs <a href={`https://github.com/styrene-lab/omegon/releases/tag/${currentVersion}`} class="version-tag">{currentVersion}</a>
-        &thinsp;·&thinsp;
-        <a href="/docs/install">install docs →</a>
-      </p>
-      {isPreviewSite ? (
-        <>
-          <p class="hero-alt-install">Preview channel: <code>CHANNEL=rc curl -fsSL {previewSiteUrl}/install.sh | sh</code></p>
-          <p class="hero-alt-install">Nightly channel: <code>CHANNEL=nightly curl -fsSL {previewSiteUrl}/install.sh | sh</code></p>
-          <p class="hero-alt-install hero-alt-rc">Public stable releases remain on <a href={canonicalSiteUrl}>{canonicalSiteUrl}</a>.</p>
-        </>
-      ) : (
-        <>
-          <p class="hero-alt-install">Public stable site only. For RC/nightly builds, use <a href={previewSiteUrl}>{previewSiteUrl}</a>.</p>
-          <p class="hero-alt-install hero-alt-rc">Package manager: <code>brew tap styrene-lab/tap && brew install omegon</code></p>
-        </>
-      )}
-      <p class="hero-alt-install">After install: <code>om</code> starts the slim terminal-first mode, <code>omegon</code> starts the full harness.</p>
-
-      <div class="hero-cta">
-        <a href="/docs/get-started" class="btn btn-primary">Get Working Fast →</a>
-        <a href="/docs/" class="btn btn-secondary">Read the Docs</a>
-      </div>
-    </div>
-
-    <div class="features">
-      <div class="feature-card">
-        <h3>Honest engine identity</h3>
-        <p>Omegon shows the concrete runtime backend — Anthropic/Claude, OpenAI API, OpenAI/Codex, Ollama — instead of hiding routing behind mushy branding.</p>
+  <main class="landing-shell">
+    <section class="hero-grid">
+      <div class="hero-copy-column">
+        <div class="hero-kicker">{modeTitle}</div>
+        <h1>The AI agent harness for operators who build.</h1>
+        <p class="hero-lead">
+          Single binary. Native Rust. Real memory. Parallel worktrees. Design and spec lifecycles built in.
+        </p>
+        <p class="hero-body">
+          Omegon is not a chatbot in your terminal. It is a systems engineering harness that can read and edit code,
+          run commands, manage project memory across sessions, decompose work into parallel children, and keep design intent
+          as a first-class artifact.
+        </p>
+        <div class="hero-cta-row">
+          <a href="/docs/get-started" class="btn btn-primary">Get Working Fast</a>
+          <a href="/docs/" class="btn btn-secondary">Read the Docs</a>
+        </div>
+        <div class="hero-proof-row">
+          <span>Honest provider identity</span>
+          <span>Persistent memory</span>
+          <span>Parallel git worktrees</span>
+        </div>
       </div>
 
-      <div class="feature-card">
-        <h3>Persistent memory</h3>
-        <p>Project knowledge survives across sessions. Durable facts, episodic recall, and typed memory sections. Not another markdown file pretending to be state.</p>
-      </div>
+      <div class="hero-rail">
+        <section class="brand-panel">
+          <img src="/icon.svg" alt="Omegon" class="brand-mark" />
+          <div>
+            <div class="brand-overline">Terminal-native AI agent harness</div>
+            <div class="brand-copy">{modeBody}</div>
+          </div>
+        </section>
 
-      <div class="feature-card">
-        <h3>Parallel execution</h3>
-        <p>Decompose substantial work into parallel git worktree children with scoped execution, conflict detection, and merge back into the parent branch.</p>
-      </div>
+        <section class="install-panel">
+          <div class="panel-label">Install</div>
+          <h2>Start with one command.</h2>
+          <p class="panel-copy">
+            Omegon installs two entrypoints from the same binary: <code>om</code> for the slim terminal-first posture and <code>omegon</code> for the full harness.
+          </p>
 
-      <div class="feature-card">
-        <h3>Design + spec lifecycle</h3>
-        <p>Track design exploration in the design tree, then drive implementation with OpenSpec scenarios. The plan is part of the system, not a side document.</p>
-      </div>
+          <div class="install-command-wrap">
+            <pre class="install-command"><code id="hero-install-cmd">curl -fsSL {installScriptUrl} | sh</code></pre>
+            <button class="copy-btn" id="copy-btn" aria-label="Copy install command" title="Copy">
+              <svg class="copy-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" stroke-width="1.25"/>
+                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>
+              </svg>
+              <svg class="check-icon" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:none">
+                <path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
 
-      <div class="feature-card">
-        <h3>Real TUI instrumentation</h3>
-        <p>Wrapped multiline editor, tool cards, memory telemetry, engine status, and limit metadata in the footer. It behaves like an instrument panel because that is what it is.</p>
-      </div>
+          <div class="version-row">
+            <span>installs <a href={`https://github.com/styrene-lab/omegon/releases/tag/${currentVersion}`}>{currentVersion}</a></span>
+            <a href="/docs/install">Install docs</a>
+          </div>
 
-      <div class="feature-card">
-        <h3>Single binary</h3>
-        <p>Native Rust harness, signed releases, no Node.js runtime requirement, and direct provider integrations instead of subprocess cosplay.</p>
+          {isPreviewSite ? (
+            <div class="channel-list">
+              <div class="channel-row"><span>Preview channel</span><code>CHANNEL=rc curl -fsSL {previewSiteUrl}/install.sh | sh</code></div>
+              <div class="channel-row"><span>Nightly channel</span><code>CHANNEL=nightly curl -fsSL {previewSiteUrl}/install.sh | sh</code></div>
+              <div class="channel-row subdued"><span>Stable</span><a href={canonicalSiteUrl}>{canonicalSiteUrl}</a></div>
+            </div>
+          ) : (
+            <div class="channel-list">
+              <div class="channel-row"><span>Stable docs</span><a href={`${canonicalSiteUrl}/docs/install`}>{canonicalSiteUrl}/docs/install</a></div>
+              <div class="channel-row subdued"><span>Preview / RC</span><a href={`${previewSiteUrl}/docs/install`}>{previewSiteUrl}/docs/install</a></div>
+              <div class="channel-row subdued"><span>Homebrew</span><code>brew tap styrene-lab/tap && brew install omegon</code></div>
+            </div>
+          )}
+        </section>
       </div>
-    </div>
+    </section>
 
-    <div class="stats-bar">
-      <div class="stat"><span class="stat-value">~19 MB</span><span class="stat-label">single binary</span></div>
-      <div class="stat"><span class="stat-value">10</span><span class="stat-label">inference providers</span></div>
-      <div class="stat"><span class="stat-value">53</span><span class="stat-label">agent tools</span></div>
-      <div class="stat"><span class="stat-value">0</span><span class="stat-label">runtime Node deps</span></div>
-    </div>
+    <section class="stats-strip">
+      <div class="stat-card"><span class="stat-value">~19 MB</span><span class="stat-label">single binary</span></div>
+      <div class="stat-card"><span class="stat-value">10</span><span class="stat-label">inference providers</span></div>
+      <div class="stat-card"><span class="stat-value">53</span><span class="stat-label">agent tools</span></div>
+      <div class="stat-card"><span class="stat-value">0</span><span class="stat-label">runtime Node deps</span></div>
+    </section>
+
+    <section class="value-section">
+      <div class="section-heading">
+        <div class="section-kicker">Why Omegon</div>
+        <h2>Built for software work as a system, not a transcript.</h2>
+      </div>
+      <div class="value-grid">
+        {valueCards.map((card) => (
+          <article class="value-card">
+            <h3>{card.title}</h3>
+            <p>{card.body}</p>
+          </article>
+        ))}
+      </div>
+    </section>
   </main>
 
   <footer class="docs-footer">
@@ -140,6 +173,7 @@ const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
     <a href="/privacy">Privacy</a> ·
     © 2024–2026 Black Meridian, LLC
   </footer>
+
   <script>
     const btn = document.getElementById('copy-btn');
     const cmd = document.getElementById('hero-install-cmd');
@@ -162,146 +196,419 @@ const currentVersion = versionMatch ? `v${versionMatch[1]}` : "latest";
 </html>
 
 <style>
-  .hero {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 40px 24px;
-    text-align: center;
-  }
-
   .topnav {
     position: sticky;
     top: 0;
     z-index: 100;
-    background: var(--bg);
+    background: rgba(2, 3, 10, 0.92);
+    backdrop-filter: blur(10px);
     border-bottom: 1px solid var(--border-dim);
-    padding: 12px 24px;
+    padding: 16px 28px;
     display: flex;
     align-items: center;
     justify-content: space-between;
   }
+
   .topnav-logo {
     font-size: 18px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--accent);
     letter-spacing: -0.5px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
     text-decoration: none;
   }
-  .topnav-logo:hover { text-decoration: none; }
+
   .topnav-links {
     display: flex;
-    gap: 20px;
+    gap: 24px;
     font-size: 14px;
   }
-  .topnav-links a { color: var(--muted); }
-  .topnav-links a:hover { color: var(--fg); text-decoration: none; }
 
-  .hero-icon {
-    width: 300px;
-    height: 300px;
-    margin-bottom: 12px;
+  .topnav-links a {
+    color: var(--muted);
   }
 
-  .hero-subtitle {
-    font-size: 36px;
-    font-weight: 700;
+  .topnav-links a:hover {
     color: var(--fg);
+    text-decoration: none;
+  }
+
+  .landing-shell {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 28px 96px;
+  }
+
+  .hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(360px, 0.95fr);
+    gap: 40px;
+    align-items: start;
+    padding: 24px 0 36px;
+  }
+
+  .hero-copy-column {
+    padding-top: 18px;
+  }
+
+  .hero-kicker,
+  .section-kicker,
+  .panel-label,
+  .brand-overline {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  h1 {
+    font-size: clamp(3rem, 6vw, 4.8rem);
+    line-height: 0.95;
+    letter-spacing: -0.05em;
+    margin: 18px 0 20px;
+    max-width: 10ch;
+  }
+
+  .hero-lead {
+    font-size: 1.2rem;
+    color: var(--fg);
+    max-width: 34rem;
     margin-bottom: 16px;
-    letter-spacing: -0.5px;
   }
 
-  .hero-tagline {
-    font-size: 18px;
+  .hero-body {
     color: var(--muted);
-    margin-bottom: 12px;
-    line-height: 1.6;
-    max-width: 680px;
-    margin-left: auto;
-    margin-right: auto;
+    max-width: 40rem;
+    margin-bottom: 24px;
+    font-size: 1rem;
   }
 
-  .hero-copy {
-    font-size: 15px;
-    color: var(--dim);
-    margin-bottom: 16px;
-    line-height: 1.7;
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
+  .hero-cta-row {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
   }
 
-  .hero-surface-note {
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 22px;
-    max-width: 720px;
-    margin-left: auto;
-    margin-right: auto;
-  }
-
-  .hero-install {
-    display: inline-block;
-    background: var(--surface);
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 18px;
+    border-radius: 999px;
+    font-weight: 700;
+    text-decoration: none;
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 48px 12px 24px;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #188ea3);
+    color: #041018;
+    border-color: transparent;
+  }
+
+  .btn-primary:hover {
+    color: #041018;
+    text-decoration: none;
+    filter: brightness(1.06);
+  }
+
+  .btn-secondary {
+    color: var(--fg);
+    background: rgba(10, 16, 32, 0.7);
+  }
+
+  .btn-secondary:hover {
+    text-decoration: none;
+    border-color: var(--accent-muted);
+  }
+
+  .hero-proof-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .hero-proof-row span {
+    border: 1px solid var(--border-dim);
+    background: rgba(8, 14, 26, 0.7);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .hero-rail {
+    display: grid;
+    gap: 18px;
+  }
+
+  .brand-panel,
+  .install-panel,
+  .value-card,
+  .stat-card {
+    background: linear-gradient(180deg, rgba(8, 14, 26, 0.96), rgba(4, 8, 18, 0.96));
+    border: 1px solid rgba(42, 180, 200, 0.15);
+    box-shadow: inset 0 1px 0 rgba(110, 202, 216, 0.06);
+  }
+
+  .brand-panel {
+    border-radius: 24px;
+    padding: 20px 22px;
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .brand-mark {
+    width: 100%;
+    max-width: 110px;
+    display: block;
+  }
+
+  .brand-copy {
+    color: var(--muted);
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .install-panel {
+    border-radius: 24px;
+    padding: 24px;
+  }
+
+  .install-panel h2 {
+    font-size: 1.8rem;
+    letter-spacing: -0.03em;
+    margin: 10px 0 10px;
+  }
+
+  .panel-copy {
+    color: var(--muted);
+    margin-bottom: 18px;
+  }
+
+  .install-command-wrap {
+    position: relative;
+    margin-bottom: 14px;
+  }
+
+  .install-command {
+    margin: 0;
+    padding: 16px 52px 16px 18px;
+    background: rgba(9, 18, 34, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 16px;
     font-size: 14px;
     color: var(--accent);
+    overflow-x: auto;
   }
 
-  .hero-install code {
+  .install-command code {
     background: none;
     border: none;
     padding: 0;
     color: inherit;
   }
 
-  .hero-install-wrap {
-    display: inline-block;
-    position: relative;
-    margin-bottom: 8px;
-  }
-
   .copy-btn {
     position: absolute;
     top: 50%;
-    right: 10px;
+    right: 12px;
     transform: translateY(-50%);
     background: none;
     border: none;
     cursor: pointer;
     color: var(--muted);
-    padding: 4px;
-    border-radius: 4px;
+    padding: 6px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: color 0.15s, background 0.15s;
   }
+
   .copy-btn:hover {
     color: var(--fg);
-    background: var(--border-dim);
-  }
-  .copy-btn.copied { color: var(--accent); }
-  .copy-btn svg { width: 15px; height: 15px; }
-
-  .hero-version {
-    font-size: 12px;
-    color: var(--dim);
-    margin-bottom: 20px;
-  }
-  .hero-version a { color: var(--muted); }
-  .hero-version a:hover { color: var(--fg); }
-  .hero-alt-rc {
-    font-size: 12px;
-    color: var(--dim);
-    margin-top: -10px;
+    background: rgba(26, 68, 88, 0.28);
   }
 
-  .version-tag {
-    font-family: monospace;
+  .copy-btn.copied {
+    color: var(--accent);
+  }
+
+  .copy-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .version-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--dim);
+    margin-bottom: 16px;
+  }
+
+  .version-row a {
+    color: var(--accent);
+  }
+
+  .channel-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .channel-row {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 12px;
+    align-items: start;
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  .channel-row span {
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  .channel-row code {
+    font-size: 12px;
+  }
+
+  .channel-row.subdued {
+    color: var(--muted);
+  }
+
+  .stats-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 10px 0 56px;
+  }
+
+  .stat-card {
+    border-radius: 18px;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .stat-value {
+    color: var(--fg);
+    font-size: 1.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .stat-label {
+    color: var(--muted);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .value-section {
+    padding-top: 8px;
+  }
+
+  .section-heading {
+    display: grid;
+    gap: 10px;
+    margin-bottom: 24px;
+    max-width: 52rem;
+  }
+
+  .section-heading h2 {
+    font-size: clamp(1.8rem, 3vw, 2.8rem);
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    margin: 0;
+  }
+
+  .value-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .value-card {
+    border-radius: 20px;
+    padding: 22px;
+    min-height: 200px;
+  }
+
+  .value-card h3 {
+    margin: 0 0 12px;
+    font-size: 1.15rem;
+    letter-spacing: -0.02em;
+  }
+
+  .value-card p {
+    margin: 0;
+    color: var(--muted);
+  }
+
+  .docs-footer {
+    padding: 28px;
+    text-align: center;
+    border-top: 1px solid var(--border-dim);
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  .docs-footer a {
+    color: var(--muted);
+  }
+
+  @media (max-width: 1080px) {
+    .hero-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .stats-strip,
+    .value-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .topnav {
+      padding: 14px 18px;
+    }
+
+    .topnav-links {
+      gap: 14px;
+      font-size: 13px;
+    }
+
+    .landing-shell {
+      padding: 28px 18px 72px;
+    }
+
+    .brand-panel {
+      grid-template-columns: 1fr;
+    }
+
+    .brand-mark {
+      max-width: 90px;
+    }
+
+    .stats-strip,
+    .value-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .channel-row {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
   }
 </style>
