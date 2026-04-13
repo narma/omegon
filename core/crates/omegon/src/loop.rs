@@ -448,7 +448,7 @@ fn should_inject_execution_pressure(
         .iter()
         .all(|call| is_targeted_repo_inspection_tool(&call.name));
 
-    (turn >= 3 && has_broad_repo_inspection) || (turn >= 3 && only_targeted_reads)
+    (turn >= 3 && has_broad_repo_inspection) || (turn >= 5 && only_targeted_reads)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3489,7 +3489,7 @@ mod tests {
             arguments: serde_json::json!({"path": "core/src/context.rs"}),
         }];
         assert!(!should_inject_execution_pressure(
-            2,
+            4,
             &config,
             &conversation,
             &tool_calls
@@ -3514,7 +3514,7 @@ mod tests {
             arguments: serde_json::json!({"path": "core/src/context.rs"}),
         }];
         assert!(should_inject_execution_pressure(
-            3,
+            5,
             &config,
             &conversation,
             &tool_calls
@@ -4136,30 +4136,6 @@ mod tests {
         assert!(warning.contains("same file multiple times"), "got: {warning}");
         assert!(warning.contains("edit, validate, or summarize"), "got: {warning}");
         assert!(!warning.contains("same arguments 3 times"), "got: {warning}");
-    }
-
-    #[test]
-    fn targeted_read_only_batches_trigger_execution_pressure_by_turn_three() {
-        let config = LoopConfig {
-            enforce_first_turn_execution_bias: true,
-            ..LoopConfig::default()
-        };
-        let mut conversation = ConversationState::new();
-        conversation
-            .intent
-            .files_read
-            .insert(std::path::PathBuf::from("core/src/context.rs"));
-        let tool_calls = vec![ToolCall {
-            id: "1".into(),
-            name: "read".into(),
-            arguments: serde_json::json!({"path": "core/src/context.rs"}),
-        }];
-        assert!(should_inject_execution_pressure(
-            3,
-            &config,
-            &conversation,
-            &tool_calls
-        ));
     }
 
     #[test]
