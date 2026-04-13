@@ -8,9 +8,9 @@ const svgPath = join(process.cwd(), "public", "design-tree.svg");
 const svgContent = existsSync(svgPath) ? readFileSync(svgPath, "utf-8") : null;
 ---
 
-<Docs title="Design Graph" description="Force-directed visualization of omegon's 185-node design tree.">
+<Docs title="Design Graph" description="Force-directed visualization of omegon's design tree — every architectural decision from initial fork through the current state.">
   <h1>Design Graph</h1>
-  <p>This is a static rendering of omegon's design exploration tree — {185} nodes tracking every architectural decision from initial fork through the current state.</p>
+  <p>This is a static rendering of omegon's design exploration tree — every architectural decision from initial fork through the current state. Node count grows with each design session; the legend below reflects the most recent build.</p>
 
   <div class="graph-container">
     {svgContent ? <Fragment set:html={svgContent} /> : <p class="graph-placeholder">Graph SVG not generated. Run <code>npm run build</code> in <code>site/</code> to generate.</p>}
@@ -20,11 +20,11 @@ const svgContent = existsSync(svgPath) ? readFileSync(svgPath, "utf-8") : null;
   <table>
     <thead><tr><th>Color</th><th>Status</th><th>Count</th></tr></thead>
     <tbody>
-      <tr><td style="color: #22c55e">●</td><td>Implemented</td><td>126</td></tr>
-      <tr><td style="color: #2ab4c8">●</td><td>Implementing</td><td>7</td></tr>
-      <tr><td style="color: #f59e0b">●</td><td>Decided</td><td>29</td></tr>
-      <tr><td style="color: #607888">●</td><td>Exploring</td><td>19</td></tr>
-      <tr><td style="color: #405870">●</td><td>Seed / Deferred</td><td>4</td></tr>
+      <tr><td style="color: #22c55e">●</td><td>Implemented</td><td>207</td></tr>
+      <tr><td style="color: #2ab4c8">●</td><td>Implementing</td><td>15</td></tr>
+      <tr><td style="color: #f59e0b">●</td><td>Decided</td><td>10</td></tr>
+      <tr><td style="color: #607888">●</td><td>Exploring</td><td>32</td></tr>
+      <tr><td style="color: #405870">●</td><td>Seed / Deferred</td><td>18</td></tr>
     </tbody>
   </table>
 
