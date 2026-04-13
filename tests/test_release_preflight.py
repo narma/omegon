@@ -135,25 +135,16 @@ class ReleaseRecipeTests(unittest.TestCase):
             "rc recipe should repair workspace role before preflight",
         )
 
-    def test_rc_recipe_publishes_github_prerelease_before_success(self) -> None:
+    def test_rc_recipe_does_not_publish_release_inline(self) -> None:
         justfile = (ROOT / "justfile").read_text()
         rc_start = justfile.index("rc:\n")
         preflight_start = justfile.index("# Release preflight:")
         rc_block = justfile[rc_start:preflight_start]
 
-        self.assertIn('Waiting for release artifacts...', rc_block)
-        self.assertIn('release-manifest.json', rc_block)
-        self.assertIn('gh release edit "v${NEW_VERSION}" --draft=false --prerelease', rc_block)
-        self.assertLess(
-            rc_block.index('Waiting for release artifacts...'),
-            rc_block.index('gh release edit "v${NEW_VERSION}" --draft=false --prerelease'),
-            "rc recipe should wait for release artifacts before publishing",
-        )
-        self.assertLess(
-            rc_block.index('gh release edit "v${NEW_VERSION}" --draft=false --prerelease'),
-            rc_block.index('echo "✓ ${NEW_VERSION} — preflighted, committed, tagged, built, pushed, assets uploaded, published."'),
-            "rc recipe should publish the prerelease before declaring success",
-        )
+        self.assertNotIn('gh release edit "v${NEW_VERSION}" --draft=false --prerelease', rc_block)
+        self.assertNotIn('gh release create "v${NEW_VERSION}"', rc_block)
+        self.assertIn('Release publication now completes in CI after assets upload.', rc_block)
+        self.assertIn('echo "✓ ${NEW_VERSION} — preflighted, committed, tagged, built, pushed."', rc_block)
 
 
 if __name__ == "__main__":

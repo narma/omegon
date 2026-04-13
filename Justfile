@@ -464,22 +464,10 @@ rc:
     echo "Pushing rc tag..."
     git push origin main "v${NEW_VERSION}"
 
-    echo "Waiting for release artifacts..."
-    ATTEMPTS=0
-    until gh release view "v${NEW_VERSION}" --json assets --jq '.assets | map(select(.name == "release-manifest.json")) | length' 2>/dev/null | grep -q '^1$'; do
-        ATTEMPTS=$((ATTEMPTS + 1))
-        if [ "$ATTEMPTS" -ge 60 ]; then
-            echo "✗ Timed out waiting for release-manifest.json on v${NEW_VERSION}"
-            exit 1
-        fi
-        sleep 10
-    done
-
-    echo "Publishing GitHub prerelease..."
-    gh release edit "v${NEW_VERSION}" --draft=false --prerelease
-
     echo ""
-    echo "✓ ${NEW_VERSION} — preflighted, committed, tagged, built, pushed, assets uploaded, published."
+    echo "✓ ${NEW_VERSION} — preflighted, committed, tagged, built, pushed."
+    echo "  Release publication now completes in CI after assets upload."
+    echo "  GitHub Release workflow will create/publish the prerelease and downstream packaging will follow from release artifacts."
 
 # Release preflight: verify repo is releasable BEFORE any version mutation.
 # Checks: on main, clean tree, release line is an RC, changelog target exists,
