@@ -420,7 +420,7 @@
     "frozen": false,
     "opened": "2026-04-04T04:08:34Z",
     "released": null,
-    "rc_count": 95,
+    "rc_count": 96,
     "notes": [
       "docs(benchmark): seed design node for deferred bwrap sandbox work",
       "feat(aggregate-mode): Add a minimal directory-level aggregation/report mode for benchmark result files, shaped by existing result artifact structure. Include tests and doc updates if the mode is added.",
@@ -476,6 +476,7 @@
       "feat(daemon): close autonomous workflow integration loops",
       "feat(delegate): add hyper-minimal worker profiles for microtasks",
       "feat(delegate): emit cleave-style worker timeline events",
+      "feat(demos): add fibonacci bug-fix demo scripts",
       "feat(dev): add just cut-rc for developer-facing RC cuts",
       "feat(doc-survey): Inspect project docs, memory-relevant files, and design/spec artifacts for telemetry-related decisions, standards, and constraints. Summarize the intended telemetry model and any explicit design constraints.",
       "feat(docs): Write user-facing documentation about Anthropic subscription ToS compliance. Two deliverables: (1) A new markdown doc at docs/anthropic-subscription-tos.md covering: what the restriction is (exact ToS quote), which Omegon entry points are allowed vs blocked, the interactive-vs-automated distinction, what to do if you need automation (get an API key), and how this compares to other providers (GitHub Copilot has no such restriction). Include a clear table: TUI mode=allowed, --initial-prompt=allowed, --prompt/--prompt-file=blocked, --smoke=blocked, /cleave=blocked. Include the exact Anthropic ToS URL. Make it factual and non-alarmist — this is a clear boundary that Omegon enforces for the operator's protection. (2) A new Astro page at site/src/pages/docs/providers.astro covering all provider auth modes: Anthropic API key (unrestricted), Anthropic OAuth/subscription (interactive TUI only), OpenAI API key, Codex OAuth, Ollama (local, unrestricted), GitHub Models (official PAT, coming soon), Copilot seat (coming soon). For each: how to configure, what's allowed, any restrictions. Follow the structure and style of existing pages like site/src/pages/docs/quickstart.astro or site/src/pages/docs/security.astro. Files: docs/anthropic-subscription-tos.md, site/src/pages/docs/providers.astro",
@@ -634,6 +635,7 @@
       "fix(delegate): choose worker model from full executable provider matrix",
       "fix(delegate): harden worker prompt termination",
       "fix(delegate): surface child provider and runtime context in failure output",
+      "fix(demos): remove hint comment from fibonacci bug",
       "fix(dev): extract workspace.json writer to script, fix cut-rc parse error",
       "fix(errors): broaden upstream outage classification",
       "fix(errors): collapse provider-side upstream failures",
@@ -641,6 +643,7 @@
       "fix(ipc): make auspex control-plane payloads authoritative",
       "fix(jj): reattach main after harness commits",
       "fix(loop): add tiered continuation-pressure controller",
+      "fix(loop): apply execution pressure in all modes, not just bias mode",
       "fix(loop): bias archaeology toward actionable work",
       "fix(loop): curb first-turn benchmark orientation churn",
       "fix(loop): disable commit nudge for headless runs",
@@ -653,6 +656,7 @@
       "fix(loop): keep targeted read pressure conservative",
       "fix(loop): pressure repeated read-only stalls earlier",
       "fix(loop): reduce false-positive orientation churn nudges",
+      "fix(loop): suppress unused config param after bias gate removal",
       "fix(loop): tighten post-sufficiency convergence pressure",
       "fix(loop): treat constraint discovery as partial progress",
       "fix(loop): update stuck warning tests for escalation struct",
@@ -829,7 +833,7 @@
       "refactor(workspace): add backend and vcs identity boundaries",
       "refactor(workspace): separate labels from substrate identity"
     ],
-    "rc_version": "0.15.10-rc.102",
-    "last_rc": "2026-04-13T21:45:34Z"
+    "rc_version": "0.15.10-rc.103",
+    "last_rc": "2026-04-13T22:34:26Z"
   }
 }
