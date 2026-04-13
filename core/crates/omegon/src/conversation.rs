@@ -1170,7 +1170,10 @@ fn strip_orphaned_tool_uses(messages: &mut Vec<LlmMessage>) {
             _ => std::collections::HashSet::new(),
         };
 
-        let Some(LlmMessage::Assistant { tool_calls, .. }) = messages.get_mut(idx) else {
+        let Some(LlmMessage::Assistant {
+            tool_calls, raw, ..
+        }) = messages.get_mut(idx)
+        else {
             continue;
         };
         if tool_calls.is_empty() {
@@ -1189,6 +1192,7 @@ fn strip_orphaned_tool_uses(messages: &mut Vec<LlmMessage>) {
                 "stripping orphaned assistant tool_use blocks"
             );
             tool_calls.clear();
+            *raw = None;
         }
     }
 }
@@ -2247,19 +2251,43 @@ mod tests {
     fn build_llm_view_strips_orphaned_assistant_tool_use() {
         let mut conv = ConversationState::new();
         conv.push_user("delegate work".into());
-        push_matching_assistant(&mut conv, "toolu_abc|fc_1");
+        conv.push_assistant(AssistantMessage {
+            text: String::new(),
+            thinking: None,
+            tool_calls: vec![ToolCall {
+                id: "toolu_abc|fc_1".into(),
+                name: "test".into(),
+                arguments: serde_json::json!({}),
+            }],
+            raw: serde_json::json!({
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_abc",
+                    "name": "test",
+                    "input": {}
+                }]
+            }),
+            provider_tokens: (0, 0, 0, 0),
+            provider_telemetry: None,
+        });
         // No matching tool_result survives — this is the Anthropic 400 case.
         conv.push_user("continue".into());
         conv.intent.stats.turns = 1;
 
         let view = conv.build_llm_view();
-        assert!(matches!(&view[0], LlmMessage::User { .. }));
-        match &view[1] {
-            LlmMessage::Assistant { tool_calls, .. } => {
-                assert!(tool_calls.is_empty(), "orphaned tool_use should be stripped");
-            }
-            other => panic!("expected assistant at index 1, got {other:?}"),
-        }
+        assert!(
+            view.iter().all(|msg| match msg {
+                LlmMessage::Assistant {
+                    tool_calls, raw, ..
+                } => tool_calls.is_empty() && raw.is_none(),
+                _ => true,
+            }),
+            "orphaned assistant tool_use/raw blocks should not survive: {view:?}"
+        );
+        assert!(
+            view.iter().any(|msg| matches!(msg, LlmMessage::User { content, .. } if content == "continue")),
+            "follow-up user turn should survive repair: {view:?}"
+        );
     }
 
     #[test]

@@ -1,0 +1,67 @@
+{
+  "runId": "clv-agopg1qb-ubkc",
+  "directive": "Fix two regressions in Omegon: (1) OpenAI/Codex auth persistence is not surviving across process restarts, and (2) Anthropic conversation repair still produces invalid tool_use/tool_result sequencing instead of a valid repaired history. Add or update tests, validate with typecheck/tests, and prepare a commit.",
+  "repoPath": "/Users/cwilson/workspace/black-meridian/omegon",
+  "workspacePath": "/Users/cwilson/workspace/black-meridian/omegon/.omegon/cleave-workspace",
+  "supervisorToken": "supv-18a5cb4fa02abcb8",
+  "children": [
+    {
+      "childId": 0,
+      "label": "auth",
+      "description": "Investigate and fix OpenAI/Codex auth persistence across process restarts, update/add tests, and validate the auth persistence behavior.",
+      "scope": [
+        "core/crates/omegon/src/auth.rs",
+        "core/crates/omegon/src/main.rs",
+        "core/crates/omegon/src/**/*.rs"
+      ],
+      "dependsOn": [],
+      "status": "failed",
+      "error": "scope file(s) not accessible after submodule init: core/crates/omegon/src/**/*.rs",
+      "branch": "cleave/0-auth",
+      "backend": "native",
+      "executeModel": "openai-codex:gpt-5.4"
+    },
+    {
+      "childId": 1,
+      "label": "repair",
+      "description": "Investigate and fix Anthropic conversation repair so tool_use blocks are followed by matching tool_result blocks in repaired history, add regression tests, and validate repaired sequencing.",
+      "scope": [
+        "core/crates/omegon/src/**/*.rs",
+        "extensions/**/*.ts",
+        "**/*.test.*"
+      ],
+      "dependsOn": [],
+      "status": "failed",
+      "error": "scope file(s) not accessible after submodule init: core/crates/omegon/src/**/*.rs, extensions/**/*.ts, **/*.test.*",
+      "branch": "cleave/1-repair",
+      "backend": "native",
+      "executeModel": "openai-codex:gpt-5.4"
+    }
+  ],
+  "plan": {
+    "children": [
+      {
+        "depends_on": [],
+        "description": "Investigate and fix OpenAI/Codex auth persistence across process restarts, update/add tests, and validate the auth persistence behavior.",
+        "label": "auth",
+        "scope": [
+          "core/crates/omegon/src/auth.rs",
+          "core/crates/omegon/src/main.rs",
+          "core/crates/omegon/src/**/*.rs"
+        ]
+      },
+      {
+        "depends_on": [],
+        "description": "Investigate and fix Anthropic conversation repair so tool_use blocks are followed by matching tool_result blocks in repaired history, add regression tests, and validate repaired sequencing.",
+        "label": "repair",
+        "scope": [
+          "core/crates/omegon/src/**/*.rs",
+          "extensions/**/*.ts",
+          "**/*.test.*"
+        ]
+      }
+    ],
+    "default_model": "openai-codex:gpt-5.4",
+    "rationale": "The auth persistence bug and conversation-repair bug are separate regressions with different likely code paths, so they can be investigated independently before validation."
+  }
+}

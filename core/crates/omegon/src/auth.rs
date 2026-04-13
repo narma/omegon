@@ -507,7 +507,7 @@ pub async fn resolve_with_refresh(provider: &str) -> Option<(String, bool)> {
         tracing::info!(provider, auth_key, "OAuth token expired — refreshing");
         match refresh_token(auth_key, &creds.refresh).await {
             Ok(new_creds) => {
-                if let Err(e) = write_credentials(auth_key, &new_creds) {
+                if let Err(e) = write_refreshed_credentials(auth_key, &new_creds) {
                     tracing::warn!("Failed to save refreshed token: {e}");
                 }
                 creds = new_creds;
@@ -1051,6 +1051,50 @@ fn write_credentials_with_extra(
     })
 }
 
+fn refreshed_credential_entry(
+    provider: &str,
+    creds: &OAuthCredentials,
+    existing_entry: Option<&Value>,
+) -> anyhow::Result<Value> {
+    let mut entry = serde_json::to_value(creds)?;
+    if provider == "openai-codex" {
+        let account_id = extract_jwt_claim(
+            &creds.access,
+            "https://api.openai.com/auth",
+            "chatgpt_account_id",
+        )
+        .or_else(|| {
+            existing_entry
+                .and_then(|value| value.get("accountId"))
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        });
+        if let Some(account_id) = account_id {
+            entry["accountId"] = json!(account_id);
+        }
+    }
+    Ok(entry)
+}
+
+fn write_refreshed_credentials(provider: &str, creds: &OAuthCredentials) -> anyhow::Result<()> {
+    let path =
+        auth_json_path().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    with_auth_json_lock(&path, || {
+        let mut auth: Value = if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            serde_json::from_str(&content).unwrap_or(json!({}))
+        } else {
+            json!({})
+        };
+        let existing_entry = auth.get(provider);
+        auth[provider] = refreshed_credential_entry(provider, creds, existing_entry)?;
+        atomic_write_auth_json(&path, &auth)?;
+        set_auth_file_permissions(&path)?;
+        Ok(())
+    })
+}
+
 fn atomic_write_auth_json(path: &Path, auth: &Value) -> anyhow::Result<()> {
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(auth)?)?;
@@ -1489,6 +1533,27 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&auth_path).unwrap()).unwrap();
         assert_eq!(contents["test-provider"]["access"], "test-access-token");
         assert_eq!(contents["test-provider"]["refresh"], "test-refresh-token");
+    }
+
+    #[test]
+    fn refreshed_codex_entry_preserves_existing_account_id() {
+        let creds = OAuthCredentials {
+            cred_type: "oauth".into(),
+            access: "not-a-jwt".into(),
+            refresh: "new-refresh".into(),
+            expires: 9999999999999,
+        };
+
+        let entry = refreshed_credential_entry(
+            "openai-codex",
+            &creds,
+            Some(&json!({"accountId": "acct_123"})),
+        )
+        .expect("entry");
+
+        assert_eq!(entry["access"], "not-a-jwt");
+        assert_eq!(entry["refresh"], "new-refresh");
+        assert_eq!(entry["accountId"], "acct_123");
     }
 
     #[test]
