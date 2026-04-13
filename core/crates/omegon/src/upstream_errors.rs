@@ -590,6 +590,22 @@ mod tests {
     }
 
     #[test]
+    fn malformed_history_detection_covers_cross_provider_tool_pair_failures() {
+        assert!(is_malformed_history(
+            "messages.3: `tool_use` ids were found without `tool_result` blocks immediately after"
+        ));
+        assert!(is_malformed_history(
+            "unexpected tool_use_id found in tool_result blocks"
+        ));
+        assert!(is_malformed_history(
+            "Each `tool_use` block must have a corresponding `tool_result` block in the next message"
+        ));
+        assert!(is_malformed_history(
+            "tool_result block references an unknown tool_use_id"
+        ));
+    }
+
+    #[test]
     fn malformed_history_detection() {
         assert!(is_malformed_history("tool_use_id not found"));
         assert!(is_malformed_history(
