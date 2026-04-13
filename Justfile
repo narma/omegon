@@ -465,7 +465,11 @@ rc:
     git push origin main "v${NEW_VERSION}"
 
     echo "Publishing GitHub prerelease..."
-    gh release edit "v${NEW_VERSION}" --draft=false --prerelease
+    if gh release view "v${NEW_VERSION}" >/dev/null 2>&1; then
+        gh release edit "v${NEW_VERSION}" --draft=false --prerelease
+    else
+        gh release create "v${NEW_VERSION}" --prerelease --title "${NEW_VERSION}" --notes "Release candidate ${NEW_VERSION} cut from main."
+    fi
 
     echo ""
     echo "✓ ${NEW_VERSION} — preflighted, committed, tagged, built, pushed, published."
