@@ -812,7 +812,7 @@
       "refactor(workspace): add backend and vcs identity boundaries",
       "refactor(workspace): separate labels from substrate identity"
     ],
-    "rc_version": "0.15.10-rc.94",
-    "last_rc": "2026-04-13T14:53:17Z"
+    "rc_version": "0.15.10-rc.95",
+    "last_rc": "2026-04-13T17:18:57Z"
   }
 }
