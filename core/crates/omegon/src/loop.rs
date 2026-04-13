@@ -327,7 +327,7 @@ fn classify_drift_kind(
         && tool_calls
             .iter()
             .all(|call| is_repo_inspection_tool(&call.name))
-        && turn >= 3
+        && turn >= 2
         && broad_repo_inspection_calls > 0
         && targeted_repo_inspection_calls <= 1
     {
@@ -336,7 +336,7 @@ fn classify_drift_kind(
 
     if conversation.intent.files_modified.is_empty()
         && conversation.intent.files_read.is_empty()
-        && turn >= 2
+        && turn >= 1
         && broad_orientation_calls == tool_calls.len()
     {
         return Some(DriftKind::OrientationChurn);
@@ -447,7 +447,7 @@ fn should_inject_execution_pressure(
         .iter()
         .all(|call| is_targeted_repo_inspection_tool(&call.name));
 
-    (turn >= 3 && has_broad_repo_inspection) || (turn >= 5 && only_targeted_reads)
+    (turn >= 2 && has_broad_repo_inspection) || (turn >= 2 && only_targeted_reads)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -530,26 +530,30 @@ impl ControllerState {
             self.consecutive_tool_continuations = 0;
         }
 
+        // Drift streaks: increment on match, *decay* (halve) on mismatch
+        // instead of hard-resetting.  This prevents the model from gaming the
+        // detector by alternating between drift kinds (e.g. OrientationChurn
+        // one turn, ClosureStall the next) to keep every streak at 1.
         self.orientation_churn_streak = if matches!(drift_kind, Some(DriftKind::OrientationChurn)) {
             self.orientation_churn_streak.saturating_add(1)
         } else {
-            0
+            self.orientation_churn_streak / 2
         };
         self.repeated_action_failure_streak =
             if matches!(drift_kind, Some(DriftKind::RepeatedActionFailure)) {
                 self.repeated_action_failure_streak.saturating_add(1)
             } else {
-                0
+                self.repeated_action_failure_streak / 2
             };
         self.validation_thrash_streak = if matches!(drift_kind, Some(DriftKind::ValidationThrash)) {
             self.validation_thrash_streak.saturating_add(1)
         } else {
-            0
+            self.validation_thrash_streak / 2
         };
         self.closure_stall_streak = if matches!(drift_kind, Some(DriftKind::ClosureStall)) {
             self.closure_stall_streak.saturating_add(1)
         } else {
-            0
+            self.closure_stall_streak / 2
         };
         self.constraint_discovery_streak =
             if matches!(progress_signal, ProgressSignal::ConstraintDiscovery) {
@@ -692,7 +696,23 @@ fn detect_evidence_sufficiency(
     tool_calls: &[ToolCall],
     results: &[ToolResultEntry],
 ) -> EvidenceSufficiency {
-    if !conversation.intent.files_modified.is_empty() || conversation.intent.files_read.is_empty() {
+    if conversation.intent.files_read.is_empty() {
+        return EvidenceSufficiency::None;
+    }
+
+    // Post-mutation: if the model has already edited files but this turn is
+    // all inspection tools, it already has actionable evidence — the edits
+    // prove it knows enough to act.  Returning Actionable here lets the
+    // continuation-pressure system kick in and stop the read churn.
+    if !conversation.intent.files_modified.is_empty() {
+        let all_inspection = !tool_calls.is_empty()
+            && tool_calls
+                .iter()
+                .all(|call| is_repo_inspection_tool(&call.name) || is_orientation_tool(&call.name));
+        if all_inspection {
+            return EvidenceSufficiency::Actionable;
+        }
+        // Mixed turn with mutations — real progress, no pressure needed.
         return EvidenceSufficiency::None;
     }
 
@@ -777,7 +797,6 @@ fn continuation_pressure_tier(
     dominant_phase: Option<OodaPhase>,
 ) -> Option<u8> {
     if tool_calls.is_empty()
-        || !conversation.intent.files_modified.is_empty()
         || !matches!(dominant_phase, Some(OodaPhase::Observe | OodaPhase::Orient))
     {
         return None;
@@ -2558,6 +2577,8 @@ impl std::fmt::Display for StuckWarning {
 struct StuckDetector {
     /// Recent tool calls as (name, args_hash, was_error)
     recent: Vec<(String, u64, bool)>,
+    /// Recent file paths touched by inspection tools (for cross-tool churn).
+    recent_file_accesses: Vec<String>,
     /// Window size for pattern detection
     window: usize,
     /// Number of consecutive turns where a stuck pattern was detected.
@@ -2568,17 +2589,40 @@ impl StuckDetector {
     fn new() -> Self {
         Self {
             recent: Vec::new(),
+            recent_file_accesses: Vec::new(),
             window: 10,
             consecutive_warnings: 0,
         }
     }
 
     /// Record a tool call for pattern analysis.
+    ///
+    /// For read-like tools we hash only the file path, ignoring offset/limit,
+    /// so that re-reads of the same file with different byte ranges are still
+    /// caught as repetition.
     fn record(&mut self, call: &ToolCall, is_error: bool) {
-        let args_hash = hash_value(&call.arguments);
+        let args_hash = if matches!(call.name.as_str(), "read" | "view") {
+            // Normalize: hash path only, ignore offset/limit/lines
+            call.arguments
+                .get("path")
+                .map(|v| hash_value(v))
+                .unwrap_or_else(|| hash_value(&call.arguments))
+        } else {
+            hash_value(&call.arguments)
+        };
         self.recent.push((call.name.clone(), args_hash, is_error));
         if self.recent.len() > self.window * 2 {
             self.recent.drain(..self.window);
+        }
+
+        // Track file-level access across all inspection tools
+        if is_repo_inspection_tool(&call.name) {
+            if let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) {
+                self.recent_file_accesses.push(path.to_string());
+                if self.recent_file_accesses.len() > self.window * 2 {
+                    self.recent_file_accesses.drain(..self.window);
+                }
+            }
         }
     }
 
@@ -2592,19 +2636,26 @@ impl StuckDetector {
 
         let window = &self.recent[len.saturating_sub(self.window)..];
 
-        // Pattern 1: read-without-modify loop — same file read 3+ times
-        // without any write/edit to that file. Check this before the generic
-        // repeated-call warning so the operator gets a specific nudge.
+        // Pattern 1: read-without-modify loop — same file (path-normalized)
+        // read 5+ times without any write/edit to that file.  Threshold is 5
+        // (not 3) because path normalization collapses offset/limit variations,
+        // and a legitimate explore→test→re-read→edit workflow may read the
+        // same file 3-4 times.  Also skip detection if a mutation or validation
+        // tool appeared in the window — that signals the agent is trying to
+        // converge, not spinning.
+        let has_mutation_or_validation = window
+            .iter()
+            .any(|(name, _, _)| is_mutation_tool_name(name) || name == "bash");
         let reads: Vec<_> = window
             .iter()
             .filter(|(name, _, _)| name == "read")
             .collect();
-        if reads.len() >= 3 {
+        if !has_mutation_or_validation && reads.len() >= 5 {
             let mut hash_counts: HashMap<u64, u32> = HashMap::new();
             for (_, h, _) in &reads {
                 *hash_counts.entry(*h).or_default() += 1;
             }
-            if hash_counts.values().any(|&c| c >= 3) {
+            if hash_counts.values().any(|&c| c >= 5) {
                 self.consecutive_warnings += 1;
                 return Some(StuckWarning {
                     message: "You've read the same file multiple times without modifying it. \
@@ -2645,7 +2696,27 @@ impl StuckDetector {
             }
         }
 
-        // Pattern 3: read-without-modify loop handled before generic repeated-call warning.
+        // Pattern 4: Cross-tool file churn — same file accessed 4+ times
+        // across *any* combination of read/view/codebase_search without edits.
+        if self.recent_file_accesses.len() >= 4 {
+            let access_window = &self.recent_file_accesses
+                [self.recent_file_accesses.len().saturating_sub(self.window)..];
+            let mut path_counts: HashMap<&str, u32> = HashMap::new();
+            for path in access_window {
+                *path_counts.entry(path.as_str()).or_default() += 1;
+            }
+            if let Some((path, count)) = path_counts.iter().find(|&(_, &c)| c >= 4) {
+                self.consecutive_warnings += 1;
+                return Some(StuckWarning {
+                    message: format!(
+                        "You've accessed `{}` {} times across different tools without modifying it. \
+                         Stop inspecting and either edit it, run a validation, or state the blocker.",
+                        path, count
+                    ),
+                    consecutive: self.consecutive_warnings,
+                });
+            }
+        }
 
         self.consecutive_warnings = 0;
         None
@@ -3487,7 +3558,7 @@ mod tests {
             arguments: serde_json::json!({"path": "core/src/context.rs"}),
         }];
         assert!(!should_inject_execution_pressure(
-            4,
+            1,
             &config,
             &conversation,
             &tool_calls
@@ -3774,7 +3845,9 @@ mod tests {
     }
 
     #[test]
-    fn continuation_pressure_not_detected_after_mutation_begins() {
+    fn continuation_pressure_still_detected_after_mutation_if_churn_resumes() {
+        // Post-mutation read churn should still trigger pressure — the model
+        // shouldn't get a free pass to churn reads just because it edited once.
         let config = LoopConfig {
             enforce_first_turn_execution_bias: true,
             ..LoopConfig::default()
@@ -3798,15 +3871,16 @@ mod tests {
             orientation_churn_streak: 3,
             ..ControllerState::default()
         };
-        assert_eq!(
+        assert!(
             continuation_pressure_tier(
                 &config,
                 &controller,
                 &conversation,
                 &tool_calls,
                 Some(OodaPhase::Observe),
-            ),
-            None
+            )
+            .is_some(),
+            "post-mutation read churn should still trigger continuation pressure"
         );
     }
 
@@ -4119,8 +4193,11 @@ mod tests {
 
     #[test]
     fn read_repetition_prefers_file_state_guidance_over_generic_same_args_warning() {
+        // With path-normalized hashing, read-without-modify requires 5+ reads
+        // of the same file (no interleaved mutation/validation) to fire the
+        // file-specific warning.
         let mut detector = StuckDetector::new();
-        for _ in 0..3 {
+        for _ in 0..5 {
             detector.record(
                 &ToolCall {
                     id: "1".into(),
@@ -4133,7 +4210,31 @@ mod tests {
         let warning = detector.check().expect("warning");
         assert!(warning.message.contains("same file multiple times"), "got: {warning}");
         assert!(warning.message.contains("edit, validate, or summarize"), "got: {warning}");
-        assert!(!warning.message.contains("same arguments 3 times"), "got: {warning}");
+        assert!(!warning.message.contains("same arguments"), "got: {warning}");
+    }
+
+    #[test]
+    fn targeted_read_only_batches_trigger_execution_pressure_by_turn_two() {
+        let config = LoopConfig {
+            enforce_first_turn_execution_bias: true,
+            ..LoopConfig::default()
+        };
+        let mut conversation = ConversationState::new();
+        conversation
+            .intent
+            .files_read
+            .insert(std::path::PathBuf::from("core/src/context.rs"));
+        let tool_calls = vec![ToolCall {
+            id: "1".into(),
+            name: "read".into(),
+            arguments: serde_json::json!({"path": "core/src/context.rs"}),
+        }];
+        assert!(should_inject_execution_pressure(
+            2,
+            &config,
+            &conversation,
+            &tool_calls
+        ));
     }
 
     #[test]
