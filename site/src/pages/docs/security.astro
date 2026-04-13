@@ -1,8 +1,18 @@
 ---
 import Docs from "../../layouts/Docs.astro";
+import { canonicalSiteUrl, isPreviewSite, previewSiteUrl } from "../../lib/siteVariant";
 ---
 <Docs title="Security & Supply Chain" description="Signing, SBOM, supply chain integrity, and credential management.">
   <h1>Security &amp; Supply Chain</h1>
+  {isPreviewSite ? (
+    <p>
+      Security policy applies to the preview/staging docs surface at <a href={previewSiteUrl}>{previewSiteUrl}</a> as well as the public stable site at <a href={canonicalSiteUrl}>{canonicalSiteUrl}</a>.
+    </p>
+  ) : (
+    <p>
+      This page documents the public stable release and distribution posture. Preview/staging docs behavior is mirrored on <a href={previewSiteUrl}>{previewSiteUrl}</a>.
+    </p>
+  )}
 
   <h2>Release Signing</h2>
   <p>Every release is signed at multiple levels, but not all signatures cover the same artifact boundary:</p>

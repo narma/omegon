@@ -37,6 +37,13 @@ test('providers docs call out stable vs preview split', () => {
   assert.match(content, /RC\/nightly/i);
 });
 
+test('privacy page is variant-aware instead of hard-coding the old domain', () => {
+  const content = readFileSync(resolve(here, '../src/pages/privacy.astro'), 'utf8');
+
+  assert.match(content, /siteLabel/);
+  assert.doesNotMatch(content, /omegon\.styrene\.dev website/);
+});
+
 test('site builds in stable and preview variants', () => {
   execFileSync('npm', ['run', 'build'], {
     cwd: resolve(here, '..'),

@@ -1,8 +1,12 @@
 ---
 import Docs from "../../layouts/Docs.astro";
+import { canonicalSiteUrl, isPreviewSite, previewSiteUrl } from "../../lib/siteVariant";
 ---
 <Docs title="Contributing" description="How to contribute to Omegon — branch policy, commits, testing, and release workflow.">
   <h1>Contributing</h1>
+  <p>
+    Contributor docs can mention RC workflow because release engineering lives here. Public install and onboarding guidance stays stable-first on <a href={canonicalSiteUrl}>{canonicalSiteUrl}</a>, while preview-specific operator guidance lives on <a href={previewSiteUrl}>{previewSiteUrl}</a>.
+  </p>
 
   <h2>Development Setup</h2>
   <pre><code>git clone https://github.com/styrene-lab/omegon.git
@@ -58,7 +62,7 @@ just release</code></pre>
     <li>Pushes to origin with tags — triggers three CI workflows:
       <ul>
         <li><code>release.yml</code> — builds distributable binaries for 4 platforms, signs release archives with cosign, and creates the GitHub Release</li>
-        <li><code>site.yml</code> — rebuilds docs site, pushes container to GHCR, ArgoCD auto-deploys</li>
+        <li><code>site.yml</code> — rebuilds and deploys both docs variants: stable public <code>omegon.styrene.io</code> and preview/staging <code>omegon.dev</code></li>
       </ul>
     </li>
     <li>Builds docs site locally (verification)</li>

@@ -1,5 +1,6 @@
 ---
 import Docs from "../layouts/Docs.astro";
+import { canonicalSiteUrl, isPreviewSite, previewSiteUrl } from "../lib/siteVariant";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -11,11 +12,16 @@ try {
   raw = "# Privacy Policy\n\n*Not available during this build.*";
 }
 
+const siteLabel = isPreviewSite ? previewSiteUrl : canonicalSiteUrl;
+raw = raw
+  .replace(/omegon\.styrene\.dev website/g, `${siteLabel} website`)
+  .replace(/omegon\.styrene\.dev Website/g, `${siteLabel} Website`);
+
 const { default: markdownit } = await import("markdown-it");
 const md = markdownit({ html: true, linkify: true });
 const html = md.render(raw);
 ---
 
-<Docs title="Privacy Policy" description="Privacy policy for the Omegon software and omegon.styrene.dev website.">
+<Docs title="Privacy Policy" description={`Privacy policy for the Omegon software and the ${siteLabel} website.`}>
   <Fragment set:html={html} />
 </Docs>
