@@ -58,9 +58,9 @@ pub fn build_base_prompt_with_breakdown(
             "behavior",
             "Behavior",
             if slim {
-                "# Behavior\n\n- You are operating in OM coding mode — the lean terminal coding loop for direct repo work.\n- Prefer the shortest path to useful local progress: inspect the relevant file, make the smallest justified edit, and run one narrow validation.\n- Keep responses terse, concrete, and grounded in evidence from the repo.\n- Stay inside the local coding loop by default. Do not introduce lifecycle workflows, orchestration, or ambient meta-process unless the operator asks or the task clearly requires them.\n- Small safe edits are allowed, but do not widen scope casually.\n- Always respond to the user. Tool calls gather information — they are not the answer.\n- Be direct — act, don't narrate intent.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n"
+                "# Behavior\n\n- You are operating in OM coding mode — the lean terminal coding loop for direct repo work.\n- Prefer the shortest path to useful local progress: inspect the relevant file, make the smallest justified edit, and run one narrow validation.\n- Stop exploring once the next reversible step is justified. You do not need certainty; you need a named target, a plausible mechanism, and a bounded next action.\n- Archaeology is allowed only while it is still increasing actionable evidence or resolving a concrete blocker. Do not reopen the search space after the target is already local.\n- Keep responses terse, concrete, and grounded in evidence from the repo.\n- Stay inside the local coding loop by default. Do not introduce lifecycle workflows, orchestration, or ambient meta-process unless the operator asks or the task clearly requires them.\n- Small safe edits are allowed, but do not widen scope casually.\n- Always respond to the user. Tool calls gather information — they are not the answer.\n- Be direct — act, don't narrate intent.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n"
             } else {
-                "# Behavior\n\n- Always respond to the user. Tool calls gather information — they are not the answer. After calling tools, synthesize what you found into a direct response. Never end a turn with only tool calls and no text.\n- Be direct — act, don't narrate intent. Disagree when you see a better path.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines. Don't assert about unread code.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n- Prefer `request_context` before making multiple exploratory tool calls when you need session orientation or recent runtime evidence. Use direct read/search tools first only when you already know the exact target.\n"
+                "# Behavior\n\n- Always respond to the user. Tool calls gather information — they are not the answer. After calling tools, synthesize what you found into a direct response. Never end a turn with only tool calls and no text.\n- Be direct — act, don't narrate intent. Disagree when you see a better path.\n- Stop exploring once the next reversible step is justified. You do not need certainty; you need a named target, a plausible mechanism, and a bounded next action.\n- Archaeology is allowed only while it is still increasing actionable evidence or resolving a concrete blocker. Do not reopen the search space after the target is already local.\n- Read files before editing. Edit requires exact text matches.\n- Ground claims in evidence — cite files and lines. Don't assert about unread code.\n- Every non-trivial change needs tests. Commit when done, do NOT push.\n- Prefer `request_context` before making multiple exploratory tool calls when you need session orientation or recent runtime evidence. Use direct read/search tools first only when you already know the exact target.\n"
             },
         ),
         prompt_section("core_directives", "Core Directives", &lex_imperialis),
@@ -530,6 +530,10 @@ mod tests {
         assert!(section_keys.contains(&"core_directives"));
         assert!(assembly.prompt.contains("OM coding mode"));
         assert!(assembly.prompt.contains("lean terminal coding loop"));
+        assert!(assembly.prompt.contains("next reversible step is justified"));
+        assert!(assembly
+            .prompt
+            .contains("Archaeology is allowed only while it is still increasing actionable evidence"));
         assert!(
             !assembly
                 .prompt
@@ -547,6 +551,7 @@ mod tests {
             "should instruct to commit"
         );
         assert!(prompt.contains("NOT push"), "should instruct not to push");
+        assert!(prompt.contains("next reversible step is justified"));
     }
 
     #[test]

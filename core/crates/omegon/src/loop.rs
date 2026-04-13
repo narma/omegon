@@ -464,7 +464,8 @@ enum ProgressSignal {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EvidenceSufficiency {
     None,
-    Sufficient,
+    Targeted,
+    Actionable,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -475,6 +476,7 @@ struct ControllerState {
     validation_thrash_streak: u32,
     closure_stall_streak: u32,
     constraint_discovery_streak: u32,
+    targeted_evidence_streak: u32,
     evidence_sufficient_streak: u32,
 }
 
@@ -555,8 +557,17 @@ impl ControllerState {
             } else {
                 0
             };
+        self.targeted_evidence_streak =
+            if matches!(
+                evidence_sufficiency,
+                EvidenceSufficiency::Targeted | EvidenceSufficiency::Actionable
+            ) {
+                self.targeted_evidence_streak.saturating_add(1)
+            } else {
+                0
+            };
         self.evidence_sufficient_streak =
-            if matches!(evidence_sufficiency, EvidenceSufficiency::Sufficient) {
+            if matches!(evidence_sufficiency, EvidenceSufficiency::Actionable) {
                 self.evidence_sufficient_streak.saturating_add(1)
             } else {
                 0
@@ -713,11 +724,34 @@ fn detect_evidence_sufficiency(
             && tool_calls.iter().any(is_validation_tool)
     });
 
+    let targeted_reads: Vec<&str> = tool_calls
+        .iter()
+        .filter(|call| is_targeted_repo_inspection_tool(&call.name))
+        .filter_map(|call| call.arguments.get("path").and_then(|v| v.as_str()))
+        .collect();
+    let narrow_target_cluster = !targeted_reads.is_empty()
+        && tool_calls.iter().all(|call| is_repo_inspection_tool(&call.name))
+        && !tool_calls
+            .iter()
+            .any(|call| is_broad_repo_inspection_tool(&call.name));
+    let targeted_paths_known = narrow_target_cluster
+        && targeted_reads.iter().all(|path| {
+            conversation
+                .intent
+                .files_read
+                .iter()
+                .any(|read| read == std::path::Path::new(path))
+        });
+    let local_target_count = conversation.intent.files_read.len();
+
     if targeted_validation
         || failed_mutation_on_known_target
         || inspection_backed_by_validation_failure
+        || (targeted_paths_known && local_target_count <= 2)
     {
-        EvidenceSufficiency::Sufficient
+        EvidenceSufficiency::Actionable
+    } else if targeted_paths_known || local_target_count <= 2 {
+        EvidenceSufficiency::Targeted
     } else {
         EvidenceSufficiency::None
     }
@@ -806,11 +840,11 @@ fn continuation_pressure_message(tier: u8) -> String {
 }
 
 fn evidence_sufficiency_message() -> String {
-    "[System: Evidence sufficiency reached. You have enough local evidence to stop exploring. On the next turn, do exactly one of these first: (1) make the smallest justified edit to the named target, (2) run one targeted validation for that named target, or (3) declare the exact blocker. Do not call broad inspection/search tools again unless the last action creates a new contradiction.]".to_string()
+    "[System: Actionability threshold reached. The next reversible step is justified. On the next turn, do exactly one of these first: (1) make the smallest justified edit to the named target, (2) run one targeted validation for that named target, or (3) declare the exact blocker. Do not call broad inspection/search tools again unless the last action creates a new contradiction.]".to_string()
 }
 
 fn om_local_first_message() -> String {
-    "[System: OM coding mode has enough local evidence to stop reopening the search space. Keep the loop tight. Next turn must do exactly one of: (1) apply the smallest reversible patch to the current target, (2) run one narrow validation that proves or disproves the current hypothesis, or (3) state the concrete blocker. Do not start another broad analysis pass first.]".to_string()
+    "[System: OM coding mode reached actionability. The next reversible step is justified, so stop reopening the search space. Keep the loop tight. Next turn must do exactly one of: (1) apply the smallest reversible patch to the current target, (2) run one narrow validation that proves or disproves the current hypothesis, or (3) state the concrete blocker. Do not start another broad analysis pass first.]".to_string()
 }
 
 pub(crate) fn compute_context_composition(
@@ -1458,7 +1492,7 @@ pub async fn run(
             tracing::info!("OM local-first lock engaged — injecting patch-or-prove nudge");
             conversation.push_user(om_local_first_message());
         } else if controller.evidence_sufficient_streak > 0 && continuation_tier.is_some() {
-            tracing::info!("Evidence sufficiency reached — injecting forced-convergence nudge");
+            tracing::info!("Actionability threshold reached — injecting forced-convergence nudge");
             conversation.push_user(evidence_sufficiency_message());
         } else if should_inject_execution_pressure(turn, config, conversation, dispatch_calls) {
             tracing::info!(
@@ -3349,6 +3383,7 @@ mod tests {
             validation_thrash_streak: 1,
             closure_stall_streak: 7,
             constraint_discovery_streak: 3,
+            targeted_evidence_streak: 6,
             evidence_sufficient_streak: 5,
         };
         let snapshot = controller.streaks();
@@ -3719,12 +3754,12 @@ mod tests {
         }];
         assert_eq!(
             detect_evidence_sufficiency(&conversation, &tool_calls, &results),
-            EvidenceSufficiency::Sufficient
+            EvidenceSufficiency::Actionable
         );
     }
 
     #[test]
-    fn evidence_sufficiency_not_detected_for_targeted_read_alone() {
+    fn evidence_sufficiency_detected_for_narrow_local_archaeology() {
         let mut conversation = ConversationState::new();
         conversation
             .intent
@@ -3744,22 +3779,22 @@ mod tests {
         }];
         assert_eq!(
             detect_evidence_sufficiency(&conversation, &tool_calls, &results),
-            EvidenceSufficiency::None
+            EvidenceSufficiency::Actionable
         );
     }
 
     #[test]
     fn evidence_sufficiency_message_explicitly_forces_action() {
         let text = evidence_sufficiency_message();
-        assert!(text.contains("Evidence sufficiency reached"));
-        assert!(text.contains("make the smallest justified edit"));
+        assert!(text.contains("Actionability threshold reached"));
+        assert!(text.contains("next reversible step is justified"));
         assert!(text.contains("Do not call broad inspection/search tools again"));
     }
 
     #[test]
     fn om_local_first_message_forces_patch_or_validate_or_blocker() {
         let text = om_local_first_message();
-        assert!(text.contains("OM coding mode has enough local evidence"));
+        assert!(text.contains("OM coding mode reached actionability"));
         assert!(text.contains("smallest reversible patch"));
         assert!(text.contains("state the concrete blocker"));
         assert!(!text.contains("full Omegon is required"));
@@ -3815,7 +3850,7 @@ mod tests {
             TurnEndReason::ToolContinuation,
             None,
             ProgressSignal::Mutation,
-            EvidenceSufficiency::Sufficient,
+            EvidenceSufficiency::Actionable,
         );
         assert_eq!(controller.evidence_sufficient_streak, 0);
         assert_eq!(controller.consecutive_tool_continuations, 0);
@@ -3877,6 +3912,7 @@ mod tests {
             validation_thrash_streak: 3,
             closure_stall_streak: 2,
             constraint_discovery_streak: 0,
+            targeted_evidence_streak: 0,
             evidence_sufficient_streak: 0,
         };
         controller.observe_turn(
