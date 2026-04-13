@@ -57,6 +57,14 @@ fn split_preserving_trailing_empty_lines(text: &str) -> Vec<&str> {
     text.split('\n').collect()
 }
 
+fn split_trimmed_trailing_empty_lines(text: &str) -> Vec<&str> {
+    let mut lines = split_preserving_trailing_empty_lines(text);
+    while lines.len() > 1 && lines.last().is_some_and(|line| line.is_empty()) {
+        lines.pop();
+    }
+    lines
+}
+
 fn apply_rows_bg(area: Rect, start_row: u16, row_count: u16, bg: Color, buf: &mut Buffer) {
     let end_row = start_row.saturating_add(row_count).min(area.height);
     for row in start_row..end_row {
@@ -964,7 +972,7 @@ fn render_assistant_text(
 
     // Reasoning block — stream full reasoning live, collapse after completion.
     if !thinking.is_empty() {
-        let think_lines: Vec<&str> = thinking.lines().collect();
+        let think_lines: Vec<&str> = split_trimmed_trailing_empty_lines(thinking);
         let show = if complete {
             think_lines.len().min(6)
         } else {
@@ -1029,7 +1037,7 @@ fn render_assistant_text(
     // neighbors instead of computing per-row widths in isolation
     // (which produced the column-shred failure mode in
     // codebase_search results and other table-bearing tool output).
-    let text_lines: Vec<&str> = split_preserving_trailing_empty_lines(text);
+    let text_lines: Vec<&str> = split_trimmed_trailing_empty_lines(text);
     let table_widths_per_line = compute_table_widths(&text_lines, area.width as usize);
     let mut in_code_fence = false;
     let mut table_state = TableState::None;
@@ -3177,6 +3185,27 @@ mod tests {
         assert!(
             seg.height(30, &Alpharius) >= 5,
             "multiline prompt should reserve height for blank lines"
+        );
+    }
+
+    #[test]
+    fn assistant_text_trims_gratuitous_trailing_blank_lines() {
+        let seg = Segment {
+            meta: SegmentMeta::default(),
+            content: SegmentContent::AssistantText {
+                text: "alpha\nbeta\n\n".into(),
+                thinking: String::new(),
+                complete: true,
+            },
+        };
+        let (area, mut buf) = make_buf(30, 8);
+        seg.render(area, &mut buf, &Alpharius, SegmentRenderMode::Full);
+        let text = buf_text(&buf, area);
+        assert!(text.contains("alpha"), "first line should render: {text}");
+        assert!(text.contains("beta"), "second line should render: {text}");
+        assert!(
+            !text.contains("beta\n\n\n"),
+            "assistant segment should not keep gratuitous trailing blank rows: {text}"
         );
     }
 
