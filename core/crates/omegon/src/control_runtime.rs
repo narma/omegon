@@ -2409,24 +2409,50 @@ pub async fn auth_logout_response(provider: &str) -> SlashCommandResponse {
         return SlashCommandResponse {
             accepted: false,
             output: Some(
-                "Provider required for logout. Use: anthropic, openai, openai-codex, openrouter, ollama-cloud".to_string(),
+                format!(
+                    "Provider required for logout. Use one of: {}",
+                    auth_logout_provider_help_list()
+                ),
             ),
         };
     }
     let provider = crate::auth::canonical_provider_id(provider);
-    let provider_label = crate::auth::provider_by_id(provider)
-        .map(|p| p.display_name)
-        .unwrap_or(provider);
+    let Some(provider_info) = crate::auth::provider_by_id(provider) else {
+        return SlashCommandResponse {
+            accepted: false,
+            output: Some(format!(
+                "❌ Unknown provider: {provider}. Use one of: {}",
+                auth_logout_provider_help_list()
+            )),
+        };
+    };
+    let provider_label = provider_info.display_name;
     match auth::logout_provider(provider) {
-        Ok(()) => SlashCommandResponse {
-            accepted: true,
-            output: Some(format!("✓ Logged out from {provider_label}")),
-        },
+        Ok(()) => {
+            auth::clear_provider_auth_env(provider);
+            let mut message = format!("✓ Logged out from {provider_label}");
+            if !auth::provider_env_vars(provider).is_empty() {
+                message.push_str(" and cleared this session's cached auth env.");
+            }
+            SlashCommandResponse {
+                accepted: true,
+                output: Some(message),
+            }
+        }
         Err(e) => SlashCommandResponse {
             accepted: false,
             output: Some(format!("❌ Logout failed for {provider_label}: {}", e)),
         },
     }
+}
+
+fn auth_logout_provider_help_list() -> String {
+    crate::auth::PROVIDERS
+        .iter()
+        .filter(|provider| provider.id != "ollama")
+        .map(|provider| provider.id)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub async fn skills_view_response() -> SlashCommandResponse {

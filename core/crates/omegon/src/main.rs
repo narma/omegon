@@ -2115,6 +2115,33 @@ async fn run_interactive_command(cli: &Cli) -> anyhow::Result<()> {
 
             tui::TuiCommand::AuthLogout { provider, respond_to } => {
                 let response = control_runtime::auth_logout_response(&provider).await;
+                if response.accepted {
+                    if let Ok(mut s) = shared_settings.lock() {
+                        let active_provider = s
+                            .model
+                            .split_once(':')
+                            .map(|(provider, _)| provider)
+                            .unwrap_or(s.model.as_str())
+                            .to_string();
+                        if crate::auth::canonical_provider_id(&active_provider)
+                            == crate::auth::canonical_provider_id(&provider)
+                        {
+                            s.provider_connected = false;
+                        }
+                    }
+                    let mut status = crate::status::HarnessStatus::assemble();
+                    status.update_runtime_posture(
+                        omegon_traits::OmegonRuntimeProfile::PrimaryInteractive,
+                        omegon_traits::OmegonAutonomyMode::OperatorDriven,
+                    );
+                    let auth_status = auth::probe_all_providers().await;
+                    status.providers = crate::auth::auth_status_to_provider_statuses(&auth_status);
+                    status.annotate_provider_runtime_health();
+                    status.update_from_bus(&runtime_state.bus);
+                    if let Ok(json) = serde_json::to_value(&status) {
+                        let _ = events_tx.send(AgentEvent::HarnessStatusChanged { status_json: json });
+                    }
+                }
                 if let Some(output) = response.output.clone() {
                     let _ = events_tx.send(AgentEvent::SystemNotification { message: output });
                 }
@@ -3829,7 +3856,7 @@ async fn run_auth_command(action: &AuthAction) -> anyhow::Result<()> {
         AuthAction::Login { provider } => run_auth_login(provider).await,
         AuthAction::Logout { provider } => match auth::logout_provider(provider) {
             Ok(()) => {
-                clear_provider_auth_env(provider);
+                auth::clear_provider_auth_env(provider);
                 println!("✓ Logged out from {provider}");
                 Ok(())
             }
@@ -3848,15 +3875,6 @@ async fn run_auth_command(action: &AuthAction) -> anyhow::Result<()> {
 
 /// Direct API key login — for providers without OAuth (OpenRouter, etc.)
 /// Prompts for the key on stdin, stores in auth.json.
-fn clear_provider_auth_env(provider: &str) {
-    for env_var in auth::provider_env_vars(provider) {
-        // SAFETY: this runs only in response to an explicit logout action, before
-        // any concurrent auth resolution is expected to observe the provider env.
-        unsafe {
-            std::env::remove_var(env_var);
-        }
-    }
-}
 
 async fn login_api_key(
     provider: &str,
@@ -4606,6 +4624,45 @@ mod tests {
             output.contains("OpenAI/Codex") || output.contains("openai-codex"),
             "got: {output}"
         );
+        assert!(output.contains("cleared this session's cached auth env"), "got: {output}");
+    }
+
+    #[test]
+    fn remote_slash_logout_rejects_unknown_provider_with_supported_list() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let agent = rt
+            .block_on(setup::AgentSetup::new(Path::new("."), None, None))
+            .unwrap();
+        let (events_tx, _) = broadcast::channel(16);
+        let shared_settings = std::sync::Arc::new(std::sync::Mutex::new(settings::Settings::new(
+            "anthropic:claude-sonnet-4-6",
+        )));
+        let bridge = std::sync::Arc::new(tokio::sync::RwLock::new(Box::new(
+            crate::bridge::NullBridge,
+        ) as Box<dyn LlmBridge>));
+        let login_prompt_tx = std::sync::Arc::new(tokio::sync::Mutex::new(None));
+        let cli = Cli::try_parse_from(vec!["omegon"]).unwrap();
+
+        let (mut agent, mut runtime_state) = split_interactive_agent(agent);
+
+        let response = rt.block_on(execute_remote_slash_command(
+            &mut runtime_state,
+            &mut agent,
+            &events_tx,
+            &shared_settings,
+            &bridge,
+            &login_prompt_tx,
+            &cli,
+            "logout",
+            "not-a-provider",
+        ));
+
+        assert!(!response.accepted);
+        let output = response.output.unwrap();
+        assert!(output.contains("Unknown provider"), "got: {output}");
+        assert!(output.contains("anthropic"), "got: {output}");
+        assert!(output.contains("openai-codex"), "got: {output}");
+        assert!(!output.contains("ollama,"), "got: {output}");
     }
 
     #[test]
@@ -5354,10 +5411,21 @@ mod tests {
             std::env::set_var("ANTHROPIC_API_KEY", "key-1");
         }
 
-        clear_provider_auth_env("anthropic");
+        auth::clear_provider_auth_env("anthropic");
 
         assert!(std::env::var("ANTHROPIC_OAUTH_TOKEN").is_err());
         assert!(std::env::var("ANTHROPIC_API_KEY").is_err());
+    }
+
+    #[test]
+    fn logout_clears_openai_codex_session_env_var() {
+        unsafe {
+            std::env::set_var("CHATGPT_OAUTH_TOKEN", "token-1");
+        }
+
+        auth::clear_provider_auth_env("openai-codex");
+
+        assert!(std::env::var("CHATGPT_OAUTH_TOKEN").is_err());
     }
 
     #[test]

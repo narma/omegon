@@ -3931,6 +3931,25 @@ fn login_selector_ollama_cloud_opens_hidden_api_key_entry() {
     );
 }
 
+#[test]
+fn slash_logout_usage_lists_supported_remote_logout_providers() {
+    let mut app = test_app();
+    let tx = test_tx();
+
+    let result = app.handle_slash_command("/logout", &tx);
+    let message = match result {
+        SlashResult::Display(message) => message,
+        other => panic!("expected usage display, got {other:?}"),
+    };
+
+    assert!(message.contains("anthropic"), "got: {message}");
+    assert!(message.contains("openai"), "got: {message}");
+    assert!(message.contains("openai-codex"), "got: {message}");
+    assert!(message.contains("openrouter"), "got: {message}");
+    assert!(message.contains("ollama-cloud"), "got: {message}");
+    assert!(!message.contains("ollama,"), "got: {message}");
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Recovery hints
 // ═══════════════════════════════════════════════════════════════════

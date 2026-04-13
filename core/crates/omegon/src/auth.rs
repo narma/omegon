@@ -468,6 +468,17 @@ pub fn logout_provider(provider: &str) -> anyhow::Result<()> {
     })
 }
 
+/// Remove any in-process env vars that can still make a provider appear logged in.
+pub fn clear_provider_auth_env(provider: &str) {
+    for env_var in provider_env_vars(provider) {
+        // SAFETY: logout is an explicit operator action; clearing the env here is
+        // part of making the current process match the persisted auth state.
+        unsafe {
+            std::env::remove_var(env_var);
+        }
+    }
+}
+
 /// Resolve API key with automatic token refresh.
 /// Returns (api_key, is_oauth_token).
 pub async fn resolve_with_refresh(provider: &str) -> Option<(String, bool)> {
