@@ -822,7 +822,16 @@ pub async fn login_anthropic_with_callbacks(
             progress(&format!("Could not open browser. Visit:\n  {auth_url}"));
         }
 
-        let (mut stream, _addr) = listener.accept().await?;
+        let (mut stream, _addr) = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            listener.accept(),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Login timed out waiting for browser callback. Run /login again to retry."
+            )
+        })??;
         let mut buf = [0u8; 4096];
         let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
         let request = String::from_utf8_lossy(&buf[..n]);
@@ -961,7 +970,16 @@ pub async fn login_openai_with_callbacks(
             progress(&format!("Could not open browser. Visit:\n  {auth_url}"));
         }
 
-        let (mut stream, _addr) = listener.accept().await?;
+        let (mut stream, _addr) = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            listener.accept(),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "Login timed out waiting for browser callback. Run /login again to retry."
+            )
+        })??;
         let mut buf = [0u8; 4096];
         let n = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
         let request = String::from_utf8_lossy(&buf[..n]);
