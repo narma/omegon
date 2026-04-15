@@ -860,15 +860,15 @@
     "notes": []
   },
   "0.15.25": {
-    "status": "rc",
+    "status": "released",
     "channel": "stable",
     "nodes": [],
-    "frozen": false,
+    "frozen": true,
     "opened": "2026-04-15T20:57:50Z",
     "last_rc": "2026-04-15T21:25:38Z",
     "rc_version": "0.15.25-rc.2",
     "rc_count": 2,
-    "released": null,
+    "released": "2026-04-15T22:55:27Z",
     "notes": [
       "feat(ci): push OCI images to ghcr.io on release",
       "feat(eval): component matrix tracking + model portability testing",
