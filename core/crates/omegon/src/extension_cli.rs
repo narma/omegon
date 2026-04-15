@@ -142,6 +142,7 @@ pub fn list() -> anyhow::Result<()> {
 
 /// Remove an installed extension by name.
 pub fn remove(name: &str) -> anyhow::Result<()> {
+    validate_name(name)?;
     let extensions_dir = extensions_dir()?;
     let ext_path = extensions_dir.join(name);
 
@@ -174,6 +175,7 @@ pub fn update(name: Option<&str>) -> anyhow::Result<()> {
     }
 
     let dirs_to_update: Vec<PathBuf> = if let Some(name) = name {
+        validate_name(name)?;
         let path = extensions_dir.join(name);
         if !path.exists() {
             anyhow::bail!("Extension '{}' not found", name);
@@ -251,12 +253,30 @@ pub fn disable(name: &str) -> anyhow::Result<()> {
 }
 
 fn extensions_dir() -> anyhow::Result<PathBuf> {
-    dirs::home_dir()
-        .map(|h| h.join(".omegon").join("extensions"))
-        .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))
+    let base = crate::paths::omegon_home()?;
+    Ok(base.join("extensions"))
+}
+
+/// Validate that an extension name is safe for use as a directory component.
+/// Rejects path traversal attempts and any non-filesystem-safe characters.
+fn validate_name(name: &str) -> anyhow::Result<()> {
+    if name.is_empty() {
+        anyhow::bail!("extension name cannot be empty");
+    }
+    if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        anyhow::bail!(
+            "invalid extension name '{name}': must not contain '/', '\\', '..', or null bytes"
+        );
+    }
+    // Reject absolute paths on Windows (e.g. "C:")
+    if name.contains(':') {
+        anyhow::bail!("invalid extension name '{name}': must not contain ':'");
+    }
+    Ok(())
 }
 
 fn extension_dir(name: &str) -> anyhow::Result<PathBuf> {
+    validate_name(name)?;
     let dir = extensions_dir()?.join(name);
     if !dir.exists() {
         anyhow::bail!("Extension '{name}' not found at {}", dir.display());
@@ -282,7 +302,12 @@ fn install_local(extensions_dir: &Path, local_path: &Path) -> anyhow::Result<()>
 
     let target = extensions_dir.join(name);
     if target.exists() || target.is_symlink() {
-        std::fs::remove_file(&target).or_else(|_| std::fs::remove_dir_all(&target))?;
+        anyhow::bail!(
+            "Extension '{}' already installed at {}. Remove first with: omegon extension remove {}",
+            name,
+            target.display(),
+            name
+        );
     }
 
     let canonical = std::fs::canonicalize(local_path)?;
@@ -459,6 +484,74 @@ mod tests {
         let summary = list_summary().unwrap();
         // Either reports extensions or says none installed
         assert!(summary.contains("extension") || summary.contains("DESCRIPTION"));
+    }
+
+    #[test]
+    fn remove_rejects_path_traversal() {
+        let err = remove("../../.ssh").unwrap_err();
+        assert!(err.to_string().contains("must not contain"));
+    }
+
+    #[test]
+    fn remove_rejects_slash_in_name() {
+        let err = remove("foo/bar").unwrap_err();
+        assert!(err.to_string().contains("must not contain"));
+    }
+
+    #[test]
+    fn validate_name_rejects_empty() {
+        let err = validate_name("").unwrap_err();
+        assert!(err.to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn validate_name_accepts_normal_names() {
+        validate_name("vox").unwrap();
+        validate_name("scribe-rpc").unwrap();
+        validate_name("my_extension.v2").unwrap();
+    }
+
+    #[test]
+    fn enable_disable_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ext = tmp.path().join("test-ext");
+        std::fs::create_dir_all(ext.join(".omegon")).unwrap();
+        std::fs::write(
+            ext.join("manifest.toml"),
+            r#"
+[extension]
+name = "test-ext"
+version = "0.1.0"
+description = "Test"
+
+[runtime]
+type = "native"
+binary = "bin/test"
+"#,
+        )
+        .unwrap();
+
+        // Start enabled (default)
+        let state = ExtensionState::load(&ext).unwrap();
+        assert!(state.enabled);
+
+        // Disable
+        let mut state = ExtensionState::load(&ext).unwrap();
+        state.mark_disabled();
+        state.save(&ext).unwrap();
+
+        let state = ExtensionState::load(&ext).unwrap();
+        assert!(!state.enabled);
+        assert_eq!(state.status_text(), "disabled");
+
+        // Re-enable
+        let mut state = ExtensionState::load(&ext).unwrap();
+        state.mark_enabled();
+        state.save(&ext).unwrap();
+
+        let state = ExtensionState::load(&ext).unwrap();
+        assert!(state.enabled);
+        assert_eq!(state.status_text(), "enabled");
     }
 
     #[test]

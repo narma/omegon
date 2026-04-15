@@ -52,6 +52,7 @@ mod lifecycle;
 mod r#loop;
 mod ollama;
 mod extension_cli;
+mod paths;
 mod plugin_cli;
 mod secret_cli;
 mod plugins;
@@ -467,11 +468,14 @@ enum SecretAction {
     Set {
         /// Secret name (e.g. GITHUB_TOKEN, VOX_DISCORD_BOT_TOKEN).
         name: String,
-        /// Raw secret value. Stored in system keyring.
+        /// Raw secret value. Stored in system keyring. Omit to read from stdin.
         value: Option<String>,
         /// Recipe form instead of raw value (env:VAR, cmd:..., vault:path#key, file:/path).
         #[arg(long)]
         recipe: Option<String>,
+        /// Read secret value from stdin (avoids shell history / ps exposure).
+        #[arg(long)]
+        stdin: bool,
     },
     /// List configured secrets (values are never shown).
     List,
@@ -646,8 +650,8 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Secret { ref action }) => {
             match action {
-                SecretAction::Set { name, value, recipe } => {
-                    secret_cli::set(name, value.as_deref(), recipe.as_deref())?
+                SecretAction::Set { name, value, recipe, stdin } => {
+                    secret_cli::set(name, value.as_deref(), recipe.as_deref(), *stdin)?
                 }
                 SecretAction::List => secret_cli::list()?,
                 SecretAction::Delete { name } => secret_cli::delete(name)?,

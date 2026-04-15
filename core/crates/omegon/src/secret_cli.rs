@@ -4,6 +4,7 @@
 //!
 //! ```sh
 //! omegon secret set GITHUB_TOKEN ghp_abc123
+//! echo "ghp_abc123" | omegon secret set GITHUB_TOKEN --stdin
 //! omegon secret set VOX_DISCORD_BOT_TOKEN --recipe "env:DISCORD_TOKEN"
 //! ```
 //!
@@ -19,18 +20,45 @@
 //! omegon secret delete GITHUB_TOKEN
 //! ```
 
-use std::path::PathBuf;
-
 /// Set a secret — either a raw value (stored in keyring) or a recipe.
-pub fn set(name: &str, value: Option<&str>, recipe: Option<&str>) -> anyhow::Result<()> {
+///
+/// When `from_stdin` is true, reads the value from stdin (one line, trimmed).
+/// This avoids exposing the secret in shell history or `ps` output.
+pub fn set(
+    name: &str,
+    value: Option<&str>,
+    recipe: Option<&str>,
+    from_stdin: bool,
+) -> anyhow::Result<()> {
     let secrets = create_manager()?;
+
+    if from_stdin {
+        if recipe.is_some() {
+            anyhow::bail!("--stdin and --recipe are mutually exclusive");
+        }
+        if value.is_some() {
+            anyhow::bail!("--stdin and a positional value are mutually exclusive");
+        }
+        let mut line = String::new();
+        std::io::stdin().read_line(&mut line)?;
+        let val = line.trim_end_matches('\n').trim_end_matches('\r');
+        if val.is_empty() {
+            anyhow::bail!("no value read from stdin");
+        }
+        secrets.set_keyring_secret(name, val)?;
+        println!("Stored '{name}' in keyring.");
+        return Ok(());
+    }
 
     match (value, recipe) {
         (Some(_), Some(_)) => {
             anyhow::bail!("provide either a value or --recipe, not both");
         }
         (None, None) => {
-            anyhow::bail!("provide a secret value or --recipe");
+            anyhow::bail!(
+                "provide a secret value, --recipe, or --stdin\n\
+                 Hint: use --stdin to avoid exposing the value in shell history"
+            );
         }
         (Some(val), None) => {
             secrets.set_keyring_secret(name, val)?;
@@ -73,14 +101,8 @@ pub fn delete(name: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn config_dir() -> anyhow::Result<PathBuf> {
-    dirs::home_dir()
-        .map(|h| h.join(".omegon"))
-        .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))
-}
-
 fn create_manager() -> anyhow::Result<omegon_secrets::SecretsManager> {
-    let dir = config_dir()?;
+    let dir = crate::paths::omegon_home()?;
     std::fs::create_dir_all(&dir)?;
     omegon_secrets::SecretsManager::new(&dir)
 }

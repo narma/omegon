@@ -153,9 +153,8 @@ impl AgentSetup {
         let is_child = std::env::var("OMEGON_CHILD").is_ok();
 
         // ─── Secrets manager ────────────────────────────────────────────
-        let secrets_dir = dirs::home_dir()
-            .unwrap_or_else(|| cwd.clone())
-            .join(".omegon");
+        let secrets_dir = crate::paths::omegon_home()
+            .unwrap_or_else(|_| cwd.join(".omegon"));
         let secrets = match omegon_secrets::SecretsManager::new(&secrets_dir) {
             Ok(s) => std::sync::Arc::new(s),
             Err(e) => {
@@ -302,6 +301,10 @@ impl AgentSetup {
         bus.register(Box::new(features::adapter::ToolAdapter::new(
             "render",
             Box::new(tools::render::RenderProvider::new()),
+        )));
+        bus.register(Box::new(features::adapter::ToolAdapter::new(
+            "secret-tools",
+            Box::new(tools::secret_tools::SecretToolsProvider::new(secrets.clone())),
         )));
 
         // ─── Memory ─────────────────────────────────────────────────────
@@ -1072,7 +1075,7 @@ fn collect_plugin_secret_requirements(cwd: &std::path::Path) -> Vec<String> {
 
     // 1. User-level plugin manifests: ~/.omegon/plugins/*/plugin.toml
     let plugin_dirs: Vec<std::path::PathBuf> = [
-        dirs::home_dir().map(|h| h.join(".omegon/plugins")),
+        crate::paths::omegon_home().ok().map(|h| h.join("plugins")),
         Some(cwd.join(".omegon/plugins")),
     ]
     .into_iter()
@@ -1127,9 +1130,7 @@ async fn discover_and_register_extensions(
     Vec<tokio::sync::broadcast::Receiver<crate::extensions::WidgetEvent>>,
     Vec<crate::extensions::ExtensionPollingHandle>,
 )> {
-    let ext_dir = dirs::home_dir()
-        .map(|h| h.join(".omegon/extensions"))
-        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
+    let ext_dir = crate::paths::omegon_home()?.join("extensions");
 
     if !ext_dir.exists() {
         tracing::debug!("extension directory not found: {}", ext_dir.display());
