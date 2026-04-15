@@ -63,6 +63,7 @@ mod session;
 mod agent_manifest;
 mod bundle_verify;
 mod catalog;
+mod eval;
 mod session_router;
 pub mod settings;
 mod triggers;
@@ -303,6 +304,17 @@ enum Commands {
         /// Source to migrate from. "auto" detects all available tools.
         #[arg(default_value = "auto")]
         source: String,
+    },
+
+    /// Evaluate an agent bundle against a test suite. Produces a score card.
+    Eval {
+        /// Agent manifest to evaluate (id or path to bundle dir).
+        #[arg(long)]
+        agent: String,
+
+        /// Path to eval suite TOML file.
+        #[arg(long)]
+        suite: String,
     },
 
     /// Manage plugins — install, list, remove, update.
@@ -677,6 +689,16 @@ async fn main() -> anyhow::Result<()> {
             control_port,
             strict_port,
         }) => run_embedded_command(control_port, strict_port, &cli.model, None).await,
+        Some(Commands::Eval { ref agent, ref suite }) => {
+            let suite_path = std::path::PathBuf::from(suite);
+            let card = eval::run_suite(agent, &suite_path).await?;
+            println!("{}", card.summary());
+            let json = serde_json::to_string_pretty(&card)?;
+            let out_path = format!("eval-{}-{}.json", agent.replace('.', "-"), chrono::Utc::now().format("%Y%m%d-%H%M%S"));
+            std::fs::write(&out_path, &json)?;
+            println!("Score card written to {out_path}");
+            Ok(())
+        }
         Some(Commands::Migrate { ref source }) => {
             let cwd = std::fs::canonicalize(&cli.cwd)?;
             let report = migrate::run(source, &cwd);
