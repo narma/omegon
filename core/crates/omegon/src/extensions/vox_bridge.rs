@@ -189,6 +189,18 @@ fn format_vox_event(msg: &Value) -> Option<omegon_traits::DaemonEventEnvelope> {
         ),
     };
 
+    // Extract thread from session_key if present (e.g., "discord:U123:C456:T789")
+    let source_thread = session_key
+        .as_str()
+        .and_then(|sk| {
+            let parts: Vec<&str> = sk.splitn(4, ':').collect();
+            if parts.len() >= 4 {
+                Some(parts[3].to_string())
+            } else {
+                None
+            }
+        });
+
     Some(omegon_traits::DaemonEventEnvelope {
         event_id: format!(
             "vox-{}",
@@ -203,6 +215,9 @@ fn format_vox_event(msg: &Value) -> Option<omegon_traits::DaemonEventEnvelope> {
             "trust_level": trust_level,
         }),
         caller_role: Some("edit".to_string()),
+        source_user: Some(sender_id.to_string()),
+        source_channel: Some(channel.to_string()),
+        source_thread,
     })
 }
 
