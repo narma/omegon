@@ -443,11 +443,10 @@ fn should_inject_execution_pressure(
     let has_broad_repo_inspection = tool_calls
         .iter()
         .any(|call| is_broad_repo_inspection_tool(&call.name));
-    let only_targeted_reads = tool_calls
-        .iter()
-        .all(|call| is_targeted_repo_inspection_tool(&call.name));
 
-    (turn >= 2 && has_broad_repo_inspection) || (turn >= 2 && only_targeted_reads)
+    // Broad inspection (codebase_search, etc.) → pressure at turn 2.
+    // Targeted-only reads → give one extra turn to focus, pressure at turn 3.
+    (turn >= 2 && has_broad_repo_inspection) || (turn >= 3 && !has_broad_repo_inspection)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -555,11 +554,14 @@ impl ControllerState {
         } else {
             self.closure_stall_streak / 2
         };
+        // Use halving-decay (not hard reset) for all streaks to prevent the
+        // model from gaming the detector by interleaving one off-pattern turn
+        // between two on-pattern turns — same approach as the drift streaks.
         self.constraint_discovery_streak =
             if matches!(progress_signal, ProgressSignal::ConstraintDiscovery) {
                 self.constraint_discovery_streak.saturating_add(1)
             } else {
-                0
+                self.constraint_discovery_streak / 2
             };
         self.targeted_evidence_streak =
             if matches!(
@@ -568,13 +570,13 @@ impl ControllerState {
             ) {
                 self.targeted_evidence_streak.saturating_add(1)
             } else {
-                0
+                self.targeted_evidence_streak / 2
             };
         self.evidence_sufficient_streak =
             if matches!(evidence_sufficiency, EvidenceSufficiency::Actionable) {
                 self.evidence_sufficient_streak.saturating_add(1)
             } else {
-                0
+                self.evidence_sufficient_streak / 2
             };
     }
 }
@@ -700,20 +702,12 @@ fn detect_evidence_sufficiency(
         return EvidenceSufficiency::None;
     }
 
-    // Post-mutation: if the model has already edited files but this turn is
-    // all inspection tools, it already has actionable evidence — the edits
-    // prove it knows enough to act.  Returning Actionable here lets the
-    // continuation-pressure system kick in and stop the read churn.
+    // Post-mutation: if the model has already edited files, the edits prove
+    // it has enough context to act.  Return Actionable so the evidence-
+    // sufficient streak stays alive and continuation-pressure can kick in
+    // on subsequent read-only turns instead of resetting.
     if !conversation.intent.files_modified.is_empty() {
-        let all_inspection = !tool_calls.is_empty()
-            && tool_calls
-                .iter()
-                .all(|call| is_repo_inspection_tool(&call.name) || is_orientation_tool(&call.name));
-        if all_inspection {
-            return EvidenceSufficiency::Actionable;
-        }
-        // Mixed turn with mutations — real progress, no pressure needed.
-        return EvidenceSufficiency::None;
+        return EvidenceSufficiency::Actionable;
     }
 
     let targeted_validation = matches!(
@@ -809,11 +803,7 @@ fn continuation_pressure_tier(
     let (tier1, tier2, tier3) = if om_local_first_lock {
         (2, 3, 4)
     } else if evidence_sufficient {
-        if is_slim_execution_bias(config) {
-            (3, 4, 5)
-        } else {
-            (3, 4, 5)
-        }
+        (3, 4, 5)
     } else if is_slim_execution_bias(config) {
         (5, 7, 9)
     } else {
@@ -1330,25 +1320,24 @@ pub async fn run(
                      Please commit your work now with a descriptive message, then summarize what you did.]"
                         .to_string(),
                 );
+                let nudge_system_prompt = context
+                    .build_system_prompt(conversation.last_user_prompt(), conversation);
+                let nudge_llm_messages = conversation.build_llm_view();
+                let nudge_prompt_telemetry = context.last_prompt_telemetry();
+                let nudge_context_composition = compute_context_composition(
+                    &nudge_system_prompt,
+                    &nudge_llm_messages,
+                    &tool_defs,
+                    context_window,
+                    Some(&nudge_prompt_telemetry),
+                );
                 bus.emit(&omegon_traits::BusEvent::TurnEnd {
                     turn,
                     model: Some(config.model.clone()),
                     provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                     estimated_tokens: conversation.estimate_tokens(),
                     context_window,
-                    context_composition: {
-                        let system_prompt = context
-                            .build_system_prompt(conversation.last_user_prompt(), conversation);
-                        let llm_messages = conversation.build_llm_view();
-                        let prompt_telemetry = context.last_prompt_telemetry();
-                        compute_context_composition(
-                            &system_prompt,
-                            &llm_messages,
-                            &tool_defs,
-                            context_window,
-                            Some(&prompt_telemetry),
-                        )
-                    },
+                    context_composition: nudge_context_composition.clone(),
                     actual_input_tokens: act_in,
                     actual_output_tokens: act_out,
                     cache_read_tokens: act_cr,
@@ -1361,19 +1350,7 @@ pub async fn run(
                     provider: Some(crate::providers::infer_provider_id(&config.model).to_string()),
                     estimated_tokens: conversation.estimate_tokens(),
                     context_window,
-                    context_composition: {
-                        let system_prompt = context
-                            .build_system_prompt(conversation.last_user_prompt(), conversation);
-                        let llm_messages = conversation.build_llm_view();
-                        let prompt_telemetry = context.last_prompt_telemetry();
-                        compute_context_composition(
-                            &system_prompt,
-                            &llm_messages,
-                            &tool_defs,
-                            context_window,
-                            Some(&prompt_telemetry),
-                        )
-                    },
+                    context_composition: nudge_context_composition,
                     actual_input_tokens: act_in,
                     actual_output_tokens: act_out,
                     cache_read_tokens: act_cr,
@@ -2626,8 +2603,15 @@ impl StuckDetector {
             self.recent.drain(..self.window);
         }
 
-        // Track file-level access across all inspection tools
-        if is_repo_inspection_tool(&call.name) {
+        // Track file-level access across all inspection tools.
+        // If this is a mutation tool, clear prior accesses for that path —
+        // the agent acted on it, so post-mutation reads are legitimate
+        // verification, not churn.
+        if is_mutation_tool_name(&call.name) {
+            if let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) {
+                self.recent_file_accesses.retain(|p| p != path);
+            }
+        } else if is_repo_inspection_tool(&call.name) {
             if let Some(path) = call.arguments.get("path").and_then(|v| v.as_str()) {
                 self.recent_file_accesses.push(path.to_string());
                 if self.recent_file_accesses.len() > self.window * 2 {
@@ -2883,6 +2867,49 @@ mod tests {
         let warning = detector.check();
         assert!(warning.is_some());
         assert!(warning.unwrap().message.contains("same arguments"));
+    }
+
+    #[test]
+    fn stuck_detector_mutation_clears_file_access_history() {
+        let mut detector = StuckDetector::new();
+        let path = "src/main.rs";
+
+        // Read the same file 3 times via different inspection tools
+        for name in &["read", "view", "read"] {
+            detector.record(
+                &ToolCall {
+                    id: "r".into(),
+                    name: (*name).into(),
+                    arguments: serde_json::json!({"path": path}),
+                },
+                false,
+            );
+        }
+        // Mutate it — should clear prior access entries for this path
+        detector.record(
+            &ToolCall {
+                id: "m".into(),
+                name: "edit".into(),
+                arguments: serde_json::json!({"path": path, "oldText": "a", "newText": "b"}),
+            },
+            false,
+        );
+        // Read once more to verify the edit
+        detector.record(
+            &ToolCall {
+                id: "r2".into(),
+                name: "read".into(),
+                arguments: serde_json::json!({"path": path}),
+            },
+            false,
+        );
+        // Should NOT trigger cross-tool file churn — the mutation reset the counter
+        let warning = detector.check();
+        assert!(
+            warning.is_none() || !warning.as_ref().unwrap().message.contains(path),
+            "mutation should clear file access history; got: {:?}",
+            warning.map(|w| w.message)
+        );
     }
 
     #[test]
@@ -3568,8 +3595,16 @@ mod tests {
             name: "read".into(),
             arguments: serde_json::json!({"path": "core/src/context.rs"}),
         }];
+        // Turn 1: too early for any pressure
         assert!(!should_inject_execution_pressure(
             1,
+            &config,
+            &conversation,
+            &tool_calls
+        ));
+        // Turn 2: targeted-only reads get one extra turn grace period (fires at 3+)
+        assert!(!should_inject_execution_pressure(
+            2,
             &config,
             &conversation,
             &tool_calls
@@ -4225,7 +4260,9 @@ mod tests {
     }
 
     #[test]
-    fn targeted_read_only_batches_trigger_execution_pressure_by_turn_two() {
+    fn targeted_read_only_batches_trigger_execution_pressure_by_turn_three() {
+        // Targeted-only reads get one extra grace turn vs broad inspection:
+        // broad fires at turn 2, targeted-only fires at turn 3.
         let config = LoopConfig {
             enforce_first_turn_execution_bias: true,
             ..LoopConfig::default()
@@ -4240,8 +4277,16 @@ mod tests {
             name: "read".into(),
             arguments: serde_json::json!({"path": "core/src/context.rs"}),
         }];
-        assert!(should_inject_execution_pressure(
+        // Turn 2: not yet for targeted-only
+        assert!(!should_inject_execution_pressure(
             2,
+            &config,
+            &conversation,
+            &tool_calls
+        ));
+        // Turn 3: fires
+        assert!(should_inject_execution_pressure(
+            3,
             &config,
             &conversation,
             &tool_calls

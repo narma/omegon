@@ -398,7 +398,7 @@ fn screen_facts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_manifest::{self, AgentManifest, AgentMeta, ResolvedManifest};
+    use crate::agent_manifest::{AgentManifest, AgentMeta, ResolvedManifest};
 
     fn make_manifest(domain: &str) -> AgentManifest {
         AgentManifest {
