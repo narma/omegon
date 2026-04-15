@@ -927,9 +927,15 @@ async fn run_embedded_command(control_port: u16, strict_port: bool, model: &str)
                     }
                 };
                 for envelope in events {
+                    let trust_level = envelope
+                        .payload
+                        .get("trust_level")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("user");
                     tracing::info!(
                         source = %envelope.source,
                         event_id = %envelope.event_id,
+                        trust = %trust_level,
                         "daemon: processing vox event"
                     );
                     let text = envelope
