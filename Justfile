@@ -1,8 +1,9 @@
 # Omegon — systems engineering harness
 # Run `just` with no args to see all available recipes.
 
-# Platform-agnostic in-place sed (macOS needs '' arg, GNU does not)
-export SEDI := if os() == "macos" { "sed -i ''" } else { "sed -i" }
+# Platform-agnostic in-place sed. macOS sed requires a backup extension
+# after -i; GNU sed does not. Using perl avoids the divergence entirely.
+sedi := "perl -pi -e"
 
 # Default: show available recipes
 default:
@@ -418,7 +419,7 @@ rc:
     trap rollback ERR INT TERM
 
     # Mutate version and milestone state only after validation passes.
-    $SEDI "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
+    {{sedi}} "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
     ./scripts/milestone-update.sh rc "$NEW_VERSION"
 
     # Refresh the lockfile before commit/tag so release steps do not dirty the
@@ -500,7 +501,7 @@ release:
     NEW_VERSION=$(echo "$CURRENT" | sed 's/-rc\.[0-9]*//')
     echo "Releasing: $CURRENT → $NEW_VERSION"
 
-    $SEDI "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
+    {{sedi}} "s/^version = \"${CURRENT}\"/version = \"${NEW_VERSION}\"/" core/Cargo.toml
 
     # Mark milestone as released
     ./scripts/milestone-update.sh release "$NEW_VERSION"
@@ -529,7 +530,7 @@ release:
     NEXT_RC="${NEXT_PATCH}-rc.1"
     echo ""
     echo "Opening next cycle: $NEXT_RC"
-    $SEDI "s/^version = \"${NEW_VERSION}\"/version = \"${NEXT_RC}\"/" core/Cargo.toml
+    {{sedi}} "s/^version = \"${NEW_VERSION}\"/version = \"${NEXT_RC}\"/" core/Cargo.toml
 
     # Open next milestone
     ./scripts/milestone-update.sh open "$NEXT_PATCH"
